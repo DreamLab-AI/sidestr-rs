@@ -1,5 +1,7 @@
 # sidestr-round
 
+> Part of [sidestr-rs](https://github.com/DreamLab-AI/sidestr-rs). Rust port of Melvin Carvalho's sidestr sidechains, AGPL-3.0-only: the economic engine for did:nostr agents. A did:nostr key is a sidechain wallet.
+
 Level 2 of [sidestr](https://github.com/sidestr/spec) sidechains, usable now:
 the `k`-of-`n` co-signing round as a pure state machine that interoperates on
 the wire with the reference signer as it runs today, the peg-out PSBT round
@@ -15,7 +17,7 @@ directions.
 
 ```toml
 [dependencies]
-sidestr-round = "0.1"
+sidestr-round = "0.2"
 ```
 
 ```rust
@@ -108,8 +110,8 @@ peg-ins are claimed and peg-outs paid through the PSBT round.
 
 ## Status
 
-0.1.1: interoperates with siding at commit
-`2de40bdac4cba01be0864156a553d8287c22e279`. Tested against the reference
+0.2.0: interoperates with siding at commit
+`722ad42d3271efccfdfaf57c3c6943f58fc168f8` (SPEC 0.0.3). Tested against the reference
 engine as an oracle: three signers on one box in {Rust, JS, JS} and
 {Rust, Rust, JS}, both header families, peg-outs proposed by either engine.
 Not yet: a signer on another machine, changing the signer set. Audited

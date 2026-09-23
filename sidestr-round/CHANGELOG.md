@@ -2,6 +2,15 @@
 
 All notable changes to `sidestr-round`. The crate follows semantic versioning.
 
+## 0.2.0 — 2026-09-23
+
+- Follows `sidestr-core` 0.3, `sidestr-header` 0.3 and `sidestr-nostr` 0.3.
+- **Peg-in scanning follows SPEC 0.0.3.** With a peg wallet configured, the
+  node takes the peg to be the output that wallet owns (the k-of-n descriptor
+  it imported), at any position. Without one it takes the first taproot
+  output, as the reference's `pegTick` does.
+- Interoperates with siding at `722ad42`.
+
 ## 0.1.1 — 2026-09-22
 
 Documentation only; no code change.

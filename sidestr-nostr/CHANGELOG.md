@@ -2,6 +2,11 @@
 
 All notable changes to `sidestr-nostr`. The crate follows semantic versioning.
 
+## 0.3.0 — 2026-09-23
+
+- Follows `sidestr-core` 0.3. SPEC 0.0.3 changes nothing on the Nostr plane;
+  the oracle suite runs against the reference at `722ad42`.
+
 ## 0.2.2 — 2026-09-22
 
 Documentation only; no code change.

@@ -1,9 +1,10 @@
 [package]
 name = "sidestr-round"
-version = "0.1.1"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 license = "AGPL-3.0-only"
 description = "The level-2 co-signing round of sidestr sidechains, as a pure state machine that interoperates with the reference signer on the wire: block proposals, partial signatures and sealed blocks (kinds 23510/23511/23514) with the proposer ring and lateness entitlement, the peg-out PSBT round (23512/23513) over rust-bitcoin, a durable vote journal, and a runnable signer. A port of siding's round.mjs and pegoutround.mjs by Melvin Carvalho."
@@ -40,9 +41,9 @@ name = "cosign"
 required-features = ["bin"]
 
 [dependencies]
-sidestr-core = { path = "../sidestr-core", version = "0.2" }
-sidestr-header = { path = "../sidestr-header", version = "0.2" }
-sidestr-nostr = { path = "../sidestr-nostr", version = "0.2" }
+sidestr-core = { path = "../sidestr-core", version = "0.3" }
+sidestr-header = { path = "../sidestr-header", version = "0.3" }
+sidestr-nostr = { path = "../sidestr-nostr", version = "0.3" }
 bitcoin = { workspace = true, features = ["base64"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

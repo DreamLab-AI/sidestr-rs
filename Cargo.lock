@@ -552,6 +552,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "miniscript"
+version = "12.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8343cc1ef1408bd9bdbf69f7aef47017dfab7e6349ec26fddf62e0e9fb5a4cf"
+dependencies = [
+ "bech32",
+ "bitcoin",
+]
+
+[[package]]
 name = "mio"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -893,8 +903,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "sidestr-agent"
+version = "0.1.0"
+dependencies = [
+ "bech32",
+ "bitcoin",
+ "clap",
+ "hex",
+ "miniscript",
+ "serde",
+ "serde_json",
+ "sidestr-core",
+ "sidestr-nostr",
+ "sidestr-round",
+ "sidestr-wallet",
+ "thiserror",
+ "tokio",
+ "ureq",
+]
+
+[[package]]
 name = "sidestr-core"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "bech32",
  "bitcoin",
@@ -910,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "sidestr-header"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "blake2",
@@ -923,7 +953,7 @@ dependencies = [
 
 [[package]]
 name = "sidestr-nostr"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "hex",
@@ -936,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "sidestr-round"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bitcoin",
  "clap",
@@ -961,7 +991,7 @@ dependencies = [
 
 [[package]]
 name = "sidestr-wallet"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "hex",
@@ -970,6 +1000,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sidestr-core",
+ "sidestr-header",
  "thiserror",
  "ureq",
 ]

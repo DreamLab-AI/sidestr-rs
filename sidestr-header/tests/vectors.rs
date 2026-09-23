@@ -7,8 +7,8 @@
 //! - Real fork headers from a Knots 29.4.1 node, 2026-09-05, carried by the
 //!   same kernel at `test/vectors/knots/{testnet4,mainnet}-anchors.json`.
 //! - Stock: Bitcoin's genesis, testnet4's genesis (kernel
-//!   `test/vectors/testnet4.json`), and `sidestr:dreamlab` block 0 (agentbox
-//!   `config/sidechain/dreamlab/chain.json`, ADR-2103).
+//!   `test/vectors/testnet4.json`), and `sidestr:dreamlab` block 0 (its sealed document
+//!   is vendored at `sidestr-core/fixtures/dreamlab/chain.json`).
 //! - BIP-325 block data: oracle = siding's `blockData` run with the
 //!   bitcoin-desktop/schema codec at commit b8cbf63 and sidestr/spec at
 //!   commit 2de40bd, over dreamlab block 0 and over two v2 headers that

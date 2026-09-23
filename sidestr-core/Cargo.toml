@@ -1,9 +1,10 @@
 [package]
 name = "sidestr-core"
-version = "0.2.2"
+version = "0.3.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 license = "AGPL-3.0-only"
 description = "sidestr user-activated sidechains beside a Bitcoin-family parent: the chain document, the parents table, signed blocks generic over the header family (BIP-325 challenge, no subsidy), the peg-in claim and peg-out burn rules, Knots' unified sighash, the block file and an in-memory validating chain. A port of siding by Melvin Carvalho."

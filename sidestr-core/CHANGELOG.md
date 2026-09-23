@@ -2,6 +2,37 @@
 
 All notable changes to `sidestr-core`. The crate follows semantic versioning.
 
+## 0.3.0 — 2026-09-23
+
+SPEC 0.0.3, ported from the reference at `722ad42` (Melvin Carvalho). Breaking.
+
+### Changed
+
+- **The peg output is the one the peg holders own, at any position** (SPEC
+  6). `parent::find_pegin` and `parent::scan_pegins` take an
+  `Option<PegOwner>` (`&dyn Fn(&Script) -> bool`). With an owner, the peg is
+  the first taproot output it owns, and a marker beside nothing it owns is
+  not a peg-in. With none, the first taproot output is taken, as before and
+  as the reference does for a producer with no peg wallet. 0.0.1 and 0.0.2
+  took the first taproot output, which misread a wallet's change as the peg
+  on the first chain beside stock testnet4.
+- `parent::PegWallet` has a new required method, `owns_address`: the
+  reference's `ownedByPegWallet`, `getaddressinfo` `ismine || iswatchonly ||
+  solvable`, where a failed call reads as not owned. `CoreRpc` implements it.
+- `parent_live` no longer defaults a cookie path, and asserts ownership
+  instead of the absence of peg-ins.
+
+### Added
+
+- `parent::owned_by_peg_wallet`: the level-1 owner, which asks the peg
+  wallet about each output's parent address.
+- `sighash::rules_for(Family)`, `sighash::key_path_hash_type` and
+  `sighash::key_path_sighash`: the signing half of `lib/txsign.mjs`. The
+  message and hash type (`0x21` beside BLAKE2b, `0x01` beside stock) an
+  input's key-path signature commits to under the parent's family.
+  `StateOf::submit` already checks under `HeaderFamily::sighash_rules`, the
+  block rule's own reading. The new tests pin it.
+
 ## 0.2.2 — 2026-09-22
 
 Documentation only; no code change.

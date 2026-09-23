@@ -1,0 +1,118 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The reference engine the oracle suites drive (sidestr/spec 0.0.3 and the
+  # two checkouts siding loads). Bump together, and say so in the changelogs.
+  SIDESTR_SPEC_REF: 722ad42d3271efccfdfaf57c3c6943f58fc168f8
+  SCHEMA_REF: b8cbf6337c7450fe14ddc5bce00c7280059aab5d
+  BLAKETESTNODE_REF: d2764d21fe1f8c29b1979e49eb8287a72dd2347e
+
+jobs:
+  gate:
+    name: fmt, clippy, test, docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (all features)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Clippy (default features)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # The ported siding suites, the sealed fixtures and the audit
+      # regressions. The oracle halves report themselves skipped here; the
+      # `oracle` job runs them against the reference.
+      - name: Test (all features)
+        run: cargo test --workspace --all-features
+
+      - name: Test (default features)
+        run: cargo test --workspace
+
+      # Every published crate ships full rustdoc.
+      - name: Docs (default features)
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Docs (all features)
+        run: cargo doc --workspace --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Docs (no default features)
+        run: cargo doc --workspace --no-deps --no-default-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  oracle:
+    name: against the reference (siding at 722ad42)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Check out sidestr/spec (siding)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: sidestr/spec
+          ref: ${{ env.SIDESTR_SPEC_REF }}
+          path: reference/spec
+
+      - name: Check out bitcoin-desktop/schema
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: bitcoin-desktop/schema
+          ref: ${{ env.SCHEMA_REF }}
+          path: reference/schema
+
+      - name: Check out bitcoin-blake/blaketestnode
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: bitcoin-blake/blaketestnode
+          ref: ${{ env.BLAKETESTNODE_REF }}
+          path: reference/blaketestnode
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      # The reference's own test of the 0.0.3 change, as a sanity check of the checkouts.
+      - name: Reference txsign-test
+        run: node reference/spec/siding/test/txsign-test.mjs
+        env:
+          SCHEMA: ${{ github.workspace }}/reference/schema
+          BLAKETESTNODE: ${{ github.workspace }}/reference/blaketestnode
+
+      # Genesis and blocks both ways, the records, the wallet's spends and
+      # burns through Siding.submit(), the txsign parity (byte-identical
+      # witnesses on both families), and the mixed Rust/JS signing rounds.
+      - name: Oracle and interop suites
+        run: cargo test --workspace --all-features
+        env:
+          SIDESTR_SIDING: ${{ github.workspace }}/reference/spec/siding
+          SCHEMA: ${{ github.workspace }}/reference/schema
+          BLAKETESTNODE: ${{ github.workspace }}/reference/blaketestnode

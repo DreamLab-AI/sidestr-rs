@@ -1,5 +1,7 @@
 # sidestr-header
 
+> Part of [sidestr-rs](https://github.com/DreamLab-AI/sidestr-rs). Rust port of Melvin Carvalho's sidestr sidechains, AGPL-3.0-only: the economic engine for did:nostr agents. A did:nostr key is a sidechain wallet.
+
 Block headers for [sidestr](https://github.com/sidestr/spec) sidechains, in
 both families the parent table allows: the stock 80-byte SHA-256d header
 (beside `btc` / `tbtc4`) and Bitcoin Knots' 164-byte v2 header with the
@@ -43,7 +45,7 @@ the parent's header, and the parent table (SPEC 3.2) has two of them.
 
 ## Status
 
-0.2.1 — both families decode, encode, hash and check proof of work against
+0.3.0 — both families decode, encode, hash and check proof of work against
 the reference to the byte; the BIP-325 block data matches siding's
 `blockData` on the live `sidestr:dreamlab` block 0. With `core`, the
 `Blake2bV2` family runs `sidestr-core`'s rules, state and chain: Melvin

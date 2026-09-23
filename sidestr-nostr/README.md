@@ -1,5 +1,7 @@
 # sidestr-nostr
 
+> Part of [sidestr-rs](https://github.com/DreamLab-AI/sidestr-rs). Rust port of Melvin Carvalho's sidestr sidechains, AGPL-3.0-only: the economic engine for did:nostr agents. A did:nostr key is a sidechain wallet.
+
 The Nostr plane of [sidestr](https://github.com/sidestr/spec) sidechains, in
 Rust: an owned NIP-01 event with BIP-340 verification and a sealed signer port,
 the tip announcement (kind 33333) with the mirror trust rule, transactions and
@@ -17,7 +19,7 @@ behind, never ahead. A chain id is a name, not a proof.
 
 ```toml
 [dependencies]
-sidestr-nostr = "0.2"
+sidestr-nostr = "0.3"
 ```
 
 ```rust
@@ -37,7 +39,8 @@ assert_eq!(parse_tip(&ev).unwrap().mirrors, ["https://mirror.example/x"]);
 This crate is a port of **siding**, the reference implementation of sidestr by
 Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
 AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279`
-(the tip parser follows `announce.mjs` at `e457737`, spec 0.0.3)
+(the tip parser follows `announce.mjs` at `e457737`; the oracle runs at
+`722ad42`, SPEC 0.0.3, which changes nothing on the Nostr plane)
 (`siding/lib/{announce,relay,pledge,round,pegoutround,spend}.mjs`,
 `bin/siding.mjs`, `test/announce-test.mjs`). The event id and signature rule
 comes from the schema kernel siding loads, by the same author and under the
@@ -82,7 +85,7 @@ not upstream's.
   the two subscriptions and the on-receipt checks are pure, and I/O is a
   `RelayClient` port the caller implements.
 
-## Status — 0.2.2
+## Status — 0.3.0
 
 Every codec has encode → decode round-trip tests and rejecting tests. Proven
 against the reference:

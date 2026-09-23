@@ -1,9 +1,10 @@
 [package]
 name = "sidestr-wallet"
-version = "0.2.2"
+version = "0.3.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 license = "AGPL-3.0-only"
 description = "A wallet for sidestr sidechains: the coin set for a script, the reference coin selection, taproot key-path spends and peg-out burns signed behind a signer port, the parent-side peg-in transaction shape, and delivery as a POST body or a kind-23500 event. A port of siding by Melvin Carvalho."
@@ -26,7 +27,7 @@ default = []
 client = ["dep:ureq"]
 
 [dependencies]
-sidestr-core = { path = "../sidestr-core", version = "0.2" }
+sidestr-core = { path = "../sidestr-core", version = "0.3" }
 bitcoin = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -39,3 +40,5 @@ ureq = { version = "3", optional = true, default-features = false }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+# The BLAKE2b family, so the txsign tests run the mempool check beside txbt4 as well as tbtc4.
+sidestr-header = { path = "../sidestr-header", version = "0.3" }

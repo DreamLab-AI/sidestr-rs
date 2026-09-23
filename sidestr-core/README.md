@@ -1,5 +1,7 @@
 # sidestr-core
 
+> Part of [sidestr-rs](https://github.com/DreamLab-AI/sidestr-rs). Rust port of Melvin Carvalho's sidestr sidechains, AGPL-3.0-only: the economic engine for did:nostr agents. A did:nostr key is a sidechain wallet.
+
 [sidestr](https://github.com/sidestr/spec) user-activated sidechains beside a
 Bitcoin-family parent, in Rust: the chain document, the parents table, signed
 blocks in either header family (a BIP 325 challenge, no subsidy), the peg-in
@@ -13,9 +15,9 @@ order of blocks; they do not decide the rules.
 
 ```toml
 [dependencies]
-sidestr-core = "0.2"
+sidestr-core = "0.3"
 # and, for a chain beside a BLAKE2b parent (xbt, txbt4):
-sidestr-header = "0.2"
+sidestr-header = "0.3"
 ```
 
 The rules, state and chain are generic over the header family
@@ -28,7 +30,8 @@ The dependency edge runs from `sidestr-header` to this crate, never back.
 
 This crate is a port of **siding**, the reference implementation of sidestr by
 Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
-AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279`
+AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279` and
+brought to SPEC 0.0.3 at `722ad42d3271efccfdfaf57c3c6943f58fc168f8`
 (`siding/lib/{parents,block,chain,overlay,marker,records,address,checkpoint}.mjs`,
 `bin/siding.mjs`, and the tests in `siding/test/`). Two parts come from the
 engine siding loads, by the same author and under the same licence:
@@ -93,11 +96,15 @@ cites its sections, and every ported function names its original.
   `tests/audit_regressions_records.rs` holds every marker case and every
   block of an audit corpus to identical derived lists in both engines.
 
-## Status — 0.2.2
+## Status — 0.3.0
 
 Level 1 (one signer), both header families, end to end: genesis from the
 document, block production, validation, the mempool policy, the block file.
-Proven against the reference:
+SPEC 0.0.3 (reference `722ad42`): the peg output is the taproot output the
+peg holders own, at any position (`parent::find_pegin` with a `PegOwner`;
+`owned_by_peg_wallet` asks the node as the reference does), and
+`sighash::key_path_sighash` signs by the parent's family, the rule the
+mempool and the block both check. Proven against the reference:
 
 - the genesis of a throwaway chain rebuilt from its document and key is
   byte-identical to the one siding wrote (`tests/oracle.rs`);

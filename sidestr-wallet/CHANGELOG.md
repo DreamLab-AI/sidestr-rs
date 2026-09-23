@@ -2,6 +2,32 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
+## 0.3.0 — 2026-09-23
+
+SPEC 0.0.3 (`lib/txsign.mjs`, reference `722ad42`). Breaking.
+
+### Changed
+
+- **Signatures follow the parent's family.** A spend or burn signs Knots'
+  unified sighash with hash type `0x21` beside a BLAKE2b parent and BIP 341
+  with `0x01` beside stock Bitcoin. Each is a 65-byte witness, re-verified
+  under that family's rule before it is returned. 0.2 signed
+  `SIGHASH_DEFAULT` (64 bytes) on every chain. The fee is sized for the
+  65-byte witness, so a one-input spend is one vbyte larger.
+- `coins::from_state` takes a state of either family (`&StateOf<F>`).
+
+### Removed
+
+- `pegin::scan_pegin` and `pegin::FoundPegIn`. They duplicated
+  `sidestr_core::parent::find_pegin` with the pre-0.0.3 first-taproot rule.
+  Use `find_pegin` with the peg holders' owner.
+
+### Added
+
+- `tests/txsign.rs`: the reference's `txsign-test.mjs` cases through the
+  wallet and both families' mempools, and byte-identical witnesses with the
+  reference's own signer.
+
 ## 0.2.2 — 2026-09-22
 
 Documentation only; no code change.

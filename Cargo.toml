@@ -3,8 +3,7 @@ resolver = "2"
 members = [
     # The consensus core: chain document, parents table, stock-header blocks,
     # the sidestr overlay rules, the block file and an in-memory chain. A port
-    # of siding (github.com/sidestr/spec, AGPL-3.0). Publishable, AGPL-3.0-only
-    # (ADR-2106).
+    # of siding (github.com/sidestr/spec, AGPL-3.0). Publishable, AGPL-3.0-only.
     "sidestr-core",
     # Both header families (stock 80-byte SHA-256d, Knots 164-byte v2 BLAKE2b), their
     # proof-of-work hashes and the BIP-325 block data; no_std, RustCrypto only (ADR-2096 D2).
@@ -19,12 +18,16 @@ members = [
     # The level-2 co-signing round as a pure state machine on upstream's wire (23510-23514),
     # the peg-out PSBT round, a durable vote journal and the `cosign` signer (ADR-2101).
     "sidestr-round",
+    # An agent wallet where a did:nostr key is the wallet: balance, npub → address,
+    # spends and burns as kind-23500 events signed by the agent's key, a peg-in plan.
+    "sidestr-agent",
 ]
 
 [workspace.package]
 edition = "2021"
 rust-version = "1.85"
-repository = "https://github.com/DreamLab-AI/agentbox"
+repository = "https://github.com/DreamLab-AI/sidestr-rs"
+homepage = "https://github.com/DreamLab-AI/sidestr-rs"
 authors = ["DreamLab AI"]
 
 [workspace.dependencies]

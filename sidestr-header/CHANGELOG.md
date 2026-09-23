@@ -2,6 +2,13 @@
 
 All notable changes to `sidestr-header`. The crate follows semantic versioning.
 
+## 0.3.0 — 2026-09-23
+
+- Follows `sidestr-core` 0.3; `family` implements its `HeaderFamily` (feature
+  `core`). No change to the header codecs. `Blake2bV2`'s sighash rules agree
+  with `sidestr_core::sighash::rules_for(Family::Blake2b)` (pinned in
+  `sidestr-wallet/tests/txsign.rs`).
+
 ## 0.2.1 — 2026-09-22
 
 Documentation only; no code change.

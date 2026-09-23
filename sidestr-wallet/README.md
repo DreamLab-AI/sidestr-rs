@@ -1,5 +1,7 @@
 # sidestr-wallet
 
+> Part of [sidestr-rs](https://github.com/DreamLab-AI/sidestr-rs). Rust port of Melvin Carvalho's sidestr sidechains, AGPL-3.0-only: the economic engine for did:nostr agents. A did:nostr key is a sidechain wallet.
+
 A wallet for [sidestr](https://github.com/sidestr/spec) sidechains, in Rust:
 the coin set for a script, the reference coin selection, taproot key-path
 spends and peg-out burns signed behind a signer port, the parent-side peg-in
@@ -14,8 +16,8 @@ authorises itself; a producer includes what validates.
 
 ```toml
 [dependencies]
-sidestr-wallet = "0.2"
-sidestr-core = "0.2"
+sidestr-wallet = "0.3"
+sidestr-core = "0.3"
 ```
 
 ```rust
@@ -32,7 +34,8 @@ let post = sidestr_wallet::deliver::tx_post(producer_url, &paid.hex);   // POST 
 
 This crate is a port of **siding**, the reference implementation of sidestr by
 Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
-AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279`:
+AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279` and
+brought to SPEC 0.0.3 at `722ad42d3271efccfdfaf57c3c6943f58fc168f8` (`lib/txsign.mjs`):
 `siding/lib/spend.mjs` (`buildSpend`, `resolveTo`, `deliver`),
 `lib/address.mjs`, the transaction and marker construction of
 `lib/parent.mjs` (`scanPegins`, `payPegout`) and `lib/checkpoint.mjs`
@@ -46,13 +49,13 @@ document come from `sidestr-core` and are not duplicated.
 
 ## What changed in the port
 
-- **Plain BIP 341 signatures.** `spend.mjs` signs with the schema kernel's
-  *unified* sighash (hash type `0x21`, a 65-byte witness), which only that
-  kernel verifies and `sidestr-core` refuses. This crate signs
-  `SIGHASH_DEFAULT` (64 bytes), which siding's own verifier also accepts, so
-  a transaction from here is accepted by both engines. Byte equality with
-  `siding send` is therefore not a goal; acceptance by both is
-  (`tests/oracle.rs`).
+- **Signatures name their hash type.** As siding's `lib/txsign.mjs` does
+  since SPEC 0.0.3: the key-path signature follows the parent's family,
+  `0x01` (BIP 341) beside stock Bitcoin and `0x21` (Knots' unified sighash)
+  beside BLAKE2b, always as a 65-byte witness, and the fee is sized for it.
+  `PlainKey` signs with zero auxiliary randomness, so a transaction is a pure
+  function of its inputs; given the same randomness the reference signs the
+  same bytes (`tests/txsign.rs`).
 - **Keys behind a port.** A builder computes the sighash and asks a
   `SpendSigner` for the signature; it never holds a secret. `PlainKey` is the
   in-memory implementation (siding's model), and `key::derive_spend_key` is the
@@ -86,10 +89,18 @@ document come from `sidestr-core` and are not duplicated.
   rule), assets (SPEC 12, reserved), the faucet's relay loop and rate state
   (its payment is `build_spend`; the request template is `deliver::faucet_request`).
 
-## Status — 0.2.2
+## Status — 0.3.0
 
 Spend, burn, peg-in shape, delivery data, coin listing and selection, the
-signer and policy ports. Proven:
+signer and policy ports. Signatures follow the parent's family (SPEC 0.0.3):
+`0x01` beside stock Bitcoin, `0x21` beside BLAKE2b. Proven:
+
+- the signing parity with the reference's `lib/txsign.mjs` on both families:
+  the reference re-signs each Rust transaction's inputs with its own
+  `keyPathSighash` and zero auxiliary randomness, and the witnesses are
+  byte-identical; each engine verifies the other's signatures under the
+  chain's rule; a unified signature is refused at a stock chain's mempool,
+  a BIP 341 one accepted beside BLAKE2b (`tests/txsign.rs`);
 
 - a two-input spend and a burn built here on a throwaway chain are accepted by
   `sidestr-core`'s `State::submit` and mined, **and** by siding's

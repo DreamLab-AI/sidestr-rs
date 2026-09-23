@@ -15,7 +15,8 @@
 //! This crate is a port of **siding**, the reference implementation by
 //! Melvin Carvalho (<https://github.com/sidestr/spec>, AGPL-3.0), ported
 //! from commit `2de40bdac4cba01be0864156a553d8287c22e279` (the tip parser
-//! follows `announce.mjs` at `e457737`, spec 0.0.3), with the event
+//! follows `announce.mjs` at `e457737`; the oracle runs at `722ad42`, SPEC
+//! 0.0.3, which changes nothing on the Nostr plane), with the event
 //! id and signature rule from the schema kernel it loads
 //! (`bitcoin-desktop/schema`, `codec/nostr.js`), and carries the same
 //! licence, AGPL-3.0-only. `SPEC.md` in that repository is the design;
