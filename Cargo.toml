@@ -21,6 +21,10 @@ members = [
     # An agent wallet where a did:nostr key is the wallet: balance, npub → address,
     # spends and burns as kind-23500 events signed by the agent's key, a peg-in plan.
     "sidestr-agent",
+    # The Liquid reserve for the owner's private USD unit (ADR-2117 amendment):
+    # an LWK reserve wallet, public-Esplora sync and a signable reserve
+    # attestation. Unpublished (publish = false), not live.
+    "sidestr-bridge-liquid",
 ]
 
 [workspace.package]

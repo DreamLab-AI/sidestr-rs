@@ -22,6 +22,10 @@ its identity already has, and sign the event that carries each payment.
 > **Testnet only.** Everything here runs beside Bitcoin **testnet4** and on
 > experimental sidechains such as `sidestr:dreamlab`. Their coins have no
 > value. No real funds exist anywhere in this work.
+>
+> One exception is being wired, not live: [`sidestr-bridge-liquid`](sidestr-bridge-liquid)
+> watches a **Liquid mainnet** reserve for the owner's private USD unit
+> (ADR-2117). It is unfunded; it is funded only on the owner's explicit go.
 
 ## Crates
 
@@ -33,6 +37,13 @@ its identity already has, and sign the event that carries each payment.
 | [`sidestr-wallet`](sidestr-wallet) | coins, the reference coin selection, key-path spends and burns signed by the parent's family, the peg-in shape, delivery | [![](https://img.shields.io/crates/v/sidestr-wallet.svg)](https://crates.io/crates/sidestr-wallet) | [docs.rs](https://docs.rs/sidestr-wallet) |
 | [`sidestr-round`](sidestr-round) | the level-2 co-signing round and the peg-out PSBT round as pure state machines on the reference's wire, a vote journal, the `cosign` signer | [![](https://img.shields.io/crates/v/sidestr-round.svg)](https://crates.io/crates/sidestr-round) | [docs.rs](https://docs.rs/sidestr-round) |
 | [`sidestr-agent`](sidestr-agent) | an agent wallet where the did:nostr key is the wallet: balance, npub → address, spends and burns as kind-23500 events, a peg-in plan | [![](https://img.shields.io/crates/v/sidestr-agent.svg)](https://crates.io/crates/sidestr-agent) | [docs.rs](https://docs.rs/sidestr-agent) |
+
+Unpublished (`publish = false`), not live:
+[`sidestr-bridge-liquid`](sidestr-bridge-liquid), the Liquid reserve for the
+owner's private USD unit of account (ADR-2117): a watch-only wallet on
+Blockstream's Liquid Wallet Kit, synced from the public Esplora server, and a
+deterministic reserve attestation for the `bridge` rule to check. It depends on
+no other crate here.
 
 The dependencies run one way: `core` ← `header`, `nostr`, `wallet` ← `round`
 ← `agent`. `sidestr-core` never depends on `sidestr-header`.
