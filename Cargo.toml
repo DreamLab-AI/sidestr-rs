@@ -25,6 +25,10 @@ members = [
     # transactions, run through revm beside the UTXO set, the state root in the coinbase.
     # Not published; revm, alloy and alloy-trie stay out of sidestr-core.
     "sidestr-evm",
+    # The Liquid reserve for the owner's private USD unit (ADR-2117 amendment):
+    # an LWK reserve wallet, public-Esplora sync and a signable reserve
+    # attestation. Unpublished (publish = false), not live.
+    "sidestr-bridge-liquid",
 ]
 
 [workspace.package]

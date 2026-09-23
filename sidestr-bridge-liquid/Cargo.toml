@@ -1,0 +1,40 @@
+[package]
+name = "sidestr-bridge-liquid"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+license = "AGPL-3.0-only"
+description = "Reserve wiring for the owner's private USD unit on a sidestr chain (ADR-2117): a Liquid reserve wallet on Blockstream's Liquid Wallet Kit, synced from a public Esplora server, and a deterministic, signable reserve attestation. Unpublished; not live."
+readme = "README.md"
+keywords = ["sidestr", "liquid", "elements", "reserve", "attestation"]
+categories = ["cryptography::cryptocurrencies", "command-line-utilities"]
+# Project-specific and not live: stays private to this repository (ADR-2117).
+publish = false
+
+[[bin]]
+name = "usd-reserve"
+path = "src/main.rs"
+
+[dependencies]
+# Blockstream's Liquid Wallet Kit, MIT OR BSD-2-Clause. Only the Esplora
+# backend and the asset registry client; no AMP, Jade, Ledger or Electrum code.
+lwk_wollet = { version = "0.19", default-features = false, features = ["esplora", "registry"] }
+lwk_signer = { version = "0.19", default-features = false }
+lwk_common = { version = "0.19", default-features = false }
+# Not called directly. LWK's Esplora and registry clients are built on
+# reqwest 0.12 and take their proxy from the environment; this feature,
+# unified into LWK's reqwest, makes a `socks5h://` proxy (Tor) work.
+reqwest = { version = "0.12", default-features = false, features = ["socks"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+zeroize = "1"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
