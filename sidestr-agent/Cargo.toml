@@ -1,0 +1,42 @@
+[package]
+name = "sidestr-agent"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+license = "AGPL-3.0-only"
+description = "Rust port of Melvin Carvalho's sidestr sidechains, AGPL-3.0-only: the economic engine for did:nostr agents. A did:nostr key is a sidechain wallet. The agent wallet: balance, npub to chain address, spends and peg-out burns as kind-23500 events signed with the agent's own key, and a peg-in plan for a parent wallet to pay."
+readme = "README.md"
+documentation = "https://docs.rs/sidestr-agent"
+keywords = ["sidestr", "nostr", "sidechain", "wallet", "did-nostr"]
+categories = ["cryptography::cryptocurrencies", "command-line-utilities"]
+publish = true
+include = ["src/**", "tests/**", "README.md", "CHANGELOG.md", "LICENSE", "Cargo.toml"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[bin]]
+name = "sidestr-agent"
+path = "src/main.rs"
+
+[dependencies]
+sidestr-core = { path = "../sidestr-core", version = "0.3" }
+sidestr-wallet = { path = "../sidestr-wallet", version = "0.3", features = ["client"] }
+sidestr-nostr = { path = "../sidestr-nostr", version = "0.3" }
+sidestr-round = { path = "../sidestr-round", version = "0.2", features = ["relay"] }
+bitcoin = { workspace = true }
+bech32 = { workspace = true }
+# The peg-in plan's descriptor, address and checksum: rust-bitcoin's own
+# miniscript, never a hand-assembled taproot tree.
+miniscript = { version = "12", default-features = false, features = ["std"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# HTTPS mirrors as well as a producer on loopback: ureq's rustls backend.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
