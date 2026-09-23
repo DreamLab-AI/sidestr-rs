@@ -256,7 +256,17 @@ fn the_pegin_plan() {
     // the default: dreamlab's signer holds the key path, alice the refund
     let signer = level1_peg_key(&doc).unwrap().unwrap();
     assert_eq!(signer.to_string(), doc.signer.clone().unwrap());
-    let plan = pegin_plan(&doc, 50_000, &alice, ALICE_DRM, None).unwrap();
+    // level 1 without a target is refused: the peg is what the producer's wallet owns
+    let e = pegin_plan(&doc, 50_000, &alice, ALICE_DRM, None).unwrap_err();
+    assert!(e.to_string().contains("level 1"), "{e}");
+    let plan = pegin_plan(
+        &doc,
+        50_000,
+        &alice,
+        ALICE_DRM,
+        Some(PegTarget::Key(signer)),
+    )
+    .unwrap();
     let d = plan.descriptor.clone().unwrap();
     assert!(
         d.starts_with(&format!("tr({signer},and_v(v:pk({ALICE}),older(10000)))#")),
@@ -416,9 +426,40 @@ fn the_binary_offline() {
         k,
         "--amount",
         "50000",
+        "--peg-address",
+        LIVE_PEG,
     ]);
     assert_eq!(own["sideScript"], me["script"]);
-    assert!(own["descriptor"].as_str().unwrap().starts_with("tr("));
+    assert!(own["descriptor"].is_null());
+    let desc = bin(&[
+        "pegin-plan",
+        "--chain",
+        c,
+        "--key-file",
+        k,
+        "--amount",
+        "50000",
+        "--peg-key",
+        ALICE,
+    ]);
+    assert!(desc["descriptor"]
+        .as_str()
+        .unwrap()
+        .starts_with(&format!("tr({ALICE},")));
+    let out = Command::new(env!("CARGO_BIN_EXE_sidestr-agent"))
+        .args([
+            "pegin-plan",
+            "--chain",
+            c,
+            "--key-file",
+            k,
+            "--amount",
+            "50000",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--peg-address"));
 
     // refusals exit non-zero with a reason
     let out = Command::new(env!("CARGO_BIN_EXE_sidestr-agent"))

@@ -85,12 +85,14 @@ enum Cmd {
         /// Where the coins appear on the sidechain; the agent's own script by default.
         #[arg(long)]
         to: Option<String>,
-        /// The peg holders' key for the descriptor, when the document does not name it.
-        #[arg(long, conflicts_with = "peg_address")]
-        peg_key: Option<String>,
-        /// Pay an address the peg holders' wallet gave instead of a descriptor.
+        /// Level 1 (required there): an address the producer's parent wallet
+        /// gave, which it owns. Level 2 defaults to the challenge address.
         #[arg(long)]
         peg_address: Option<String>,
+        /// Instead: build `tr(<key>, and_v(v:pk(<refund>), older(n)))` and print
+        /// the descriptor, which the peg holders must import before paying it.
+        #[arg(long, conflicts_with = "peg_address")]
+        peg_key: Option<String>,
     },
 }
 

@@ -45,9 +45,10 @@ sidestr-agent --key-file alice.key send npub1… 30000 --dry-run         # print
 sidestr-agent --key-file alice.key burn tb1p… 20000
 
 # peg in: what a parent wallet pays (the peg address and its descriptor, the marker)
-sidestr-agent --key-file alice.key --chain chain.json pegin-plan --amount 50000
+sidestr-agent --key-file alice.key --chain chain.json pegin-plan --amount 50000 \
+  --peg-address tb1p…     # level 1: an address the producer's peg wallet gave you
 sidestr-agent --chain chain.json pegin-plan --amount 50000 --refund npub1… --to drm1p… \
-  --peg-address tb1p…     # an address the producer's peg wallet gave you
+  --peg-key <hex>         # or a descriptor the peg holders import
 ```
 
 | flag | meaning | default |
@@ -62,19 +63,20 @@ Every command prints one JSON object.
 ## The peg-in plan
 
 SPEC 6 (0.0.3) makes the peg output the taproot output the peg holders own,
-at any position. `pegin-plan` gives the parent wallet what to pay:
+at any position. Who owns it depends on the level:
 
-- **By default, on a level-1 chain**, the peg address is
-  `tr(<the chain's signer>, and_v(v:pk(<refund key>), older(<refundBlocks>)))`.
-  The plan prints the checksummed descriptor, built with rust-miniscript.
-  The producer imports it into its peg wallet (watch-only is enough) so the
-  wallet owns the output. The refund key, the agent's own by default, can
-  sweep a peg that is never claimed once `refundBlocks` parent blocks have
-  passed. This is the address the first live peg-in paid.
-- **`--peg-address`**: the address the peg wallet gave (`getnewaddress`) is
-  paid as it is. The refund is then the peg holders' promise.
-- **On a level-2 chain**: the chain's challenge address, which the
-  federation's peg wallet owns.
+- **Level 1: the producer's parent wallet.** Pass `--peg-address` with an
+  address that wallet gave (`getnewaddress` on its peg wallet), which it
+  owns. Without one, a level-1 plan is refused rather than guessed.
+- **Level 2: the chain's challenge script.** The federation's peg wallet owns
+  it. With no flag, the plan pays the challenge address.
+- **`--peg-key`, the explicit alternative:** the peg address becomes
+  `tr(<key>, and_v(v:pk(<refund key>), older(<refundBlocks>)))`. The plan
+  prints its checksummed descriptor, built with rust-miniscript. It counts
+  as a peg-in only after the peg holders import the descriptor
+  (`importdescriptors`, watch-only is enough). After that, the refund key can
+  sweep a peg left unclaimed for `refundBlocks`. The first live peg-in paid
+  such an address: `tr(<dreamlab signer>, …)` with Alice's refund key.
 
 The plan also prints the marker `pegin:<chain id>:<script>` and the `send`
 outputs for Bitcoin Core.
@@ -102,7 +104,7 @@ AGPL-3.0). It is licensed **AGPL-3.0-only**, like everything it derives
 from. See [LICENSE](LICENSE). Part of
 [sidestr-rs](https://github.com/DreamLab-AI/sidestr-rs).
 
-## Status — 0.1.0
+## Status — 0.2.0
 
 The offline parts are tested without a network (`tests/offline.rs`):
 
@@ -111,7 +113,8 @@ The offline parts are tested without a network (`tests/offline.rs`):
   chain paid;
 - a loop on a chain held in memory: a spend by npub, one back by did:nostr,
   a peg-out, each event verified as signed by the paying agent;
-- the default peg-in plan for Alice on `sidestr:dreamlab` gives the address
+- a level-1 plan without a peg-wallet address is refused; with
+  `--peg-key <signer>`, Alice's plan on `sidestr:dreamlab` gives the address
   the live peg-in paid on testnet4 (`tb1palk8…`), and its marker byte for
   byte;
 - the plan's descriptor address matches an independent build with

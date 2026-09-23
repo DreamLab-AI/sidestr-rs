@@ -2,6 +2,18 @@
 
 All notable changes to `sidestr-agent`. The crate follows semantic versioning.
 
+## 0.2.0 — 2026-09-23
+
+### Changed
+
+- **Level 1 pegs to the producer's parent wallet.** `pegin_plan` with no
+  target now refuses a level-1 chain and asks for `--peg-address`: an address
+  the producer's parent wallet gave, which it owns (SPEC 6). 0.1.0 built
+  `tr(<signer>, and_v(v:pk(<refund>), older(n)))` by default. That output
+  counts as a peg-in only once the peg holders import its descriptor, so it
+  is now opt-in through `--peg-key` / `PegTarget::Key`. Level 2 still
+  defaults to the challenge address.
+
 ## 0.1.0 — 2026-09-23
 
 First release, generalised from the tool that ran the first live loop on

@@ -428,9 +428,11 @@ pub struct PeginPlan {
     pub note: String,
 }
 
-/// The peg holders' key a level-1 document names: its `signer`, else the
-/// key of a `5120‖key` challenge. `None` for a level-2 document, whose peg
-/// holders are the federation's challenge.
+/// The signing key a level-1 document names: its `signer`, else the key of a
+/// `5120‖key` challenge. `None` for a level-2 document. This is what
+/// [`PegTarget::Key`] takes when the peg holders choose to import a
+/// descriptor; [`pegin_plan`] never uses it on its own, because at level 1
+/// the peg is whatever the producer's parent wallet owns.
 pub fn level1_peg_key(chain: &ChainDocument) -> Result<Option<XOnlyPublicKey>> {
     if Federation::for_document(chain)?.is_some() {
         return Ok(None);
@@ -453,15 +455,19 @@ pub fn level1_peg_key(chain: &ChainDocument) -> Result<Option<XOnlyPublicKey>> {
 /// transaction, outputs in any order. Since 0.0.3 the producer takes the peg
 /// to be the output its peg wallet owns, wherever it sits.
 ///
-/// - With [`PegTarget::Key`], the peg address is
-///   `tr(<key>, and_v(v:pk(<refund>), older(<refundBlocks>)))`. The
-///   descriptor comes back for the peg holders to import, and `refund` may
-///   sweep the peg after `refundBlocks` if it is never claimed.
-/// - With [`PegTarget::Address`], that address is paid as it is, and the
-///   refund is the peg holders' promise.
-/// - With no target, a level-1 document's own key ([`level1_peg_key`]) is
-///   used. A level-2 document pays its challenge address, which the
-///   federation's peg wallet owns.
+/// Who owns the peg decides what to pay (SPEC 6):
+///
+/// - **Level 1:** the producer's parent wallet owns the peg output. Pass
+///   [`PegTarget::Address`] with an address that wallet gave
+///   (`getnewaddress`); it is paid as it is. With no target, a level-1 plan
+///   is refused rather than guessed.
+/// - **Level 2:** the peg is the chain's challenge script, which the
+///   federation's peg wallet owns. With no target, its address is paid.
+/// - [`PegTarget::Key`] is the explicit alternative at either level: the
+///   peg address is `tr(<key>, and_v(v:pk(<refund>), older(<refundBlocks>)))`,
+///   and the descriptor comes back. It is a peg-in only once the peg holders
+///   have imported it (watch-only is enough), so their wallet owns it. Then
+///   `refund` may sweep a peg left unclaimed for `refundBlocks`.
 ///
 /// ```
 /// use sidestr_agent::{pegin_plan, parse_pubkey, PegTarget};
@@ -474,8 +480,16 @@ pub fn level1_peg_key(chain: &ChainDocument) -> Result<Option<XOnlyPublicKey>> {
 ///   "genesisTime":1790000000,"refundBlocks":10000,"pegs":[]}"#).unwrap();
 /// let refund = parse_pubkey("npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg").unwrap();
 /// let side = format!("5120{}", "ab".repeat(32));
-/// let plan = pegin_plan(&doc, 50_000, &refund, &side, None).unwrap();
-/// assert!(plan.peg_address.starts_with("tb1p"));
+/// // level 1: the producer's peg wallet gave this address; it is paid as it is
+/// let peg = "tb1palk8spjn20q8fa3gu8p30tx4xl0mqyk7t3497540zjkmt4zdvesq07eq2k";
+/// let plan = pegin_plan(&doc, 50_000, &refund, &side, Some(PegTarget::Address(peg.into()))).unwrap();
+/// assert_eq!(plan.peg_address, peg);
+/// assert!(plan.descriptor.is_none());
+/// // with no target, a level-1 plan is refused rather than guessed
+/// assert!(pegin_plan(&doc, 50_000, &refund, &side, None).is_err());
+/// // the explicit descriptor alternative, for peg holders who import it
+/// let key = parse_pubkey("c95b519579bda3b5e29f5dca4a0b8f9f1d04d1979d2e4c3a33483a6b34b61d88").unwrap();
+/// let plan = pegin_plan(&doc, 50_000, &refund, &side, Some(PegTarget::Key(key))).unwrap();
 /// assert!(plan.descriptor.as_deref().unwrap().starts_with("tr(c95b5195"));
 /// assert!(plan.descriptor.as_deref().unwrap().contains("older(10000)"));
 /// assert_eq!(plan.core_send[1]["data"], plan.marker);
@@ -492,10 +506,16 @@ pub fn pegin_plan(
         alias: parent.alias,
         label: parent.label,
     })?;
-    let target = match target {
-        Some(t) => Some(t),
-        None => level1_peg_key(chain)?.map(PegTarget::Key),
-    };
+    // secret-shaped text is refused before anything else is judged
+    let side_script = destination(side)?;
+    if target.is_none() && Federation::for_document(chain)?.is_none() {
+        return Err(Error::Plan(
+            "level 1: the peg output is the one the producer's parent wallet owns (SPEC 6): \
+             pay an address that wallet gave (--peg-address), or pass --peg-key for a \
+             descriptor the peg holders import"
+                .into(),
+        ));
+    }
     let (address, descriptor, note) = match target {
         Some(PegTarget::Key(k)) => {
             let text = format!(
@@ -535,7 +555,6 @@ pub fn pegin_plan(
             )
         }
     };
-    let side_script = destination(side)?;
     let p = build_pegin(chain, &address, amount, &side_script)?;
     let core_send = p.core_send_outputs();
     let marker = core_send[1]["data"]
