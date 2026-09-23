@@ -13,6 +13,13 @@ All notable changes to `sidestr-agent`. The crate follows semantic versioning.
   counts as a peg-in only once the peg holders import its descriptor, so it
   is now opt-in through `--peg-key` / `PegTarget::Key`. Level 2 still
   defaults to the challenge address.
+- **A secret-shaped destination is refused before anything else.** The
+  binary scans its raw arguments for `--to` and `--peg-address` values
+  (either form) and the send/burn destination before clap reads them.
+  `pegin_plan` checks `side` and an address target before any other work.
+  The 0.2.0 verification pass (GPT-6 Astra) found 44 of 50 cases where an
+  unrelated error came first. None echoed the secret. The pass's probes are
+  kept in `tests/audit_regressions_0_2_0.rs`.
 
 ## 0.1.0 — 2026-09-23
 

@@ -124,8 +124,61 @@ fn chain(cli: &Cli) -> Result<ChainDocument, Box<dyn std::error::Error>> {
     })
 }
 
+/// The values that are destinations or peg addresses, found in the raw
+/// arguments before clap reads them: `--to` and `--peg-address` (as
+/// `--flag value` or `--flag=value`), and the first positional argument of
+/// `send` and `burn`. Only these are checked, because `--refund`,
+/// `--peg-key` and `address` legitimately take a 64-hex public key.
+fn destination_args(args: &[String]) -> Vec<&str> {
+    const WITH_VALUE: [&str; 7] = [
+        "--url",
+        "--relays",
+        "--key-file",
+        "--chain",
+        "--fee",
+        "--refund",
+        "--peg-key",
+    ];
+    let mut out = Vec::new();
+    let mut i = 0;
+    let mut payment = false;
+    let mut positional_seen = false;
+    while i < args.len() {
+        let a = args[i].as_str();
+        if let Some(v) = a
+            .strip_prefix("--to=")
+            .or_else(|| a.strip_prefix("--peg-address="))
+        {
+            out.push(v);
+        } else if a == "--to" || a == "--peg-address" {
+            if let Some(v) = args.get(i + 1) {
+                out.push(v);
+            }
+            i += 1;
+        } else if WITH_VALUE.contains(&a) {
+            i += 1;
+        } else if a == "send" || a == "burn" {
+            payment = true;
+        } else if payment && !positional_seen && !a.starts_with('-') {
+            out.push(a);
+            positional_seen = true;
+        }
+        i += 1;
+    }
+    out
+}
+
 #[tokio::main]
 async fn main() {
+    // secret-shaped destinations are refused before anything else is judged,
+    // parsing included: no other error comes first, and nothing repeats them
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    for v in destination_args(&args) {
+        if let Err(e) = refuse_secret(v) {
+            eprintln!("sidestr-agent: {e}");
+            std::process::exit(1);
+        }
+    }
     let cli = Cli::parse();
     match run(&cli).await {
         Ok(v) => println!("{v}"),

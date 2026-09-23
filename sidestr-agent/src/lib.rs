@@ -501,12 +501,17 @@ pub fn pegin_plan(
     side: &str,
     target: Option<PegTarget>,
 ) -> Result<PeginPlan> {
+    // secret-shaped text is refused before anything else is judged, so no
+    // other error can come first and nothing can repeat it
+    refuse_secret(side)?;
+    if let Some(PegTarget::Address(a)) = &target {
+        refuse_secret(a)?;
+    }
     let parent = chain.parent()?;
     let network = parent_network(parent).ok_or(sidestr_core::Error::ReservedParent {
         alias: parent.alias,
         label: parent.label,
     })?;
-    // secret-shaped text is refused before anything else is judged
     let side_script = destination(side)?;
     if target.is_none() && Federation::for_document(chain)?.is_none() {
         return Err(Error::Plan(
