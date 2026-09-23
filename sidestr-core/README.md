@@ -104,7 +104,13 @@ SPEC 0.0.3 (reference `722ad42`): the peg output is the taproot output the
 peg holders own, at any position (`parent::find_pegin` with a `PegOwner`;
 `owned_by_peg_wallet` asks the node as the reference does), and
 `sighash::key_path_sighash` signs by the parent's family, the rule the
-mempool and the block both check. Proven against the reference:
+mempool and the block both check. Verified independently before release (GPT-6 Astra, 2026-09-23). The pass
+re-ran the gates and checked each 0.0.3 change at its layer against the
+reference. It found every block with the same claims, burns and UTXO set on
+both engines, for both families. Its probes and its four findings, now
+fixed, are kept as `tests/audit_regressions_0_0_3.rs`.
+
+Proven against the reference:
 
 - the genesis of a throwaway chain rebuilt from its document and key is
   byte-identical to the one siding wrote (`tests/oracle.rs`);

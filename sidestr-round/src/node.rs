@@ -506,7 +506,7 @@ impl<F: HeaderFamily> Node<F> {
             // SPEC 6 (0.0.3): with a peg wallet, the peg is the output it owns
             // (the k-of-n descriptor it imported); without one, the first taproot
             // output (`parent.mjs scanPegins`, `parent.walletRpc`)
-            let wallet_owner = owned_by_peg_wallet(rpc.as_ref(), network);
+            let wallet_owner = owned_by_peg_wallet(rpc.as_ref());
             let owner: Option<PegOwner<'_>> = rpc.wallet().is_some().then_some(&wallet_owner);
             match scan_pegins(
                 rpc.as_ref(),

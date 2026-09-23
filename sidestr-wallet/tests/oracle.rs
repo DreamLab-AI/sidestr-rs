@@ -229,7 +229,7 @@ fn spend_and_burn_pass_core_rules_and_siding_submit() {
         wallet.script()
     );
     let peg = p.peg.script_pubkey.clone();
-    let ours = |s: &bitcoin::Script| s == peg.as_script();
+    let ours = |s: &bitcoin::Script, _: Option<&str>| s == peg.as_script();
     assert_eq!(
         find_pegin(&tx, &doc.id, 1, None, Some(&ours))
             .unwrap()

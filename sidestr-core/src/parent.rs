@@ -87,6 +87,12 @@ pub struct ParentBlock {
     pub time: u32,
     /// Every transaction, coinbase first.
     pub txs: Vec<Transaction>,
+    /// The address the node reported for each output (`getblock … 2`,
+    /// `tx[i].vout[n].scriptPubKey.address`): `addresses[i][n]`, `None` where
+    /// the node gave none. Empty, or of the wrong shape for a transaction,
+    /// when the source reports transactions only (a test double); addresses
+    /// are then derived from the scripts for the parent's network.
+    pub addresses: Vec<Vec<Option<String>>>,
 }
 
 /// What `gettxout` says of an unspent output.
@@ -184,12 +190,14 @@ pub struct FoundPegin {
     pub parent_address: Option<String>,
 }
 
-/// Who owns a parent output: the peg holders' view of a script (SPEC 6,
-/// 0.0.3). Level 1: the producer's parent wallet
-/// ([`owned_by_peg_wallet`]); level 2: the chain's challenge
-/// (`|s| s == doc.challenge_script().as_script()`, or the peg wallet that
-/// imported the k-of-n descriptor, as the reference asks it).
-pub type PegOwner<'a> = &'a dyn Fn(&Script) -> bool;
+/// Who owns a parent output: the peg holders' view (SPEC 6, 0.0.3), asked
+/// of each taproot output with its script and its parent address — the one
+/// the node reported, or one derived for the parent's network — or `None`
+/// when there is no address. Level 1: the producer's parent wallet
+/// ([`owned_by_peg_wallet`]). Level 2: the chain's challenge
+/// (`|s, _| s == challenge`), or the peg wallet that imported the k-of-n
+/// descriptor, as the reference asks it.
+pub type PegOwner<'a> = &'a dyn Fn(&Script, Option<&str>) -> bool;
 
 /// The peg-in a parent transaction makes for `chain_id`, if any
 /// (`parent.mjs scanPegins`, SPEC 6 as of 0.0.3). A marker naming this chain
@@ -198,7 +206,8 @@ pub type PegOwner<'a> = &'a dyn Fn(&Script) -> bool;
 /// may place its change before the peg — and a marker beside nothing they
 /// own is not a peg-in. With no `owner` (a read-only producer with no peg
 /// wallet to ask) the first taproot output is taken, as the reference does
-/// and as 0.0.1 and 0.0.2 did for every producer.
+/// and as 0.0.1 and 0.0.2 did for every producer. Addresses are derived from
+/// the scripts for `network`; [`scan_pegins`] uses the node's own instead.
 ///
 /// ```
 /// use bitcoin::script::PushBytesBuf;
@@ -216,11 +225,11 @@ pub type PegOwner<'a> = &'a dyn Fn(&Script) -> bool;
 ///     TxOut { value: Amount::from_sat(50_000), script_pubkey: tr(0xbb) },
 /// ] };
 /// let peg = tr(0xbb);
-/// let ours = |s: &Script| s == peg.as_script();
+/// let ours = |s: &Script, _: Option<&str>| s == peg.as_script();
 /// let found = find_pegin(&tx, "sidestr:scan", 1, None, Some(&ours)).unwrap();
 /// assert_eq!((found.vout, found.amount, &found.script), (2, 50_000, &named));
 /// // a marker beside nothing the peg holders own is not a peg-in
-/// assert!(find_pegin(&tx, "sidestr:scan", 1, None, Some(&|_: &Script| false)).is_none());
+/// assert!(find_pegin(&tx, "sidestr:scan", 1, None, Some(&|_: &Script, _: Option<&str>| false)).is_none());
 /// // no owner to ask: the first taproot output, as before 0.0.3
 /// assert_eq!(find_pegin(&tx, "sidestr:scan", 1, None, None).unwrap().vout, 0);
 /// ```
@@ -231,17 +240,42 @@ pub fn find_pegin(
     network: Option<Network>,
     owner: Option<PegOwner<'_>>,
 ) -> Option<FoundPegin> {
+    pegin_at(tx, chain_id, height, &derived_addresses(tx, network), owner)
+}
+
+/// Each output's address for `network`, where it has one.
+fn derived_addresses(tx: &Transaction, network: Option<Network>) -> Vec<Option<String>> {
+    tx.output
+        .iter()
+        .map(|o| {
+            network
+                .and_then(|n| Address::from_script(&o.script_pubkey, n).ok())
+                .map(|a| a.to_string())
+        })
+        .collect()
+}
+
+/// [`find_pegin`] with each output's address given (`addresses[n]`, as long
+/// as the outputs): what the owner is asked and what the peg-in records.
+fn pegin_at(
+    tx: &Transaction,
+    chain_id: &str,
+    height: u32,
+    addresses: &[Option<String>],
+    owner: Option<PegOwner<'_>>,
+) -> Option<FoundPegin> {
     let script = tx
         .output
         .iter()
         .find_map(|o| parse_peg_marker(&o.script_pubkey, chain_id))?;
+    let address = |n: usize| addresses.get(n).and_then(Option::as_deref);
     let mut taproots = tx
         .output
         .iter()
         .enumerate()
         .filter(|(_, o)| o.script_pubkey.is_p2tr());
     let (vout, peg) = match owner {
-        Some(owns) => taproots.find(|(_, o)| owns(&o.script_pubkey))?,
+        Some(owns) => taproots.find(|(n, o)| owns(&o.script_pubkey, address(*n)))?,
         None => taproots.next()?,
     };
     Some(FoundPegin {
@@ -250,26 +284,18 @@ pub fn find_pegin(
         amount: peg.value.to_sat(),
         script,
         height,
-        parent_address: network
-            .and_then(|n| Address::from_script(&peg.script_pubkey, n).ok())
-            .map(|a| a.to_string()),
+        parent_address: address(vout).map(str::to_string),
     })
 }
 
 /// The level-1 owner: the peg wallet, asked about each taproot output's
 /// parent address (`parent.mjs ownedByPegWallet`: `getaddressinfo` says
-/// `ismine`, `iswatchonly` or `solvable`). An output with no address on
-/// `network`, or with no network to encode one for, is not owned, as the
-/// reference skips an output Core gives no address.
+/// `ismine`, `iswatchonly` or `solvable`). An output with no address is not
+/// owned, as the reference skips an output the node gives no address.
 pub fn owned_by_peg_wallet<W: PegWallet + ?Sized>(
     wallet: &W,
-    network: Option<Network>,
-) -> impl Fn(&Script) -> bool + '_ {
-    move |script| {
-        network
-            .and_then(|n| Address::from_script(script, n).ok())
-            .is_some_and(|a| wallet.owns_address(&a.to_string()))
-    }
+) -> impl Fn(&Script, Option<&str>) -> bool + '_ {
+    move |_, address| address.is_some_and(|a| wallet.owns_address(a))
 }
 
 /// The outputs of `tx` paying `script`: `(vout, sats)`. What a wallet's
@@ -284,8 +310,11 @@ pub fn find_payments(tx: &Transaction, script: &Script) -> Vec<(u32, u64)> {
 }
 
 /// Peg-ins for `chain_id` in the parent's blocks `from..=to`
-/// (`parent.mjs scanPegins`), each judged by [`find_pegin`] with `owner`;
-/// `on_block` hears each height as it is read.
+/// (`parent.mjs scanPegins`), each judged as [`find_pegin`] judges it with
+/// `owner`, over the addresses the node reported
+/// ([`ParentBlock::addresses`]) where it reported them — an output the node
+/// gave no address is never owned — and addresses derived for `network`
+/// otherwise; `on_block` hears each block as it is read.
 pub fn scan_pegins<R: ParentRpc + ?Sized>(
     rpc: &R,
     chain_id: &str,
@@ -299,12 +328,18 @@ pub fn scan_pegins<R: ParentRpc + ?Sized>(
     for h in from..=to {
         let block = rpc.block_at(h)?;
         on_block(&block);
-        found.extend(
-            block
-                .txs
-                .iter()
-                .filter_map(|tx| find_pegin(tx, chain_id, h, network, owner)),
-        );
+        for (i, tx) in block.txs.iter().enumerate() {
+            // the node's own addresses when it reported them for every output
+            let reported = block
+                .addresses
+                .get(i)
+                .filter(|a| a.len() == tx.output.len());
+            let found_here = match reported {
+                Some(a) => pegin_at(tx, chain_id, h, a, owner),
+                None => pegin_at(tx, chain_id, h, &derived_addresses(tx, network), owner),
+            };
+            found.extend(found_here);
+        }
     }
     Ok(found)
 }
@@ -677,13 +712,31 @@ pub mod rpc {
         }
         fn block(&self, hash: &BlockHash) -> Result<ParentBlock> {
             let v = self.call("getblock", json!([hash.to_string(), 2]))?;
-            let txs = v
+            let decoded = v
                 .get("tx")
                 .and_then(Value::as_array)
-                .ok_or_else(|| Error::Parent("getblock: no tx array".into()))?
+                .ok_or_else(|| Error::Parent("getblock: no tx array".into()))?;
+            let txs = decoded.iter().map(tx_of).collect::<Result<Vec<_>>>()?;
+            // what the node says each output's address is (`parent.mjs` reads
+            // `o.scriptPubKey.address`); `None` where it says none
+            let addresses = decoded
                 .iter()
-                .map(tx_of)
-                .collect::<Result<Vec<_>>>()?;
+                .map(|t| {
+                    t.get("vout")
+                        .and_then(Value::as_array)
+                        .map(|outs| {
+                            outs.iter()
+                                .map(|o| {
+                                    o.get("scriptPubKey")
+                                        .and_then(|s| s.get("address"))
+                                        .and_then(Value::as_str)
+                                        .map(str::to_string)
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect();
             Ok(ParentBlock {
                 height: u32_of(&v, "height")?,
                 hash: str_of(&v, "hash")?
@@ -691,6 +744,7 @@ pub mod rpc {
                     .map_err(|_| Error::Parent("getblock: bad hash".into()))?,
                 time: u32_of(&v, "time")?,
                 txs,
+                addresses,
             })
         }
         fn tx_out(&self, txid: &Txid, vout: u32) -> Result<Option<TxOutStatus>> {
@@ -906,6 +960,7 @@ mod tests {
             hash: BlockHash::from_byte_array([h as u8; 32]),
             time: 1_790_000_000 + h,
             txs,
+            addresses: vec![],
         };
         let mock = Mock {
             blocks: vec![
@@ -992,6 +1047,7 @@ mod tests {
                 hash: BlockHash::from_byte_array([1; 32]),
                 time: 0,
                 txs: vec![tx(vec![]), t.clone()],
+                addresses: vec![],
             }],
             unspent: BTreeMap::new(),
         };
@@ -1000,7 +1056,7 @@ mod tests {
             .unwrap()
             .to_string();
         let wallet = OneAddress(peg_addr.clone());
-        let owner = owned_by_peg_wallet(&wallet, net);
+        let owner = owned_by_peg_wallet(&wallet);
         let found = scan_pegins(&mock, "sidestr:scan", 1, 1, net, Some(&owner), |_| {}).unwrap();
         assert_eq!(found.len(), 1, "with a peg wallet, the owned output");
         assert_eq!(
@@ -1010,21 +1066,41 @@ mod tests {
         assert_eq!(found[0].parent_address.as_deref(), Some(peg_addr.as_str()));
         // a marker beside nothing the wallet owns is not a peg-in
         let nobody = OneAddress(String::new());
-        let none = owned_by_peg_wallet(&nobody, net);
+        let none = owned_by_peg_wallet(&nobody);
         assert!(
             scan_pegins(&mock, "sidestr:scan", 1, 1, net, Some(&none), |_| {})
                 .unwrap()
                 .is_empty()
         );
         // without a network no address can be asked about: nothing is owned
-        let blind = owned_by_peg_wallet(&wallet, None);
-        assert!(find_pegin(&t, "sidestr:scan", 1, None, Some(&blind)).is_none());
+        assert!(find_pegin(&t, "sidestr:scan", 1, None, Some(&owner)).is_none());
+        // the node's own addresses rule where it reported them: an output it gave
+        // no address is not owned even though its script has one (`parent.mjs`)
+        let mut unaddressed = mock.blocks[0].clone();
+        unaddressed.addresses = vec![vec![], vec![None, None, None]];
+        let quiet = Mock {
+            blocks: vec![unaddressed.clone()],
+            unspent: BTreeMap::new(),
+        };
+        assert!(
+            scan_pegins(&quiet, "sidestr:scan", 1, 1, net, Some(&owner), |_| {})
+                .unwrap()
+                .is_empty()
+        );
+        unaddressed.addresses[1][2] = Some(peg_addr.clone());
+        let told = Mock {
+            blocks: vec![unaddressed],
+            unspent: BTreeMap::new(),
+        };
+        let f = scan_pegins(&told, "sidestr:scan", 1, 1, None, Some(&owner), |_| {}).unwrap();
+        assert_eq!((f.len(), f[0].vout), (1, 2));
+        assert_eq!(f[0].parent_address.as_deref(), Some(peg_addr.as_str()));
         // without a peg wallet the first taproot output is taken (read-only producers)
         let legacy = scan_pegins(&mock, "sidestr:scan", 1, 1, net, None, |_| {}).unwrap();
         assert_eq!((legacy.len(), legacy[0].vout), (1, 0));
         // level 2: the challenge script is the owner
         let challenge = p2tr(0xbb);
-        let level2 = |s: &Script| s == challenge.as_script();
+        let level2 = |s: &Script, _: Option<&str>| s == challenge.as_script();
         assert_eq!(
             find_pegin(&t, "sidestr:scan", 1, None, Some(&level2))
                 .unwrap()

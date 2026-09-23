@@ -118,5 +118,8 @@ The offline parts are tested without a network (`tests/offline.rs`):
   rust-bitcoin's `TaprootBuilder`;
 - the binary's offline commands.
 
-Relay publishing and the producer's HTTP calls are `sidestr-round` and
-`sidestr-wallet`'s, tested there.
+Secret-shaped text (an `nsec`, or 64 bare hex characters) is never accepted
+as a destination or address, and is never echoed. NIP-19 strings are strict
+Bech32. Both are pinned in `tests/audit_regressions_0_0_3.rs`, from the
+pre-release verification pass. Relay publishing and the producer's HTTP
+calls are `sidestr-round` and `sidestr-wallet`'s, tested there.

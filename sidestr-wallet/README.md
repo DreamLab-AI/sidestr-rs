@@ -93,7 +93,11 @@ document come from `sidestr-core` and are not duplicated.
 
 Spend, burn, peg-in shape, delivery data, coin listing and selection, the
 signer and policy ports. Signatures follow the parent's family (SPEC 0.0.3):
-`0x01` beside stock Bitcoin, `0x21` beside BLAKE2b. Proven:
+`0x01` beside stock Bitcoin, `0x21` beside BLAKE2b. Verified independently before release (GPT-6 Astra, 2026-09-23). The pass
+re-ran the gates and checked each 0.0.3 change at its layer against the
+reference. It found every block with the same claims, burns and UTXO set on
+both engines, for both families. Its probes and its four findings, now
+fixed, are kept as `tests/audit_regressions_0_0_3.rs`. Proven:
 
 - the signing parity with the reference's `lib/txsign.mjs` on both families:
   the reference re-signs each Rust transaction's inputs with its own

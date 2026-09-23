@@ -65,8 +65,14 @@ fn the_peg_wallets_funding_is_found_from_the_parent_side() {
     let mut where_found = None;
     let mut scanned = 0;
     // SPEC 6 (0.0.3): the peg is the output the peg wallet owns, at any position
-    let owner = owned_by_peg_wallet(&rpc, Some(bitcoin::Network::Testnet4));
-    assert!(owner(&script), "the wallet owns its own funding output");
+    let owner = owned_by_peg_wallet(&rpc);
+    let funding_address = bitcoin::Address::from_script(&script, bitcoin::Network::Testnet4)
+        .unwrap()
+        .to_string();
+    assert!(
+        owner(&script, Some(&funding_address)),
+        "the wallet owns its own funding output"
+    );
     let found = scan_pegins(
         &rpc,
         "sidestr:dreamlab",

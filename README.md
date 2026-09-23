@@ -78,7 +78,12 @@ The reference engine is the oracle. What is tested:
 - **Round:** Rust and JS co-signers seal the same blocks and pay peg-outs
   proposed by either engine.
 - **Audit regressions:** independent audits' counter-examples are kept as
-  `tests/audit_regressions*.rs`.
+  `tests/audit_regressions*.rs`. The 0.0.3 release was verified by GPT-6
+  Astra before publishing. It re-ran every gate and confirmed each change at
+  its layer against the reference. It compared 103 stock and 104 BLAKE2b
+  block snapshots, including claims, burns and the full UTXO set, and found
+  them equal. It raised four findings, all fixed and pinned as
+  `tests/audit_regressions_0_0_3.rs`.
 
 To run the oracle suites, check out the three reference repositories at the
 pinned commits and name them:

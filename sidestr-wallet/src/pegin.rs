@@ -37,7 +37,7 @@
 //! assert_eq!(parse_peg_marker(&back.output[1].script_pubkey, "sidestr:trial").unwrap(), p.side_script);
 //! // and the peg holders, scanning the parent, find it at the output they own (SPEC 6, 0.0.3)
 //! let peg = p.peg.script_pubkey.clone();
-//! let ours = |s: &bitcoin::Script| s == peg.as_script();
+//! let ours = |s: &bitcoin::Script, _: Option<&str>| s == peg.as_script();
 //! let found = find_pegin(&back, "sidestr:trial", 1, None, Some(&ours)).unwrap();
 //! assert_eq!((found.vout, found.amount), (0, 250_000));
 //!

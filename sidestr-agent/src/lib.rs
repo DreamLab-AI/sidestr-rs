@@ -23,7 +23,7 @@
 //! |---|---|
 //! | [`AgentKey`] | the secret: a key file as 64 hex characters or an `nsec` (NIP-19) |
 //! | [`parse_pubkey`], [`npub`], [`Identity`] | `npub` / hex / `did:nostr:` ↔ x-only key ↔ script ↔ chain address |
-//! | [`destination`] | a pay-to: an `npub`, a `did:nostr:`, a chain address or a script hex |
+//! | [`destination`], [`refuse_secret`] | a pay-to: an `npub`, a `did:nostr:`, a chain address or a script hex; never secret-shaped text |
 //! | [`prepare`] | a spend or peg-out burn, signed by the key, and its kind-23500 event, signed by the same key |
 //! | [`pegin_plan`] | what a parent wallet pays to peg in: the peg address (and its refund descriptor), the marker |
 //!
@@ -80,6 +80,7 @@
 
 use std::str::FromStr;
 
+use bech32::primitives::decode::CheckedHrpstring;
 use bech32::{Bech32, Hrp};
 use bitcoin::key::XOnlyPublicKey;
 use bitcoin::secp256k1::SecretKey;
@@ -133,6 +134,40 @@ pub type Result<T> = core::result::Result<T, Error>;
 const NSEC: Hrp = Hrp::parse_unchecked("nsec");
 const NPUB: Hrp = Hrp::parse_unchecked("npub");
 
+/// A NIP-19 string's payload: Bech32 (not Bech32m, which NIP-19 does not
+/// use), under exactly `hrp`. The error is static: the text may be a secret.
+fn nip19(text: &str, hrp: Hrp, what: &'static str) -> Result<Vec<u8>> {
+    let c = CheckedHrpstring::new::<Bech32>(text).map_err(|_| Error::Key(what))?;
+    if c.hrp() != hrp {
+        return Err(Error::Key(what));
+    }
+    Ok(c.byte_iter().collect())
+}
+
+/// Whether `text` has the shape of a secret key: an `nsec`, or 32 bytes of
+/// bare hex (a key file's form). Such text is never a destination here; it
+/// is refused before it can reach an error message, a log, or an output
+/// script on the chain.
+fn looks_secret(text: &str) -> bool {
+    let t = text.trim();
+    t.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("nsec1"))
+        || (t.len() == 64 && t.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// Refuse secret-shaped text where a destination or an address is expected
+/// (see [`destination`]); the error names what to use and never echoes it.
+pub fn refuse_secret(text: &str) -> Result<&str> {
+    if looks_secret(text) {
+        return Err(Error::Destination(
+            "that looks like a secret key (an nsec, or 64 hex characters), which is never a \
+             destination: use an npub1…, a did:nostr:<hex>, an address, or a full script hex \
+             such as 5120…"
+                .into(),
+        ));
+    }
+    Ok(text)
+}
+
 /// An agent's secret key: its Nostr identity, and so its wallet. `Debug`
 /// prints the public key only.
 #[derive(Clone)]
@@ -164,11 +199,7 @@ impl AgentKey {
     pub fn parse(text: &str) -> Result<Self> {
         let t = text.trim();
         let secret = if t.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("nsec1")) {
-            let (hrp, bytes) =
-                bech32::decode(t).map_err(|_| Error::Key("an nsec with a bad checksum"))?;
-            if hrp != NSEC {
-                return Err(Error::Key("not an nsec"));
-            }
+            let bytes = nip19(t, NSEC, "not a Bech32 nsec (NIP-19)")?;
             SecretKey::from_slice(&bytes).map_err(|_| Error::Key("an nsec of the wrong length"))?
         } else {
             key_from_hex(t).map_err(|_| Error::Key("want 64 hex characters or an nsec1…"))?
@@ -216,12 +247,7 @@ impl AgentKey {
 pub fn parse_pubkey(text: &str) -> Result<XOnlyPublicKey> {
     let t = text.trim();
     let bytes = if t.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("npub1")) {
-        let (hrp, bytes) =
-            bech32::decode(t).map_err(|_| Error::Key("an npub with a bad checksum"))?;
-        if hrp != NPUB {
-            return Err(Error::Key("not an npub"));
-        }
-        bytes
+        nip19(t, NPUB, "not a Bech32 npub (NIP-19)")?
     } else {
         let h = t.strip_prefix("did:nostr:").unwrap_or(t);
         if h.len() != 64 {
@@ -269,9 +295,21 @@ pub fn identity(key: &XOnlyPublicKey, prefix: &str) -> Option<Identity> {
 
 /// A destination in the form the wallet takes (a script hex or an address
 /// under any prefix): an `npub` or a `did:nostr:` becomes its key's `5120`
-/// script; anything else passes through for the wallet to judge.
+/// script; anything else passes through for the wallet to judge — except
+/// secret-shaped text ([`refuse_secret`]). A bare 64-hex string is refused
+/// too: it may be a key file's secret, and the wallet would otherwise read
+/// it as a 32-byte script and publish it in an output. A key is named as an
+/// `npub` or a `did:nostr:`, a script by its full hex.
+///
+/// ```
+/// use sidestr_agent::destination;
+/// assert!(destination("nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5").is_err());
+/// assert!(destination(&"ab".repeat(32)).is_err());
+/// assert_eq!(destination(&format!("did:nostr:{}", "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e")).unwrap(),
+///            "51207e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e");
+/// ```
 pub fn destination(to: &str) -> Result<String> {
-    let t = to.trim();
+    let t = refuse_secret(to)?.trim();
     if t.is_empty() {
         return Err(Error::Destination("empty".into()));
     }
@@ -481,7 +519,7 @@ pub fn pegin_plan(
             )
         }
         Some(PegTarget::Address(a)) => (
-            a,
+            refuse_secret(&a)?.to_string(),
             None,
             "paid to an address the peg holders' wallet owns; the refund is theirs to honour"
                 .into(),

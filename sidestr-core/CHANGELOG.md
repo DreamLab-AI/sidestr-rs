@@ -19,13 +19,24 @@ SPEC 0.0.3, ported from the reference at `722ad42` (Melvin Carvalho). Breaking.
 - `parent::PegWallet` has a new required method, `owns_address`: the
   reference's `ownedByPegWallet`, `getaddressinfo` `ismine || iswatchonly ||
   solvable`, where a failed call reads as not owned. `CoreRpc` implements it.
+- `parent::PegOwner` is `&dyn Fn(&Script, Option<&str>) -> bool`: the owner
+  is asked about each taproot output with its parent address, or `None`
+  when there is none, and an output with no address is never owned by the
+  peg wallet.
+- `parent::ParentBlock` has `addresses`: what the node reported for each
+  output (`getblock … 2`, `scriptPubKey.address`). `scan_pegins` asks the
+  owner about the node's address, as `parent.mjs` does, and derives one only
+  where the source reported none, as a test double does. The 0.0.3
+  verification pass found that an output Core gave no address was still
+  asked about by its derived address, where the reference found no peg-in
+  (`tests/audit_regressions_0_0_3.rs`, both engines over the same block).
 - `parent_live` no longer defaults a cookie path, and asserts ownership
   instead of the absence of peg-ins.
 
 ### Added
 
-- `parent::owned_by_peg_wallet`: the level-1 owner, which asks the peg
-  wallet about each output's parent address.
+- `parent::owned_by_peg_wallet(wallet)`: the level-1 owner, which asks the
+  peg wallet about each output's parent address.
 - `sighash::rules_for(Family)`, `sighash::key_path_hash_type` and
   `sighash::key_path_sighash`: the signing half of `lib/txsign.mjs`. The
   message and hash type (`0x21` beside BLAKE2b, `0x01` beside stock) an

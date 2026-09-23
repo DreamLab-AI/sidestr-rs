@@ -18,6 +18,12 @@ events each signed with its agent's own Nostr key, and a peg-out.
   older(<refundBlocks>)))` with its checksummed descriptor (through
   rust-miniscript), or an address the peg wallet gave, or a level-2 chain's
   challenge. Also the `pegin:` marker and Bitcoin Core's `send` outputs.
+- `refuse_secret`: secret-shaped text (an `nsec`, or 64 bare hex
+  characters) is refused as a destination, a burn target or a peg address,
+  with an error that never repeats it. A bare 64-hex destination could
+  otherwise be read as a 32-byte script and published on the chain. NIP-19
+  strings are decoded as Bech32 only; Bech32m is refused. Both came from the
+  pre-release verification pass (`tests/audit_regressions_0_0_3.rs`).
 - The `sidestr-agent` binary: `balance`, `address`, `send`, `burn`,
   `pegin-plan`; `--url`, `--relays`, `--key-file`, `--chain`; `--dry-run` and
   `--post` for payments.

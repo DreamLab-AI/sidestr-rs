@@ -10,6 +10,13 @@ All notable changes to `sidestr-round`. The crate follows semantic versioning.
   it imported), at any position. Without one it takes the first taproot
   output, as the reference's `pegTick` does.
 - Interoperates with siding at `722ad42`.
+- `tests/interop_pegout.rs` no longer depends on which signer is faster. The
+  0.0.3 verification pass saw it fail when the two Rust signers of a
+  {Rust, JS, Rust} 2-of-3 completed a Rust proposal before the JS one
+  signed. Signer 3 now seals blocks but has no parent wallet, so every
+  payment carries the other engine's co-signature. Each burn is timed to
+  the wanted payer's slot, and the test judges the proposal that was
+  co-signed, not the first one.
 
 ## 0.1.1 — 2026-09-22
 

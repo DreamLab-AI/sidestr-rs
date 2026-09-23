@@ -1,11 +1,21 @@
 //! Acceptance 3: the peg-out round, mixed. A throwaway 2-of-3 chain beside
 //! `tbtc4` with coins, {Rust, JS, Rust} signers and a Bitcoin Core stand-in
-//! every signer's peg wallet talks to. Burns are mined by the round; the
-//! payer proposes a PSBT — JS through `walletcreatefundedpsbt`, Rust
-//! through `build_pegout_psbt` — the others co-sign, the payer finalises and
+//! the peg wallets talk to. Burns are mined by the round; the payer proposes
+//! a PSBT — JS through `walletcreatefundedpsbt`, Rust through
+//! `build_pegout_psbt` — the other co-signs, the payer finalises and
 //! broadcasts, and each finalised parent transaction is verified here with
 //! `sidestr-core`'s BIP-342 verifier against the federation's leaf. Both
 //! directions must occur. Needs the reference checkouts; skipped otherwise.
+//!
+//! Signer 3 (Rust) seals blocks but has no parent wallet, so it takes no part
+//! in the peg-out round: the peg-out participants are signer 1 (Rust) and
+//! signer 2 (JS), and at threshold 2 every payment carries the other
+//! engine's co-signature by construction. With a second Rust co-signer the
+//! two Rust signers could complete a Rust proposal between them before the JS
+//! one signed, and the test depended on who was faster (found by the 0.0.3
+//! verification pass). Each burn is posted when the next block's height
+//! makes the wanted engine the payer (`height mod 3`), so both directions
+//! occur in a bounded number of burns.
 #![cfg(all(feature = "bin", feature = "relay"))]
 
 mod support;
@@ -165,7 +175,6 @@ async fn a_burn_is_paid_by_a_psbt_round_proposed_by_js_and_by_rust() {
     };
     let a1 = parent_args("w1");
     let a2 = parent_args("w2");
-    let a3 = parent_args("w3");
     fn s(v: &[String]) -> Vec<&str> {
         v.iter().map(String::as_str).collect()
     }
@@ -191,6 +200,7 @@ async fn a_burn_is_paid_by_a_psbt_round_proposed_by_js_and_by_rust() {
             &s(&a2),
             scratch.path("p2.log"),
         ),
+        // blocks only: no parent wallet, so no part in the peg-out round
         rust_signer(
             "signer 3 (Rust)",
             &chain_path,
@@ -198,7 +208,7 @@ async fn a_burn_is_paid_by_a_psbt_round_proposed_by_js_and_by_rust() {
             &key_paths[2],
             ports[2],
             &relay.url(),
-            &s(&a3),
+            &[],
             scratch.path("p3.log"),
         ),
     ];
@@ -220,7 +230,8 @@ async fn a_burn_is_paid_by_a_psbt_round_proposed_by_js_and_by_rust() {
     if !wait_for(60, || tip(ports[0]) >= 101).await {
         fail("the round did not seal a block on the Rust-made chain");
     }
-    let rust: BTreeSet<&str> = [pubs[0].as_str(), pubs[2].as_str()].into();
+    // the peg-out participants: signer 1 (Rust, slot 0) and signer 2 (JS, slot 1)
+    let rust_pub = pubs[0].as_str();
     let js_pub = pubs[1].as_str();
     let throwaway = SecretKeySigner::from_bytes(&[9u8; 32]).unwrap();
     let mut burns: Vec<String> = Vec::new();
@@ -245,6 +256,11 @@ async fn a_burn_is_paid_by_a_psbt_round_proposed_by_js_and_by_rust() {
             .cloned()
             .unwrap_or_else(|| fail("no mature wallet coin"));
         let tx = burn_tx(&coin, 20_000);
+        // post when the next block's height makes the wanted engine the payer
+        // (payer = height mod 3; a burn that misses lands on another slot and is
+        // still paid, by whoever the ring entitles)
+        let want = if js_proposed { 0 } else { 1 };
+        wait_for(30, || (tip(ports[0]) + 1) % 3 == want).await;
         let hex = hex::encode(bitcoin::consensus::encode::serialize(&tx));
         let key = format!("{}:0", tx.compute_txid());
         // over the relay (every signer's mempool) and to the Rust signer's /tx
@@ -264,42 +280,67 @@ async fn a_burn_is_paid_by_a_psbt_round_proposed_by_js_and_by_rust() {
             fail(&format!("burn {n} was not paid on the parent in 90 s"));
         }
         let events = relay.events();
-        let proposal = events
+        // every proposal for this burn, earliest first, with who co-signed each: a payer
+        // re-proposes after `propose_after` when its first proposal went unanswered (a
+        // co-signer had not yet seen the burn's block), so the one that was paid is the
+        // one that gathered a co-signature
+        let mut proposals: Vec<_> = events
             .iter()
             .filter(|e| {
                 e.kind == 23512 && sidestr_nostr::tags::first(&e.tags, "d") == Some(key.as_str())
             })
-            .min_by_key(|e| e.created_at)
-            .unwrap_or_else(|| fail("no 23512 for the burn"));
-        let cosigners: BTreeSet<&str> = events
-            .iter()
-            .filter(|e| {
-                e.kind == 23513
-                    && sidestr_nostr::tags::first(&e.tags, "e") == Some(proposal.id.as_str())
-            })
-            .map(|e| e.pubkey.as_str())
             .collect();
+        proposals.sort_by_key(|e| e.created_at);
+        if proposals.is_empty() {
+            fail("no 23512 for the burn");
+        }
+        let cosigned = |p: &sidestr_nostr::event::Event| -> BTreeSet<String> {
+            events
+                .iter()
+                .filter(|e| {
+                    e.kind == 23513
+                        && sidestr_nostr::tags::first(&e.tags, "e") == Some(p.id.as_str())
+                })
+                .map(|e| e.pubkey.clone())
+                .collect()
+        };
+        let Some((proposal, cosigners)) = proposals
+            .iter()
+            .map(|p| (*p, cosigned(p)))
+            .find(|(_, c)| !c.is_empty())
+        else {
+            fail(&format!(
+                "burn {n} was paid but none of its {} proposals was co-signed",
+                proposals.len()
+            ));
+        };
+        let cosigners: BTreeSet<&str> = cosigners.iter().map(String::as_str).collect();
         let by = if proposal.pubkey == js_pub {
             "JS"
         } else {
             "Rust"
         };
         eprintln!(
-            "  burn {n} {}… proposed by signer {} ({by}), co-signed by {:?}",
+            "  burn {n} {}… proposed by signer {} ({by}), co-signed by {:?} ({} proposal(s))",
             &key[..16],
             pubs.iter().position(|p| *p == proposal.pubkey).unwrap() + 1,
             cosigners
                 .iter()
                 .map(|c| pubs.iter().position(|p| p == c).unwrap() + 1)
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
+            proposals.len()
         );
         if proposal.pubkey == js_pub {
             assert!(
-                cosigners.iter().any(|c| rust.contains(c)),
-                "a JS proposal without a Rust co-signature"
+                cosigners.contains(rust_pub),
+                "a JS proposal without the Rust co-signature"
             );
             js_proposed = true;
         } else {
+            assert_eq!(
+                proposal.pubkey, rust_pub,
+                "signer 3 takes no part in peg-outs"
+            );
             assert!(
                 cosigners.contains(js_pub),
                 "a Rust proposal without the JS co-signature"
@@ -347,11 +388,12 @@ async fn a_burn_is_paid_by_a_psbt_round_proposed_by_js_and_by_rust() {
                 && o.value.to_sat() == 20_000));
         assert!(paid.insert(side), "a burn paid twice");
     }
-    // every signer's ledger agrees with the parent: the payer records at broadcast, the others when
-    // their next parent poll reconciles the wallet history (`--parent-poll 3`)
+    // each peg-out participant's ledger agrees with the parent: the payer records at broadcast, the
+    // other when its next parent poll reconciles the wallet history (`--parent-poll 3`); signer 3,
+    // with no parent wallet, pays nothing and records nothing
     let want = burns.len() as u64;
     let all_paid = || {
-        ports
+        ports[..2]
             .iter()
             .all(|p| status(*p)["pegouts"]["paid"].as_u64() == Some(want))
     };
@@ -361,6 +403,9 @@ async fn a_burn_is_paid_by_a_psbt_round_proposed_by_js_and_by_rust() {
         }
         fail("the ledgers did not all reconcile to the parent");
     }
+    let third = status(ports[2]);
+    assert_eq!(third["pegouts"]["paid"].as_u64(), Some(0), "{third}");
+    assert!(third["pegouts"]["payer"].is_null(), "{third}");
     eprintln!("=== passed: {} burns paid by the PSBT round, proposed by JS and by Rust, co-signed across engines, verified under BIP 342", burns.len());
     drop(procs);
 }

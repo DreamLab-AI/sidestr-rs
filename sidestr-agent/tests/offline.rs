@@ -309,7 +309,7 @@ fn the_pegin_plan() {
             .to_hex_string(),
         format!("5120{ALICE}")
     );
-    let owns = |s: &Script| s == peg_script.as_script();
+    let owns = |s: &Script, _: Option<&str>| s == peg_script.as_script();
     let found = find_pegin(&tx, &doc.id, 1, Some(Network::Testnet4), Some(&owns)).unwrap();
     assert_eq!((found.vout, found.amount), (2, 50_000));
     assert_eq!(found.parent_address.unwrap(), plan.peg_address);

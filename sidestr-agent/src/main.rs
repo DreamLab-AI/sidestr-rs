@@ -8,7 +8,8 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use sidestr_agent::{
-    destination, identity, parse_pubkey, pegin_plan, prepare, AgentKey, Payment, PegTarget,
+    destination, identity, parse_pubkey, pegin_plan, prepare, refuse_secret, AgentKey, Payment,
+    PegTarget,
 };
 use sidestr_core::document::ChainDocument;
 use sidestr_round::relay::{ok_count, publish_all, unix_now};
@@ -176,7 +177,7 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
             to,
             amount,
             deliver,
-        } => pay(cli, Payment::Burn, to, *amount, deliver).await,
+        } => pay(cli, Payment::Burn, refuse_secret(to)?, *amount, deliver).await,
         Cmd::PeginPlan {
             amount,
             refund,
