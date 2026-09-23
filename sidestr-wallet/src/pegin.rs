@@ -19,7 +19,8 @@
 //! use bitcoin::consensus::encode::{deserialize, serialize};
 //! use sidestr_core::document::ChainDocument;
 //! use sidestr_core::marker::parse_peg_marker;
-//! use sidestr_wallet::pegin::{build_pegin, scan_pegin};
+//! use sidestr_core::parent::find_pegin;
+//! use sidestr_wallet::pegin::build_pegin;
 //! use sidestr_wallet::Error;
 //!
 //! let chain = ChainDocument::from_json(r#"{"id":"sidestr:trial","name":"trial","parent":"tbtc4",
@@ -34,8 +35,10 @@
 //! let tx = p.transaction(vec![], None);
 //! let back: bitcoin::Transaction = deserialize(&serialize(&tx)).unwrap();
 //! assert_eq!(parse_peg_marker(&back.output[1].script_pubkey, "sidestr:trial").unwrap(), p.side_script);
-//! // and a level-2 producer scanning the parent finds it
-//! let found = scan_pegin(&back, "sidestr:trial").unwrap();
+//! // and the peg holders, scanning the parent, find it at the output they own (SPEC 6, 0.0.3)
+//! let peg = p.peg.script_pubkey.clone();
+//! let ours = |s: &bitcoin::Script| s == peg.as_script();
+//! let found = find_pegin(&back, "sidestr:trial", 1, None, Some(&ours)).unwrap();
 //! assert_eq!((found.vout, found.amount), (0, 250_000));
 //!
 //! // a mainnet peg address beside tbtc4 is the wrong network
@@ -216,39 +219,6 @@ fn marker_payload(spk: &ScriptBuf) -> Vec<u8> {
     sidestr_core::marker::op_return_data(spk)
         .unwrap_or_default()
         .to_vec()
-}
-
-/// A peg-in found in a parent transaction (`siding/lib/parent.mjs
-/// scanPegins`, per transaction).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FoundPegIn {
-    /// The peg output's index.
-    pub vout: u32,
-    /// Its value in sats.
-    pub amount: u64,
-    /// The sidechain script the marker names.
-    pub script: ScriptBuf,
-}
-
-/// The peg-in a parent transaction makes for `chain_id`, if any: the first
-/// output whose marker names this chain gives the script, and the peg
-/// output is the first taproot output (the marker is `OP_RETURN`, never
-/// taproot). `None` when there is no marker or no taproot output.
-pub fn scan_pegin(tx: &Transaction, chain_id: &str) -> Option<FoundPegIn> {
-    let script = tx
-        .output
-        .iter()
-        .find_map(|o| parse_peg_marker(&o.script_pubkey, chain_id))?;
-    let (vout, peg) = tx
-        .output
-        .iter()
-        .enumerate()
-        .find(|(_, o)| o.script_pubkey.is_p2tr())?;
-    Some(FoundPegIn {
-        vout: vout as u32,
-        amount: peg.value.to_sat(),
-        script,
-    })
 }
 
 /// The peg holders' payment of one burn on the parent (SPEC 7;

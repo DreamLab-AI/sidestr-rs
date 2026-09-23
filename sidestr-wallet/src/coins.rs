@@ -25,8 +25,9 @@
 
 use bitcoin::{OutPoint, Script};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sidestr_core::block::HeaderFamily;
 use sidestr_core::rules::Params;
-use sidestr_core::state::{CoinRef, State};
+use sidestr_core::state::{CoinRef, StateOf};
 
 use crate::error::Result;
 
@@ -84,9 +85,9 @@ pub fn from_json(text: &str) -> Result<Vec<Coin>> {
     Ok(serde_json::from_str(text)?)
 }
 
-/// The same list from a chain held in memory ([`State::coins`]), sorted by
-/// height then outpoint as the state lists them.
-pub fn from_state(state: &State, script: &Script) -> Vec<Coin> {
+/// The same list from a chain held in memory ([`StateOf::coins`]), of either
+/// header family, sorted by height then outpoint as the state lists them.
+pub fn from_state<F: HeaderFamily>(state: &StateOf<F>, script: &Script) -> Vec<Coin> {
     state.coins(script).into_iter().map(Coin::from).collect()
 }
 

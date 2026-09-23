@@ -48,9 +48,10 @@ use crate::error::{Error, Result};
 /// (so it knows which coins are its and what the prevouts' scripts are) and
 /// a BIP 340 signature over a 32-byte taproot key-path sighash.
 ///
-/// The sighash is computed by the builder with rust-bitcoin's
-/// `SighashCache::taproot_key_spend_signature_hash`, `SIGHASH_DEFAULT`, and
-/// the signer signs exactly that digest. A signer that wants to see what it
+/// The sighash is computed by the builder under the chain's family
+/// ([`sidestr_core::sighash::key_path_sighash`]: BIP 341 with `SIGHASH_ALL`
+/// beside stock Bitcoin, Knots' unified sighash beside BLAKE2b), and the
+/// signer signs exactly that digest; the builder appends the hash type. A signer that wants to see what it
 /// is signing gets the whole transaction through
 /// [`SpendPolicy`](crate::policy::SpendPolicy) first; the port is narrow on
 /// purpose (ADR-2101: "a generic sign-this-payload port is a bypass" —

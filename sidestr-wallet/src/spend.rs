@@ -4,12 +4,15 @@
 //! `siding/lib/spend.mjs buildSpend` and `resolveTo`, and of the shape
 //! `siding send` prints.
 //!
-//! The transaction is the one a validator with only key-path verification
-//! accepts ([`sidestr_core::block::verify_key_path_input`]): version 2,
-//! lock time 0, every input an outpoint paying the signer's `5120‖key`
-//! script with sequence `0xfffffffd`, every witness one 64-byte BIP 340
-//! signature over the BIP 341 key-path sighash with `SIGHASH_DEFAULT`, the
-//! amount to the destination, change back to the signer's script.
+//! The transaction is the one the chain's key-path rule accepts
+//! ([`sidestr_core::sighash::verify_taproot_key_path`] under the rules the
+//! parent's family hands down, SPEC 3 as of 0.0.3): version 2, lock time 0,
+//! every input an outpoint paying the signer's `5120‖key` script with
+//! sequence `0xfffffffd`, every witness one BIP 340 signature followed by
+//! its hash type — `0x01` over BIP 341's sighash beside stock Bitcoin, `0x21`
+//! over Knots' unified sighash beside a BLAKE2b parent
+//! (`siding/lib/txsign.mjs signKeyPath`) — the amount to the destination,
+//! change back to the signer's script.
 //!
 //! ```
 //! use bitcoin::secp256k1::SecretKey;
@@ -30,25 +33,25 @@
 //! let you = sidestr_wallet::key::address_for(&PlainKey::new(SecretKey::from_slice(&[8u8; 32]).unwrap()).pubkey(), "ex").unwrap();
 //!
 //! let s = build_spend(&SpendRequest { chain: &chain, coins: &coins, tip_height: 10, to: &you, amount: 40_000, fee: None }, &me, &Permissive).unwrap();
-//! assert_eq!((s.inputs, s.amount, s.vsize), (1, 40_000, 154));   // one input, amount + change
+//! assert_eq!((s.inputs, s.amount, s.vsize), (1, 40_000, 155));   // one input, amount + change
 //! assert_eq!(s.fee, 2 * s.vsize);                  // minFeeRate × vsize, exactly
 //! assert_eq!(s.change, 100_000 - 40_000 - s.fee);
 //! assert_eq!(s.tx.output[1].script_pubkey, me.script());
-//! // what the chain will check
+//! // beside tbtc4 the signature is BIP 341's, hash type 0x01, and the chain checks it so
+//! assert_eq!(s.tx.input[0].witness.nth(0).unwrap()[64], 0x01);
 //! let prevouts = [bitcoin::TxOut { value: bitcoin::Amount::from_sat(100_000), script_pubkey: me.script() }];
 //! assert!(verify_key_path_input(&s.tx, 0, &prevouts).is_ok());
 //! assert_eq!(s.hex, bitcoin::consensus::encode::serialize_hex(&s.tx));
 //! ```
 
 use bitcoin::consensus::encode::serialize_hex;
-use bitcoin::sighash::{Prevouts, SighashCache, TapSighashType};
 use bitcoin::transaction::Version;
 use bitcoin::{
     absolute::LockTime, Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
 };
 use sidestr_core::address::{decode_address, script_to_address};
-use sidestr_core::block::verify_key_path_input;
 use sidestr_core::document::ChainDocument;
+use sidestr_core::sighash::{key_path_sighash, rules_for, verify_taproot_key_path};
 
 use crate::coins::{mature, Coin};
 use crate::error::{Error, Result};
@@ -132,11 +135,13 @@ pub struct Spend {
     pub note: Option<String>,
 }
 
-/// Build and sign a spend. Checks, in order: the amount is positive and not
-/// dust for its script; the mature coins cover it plus the fee bound
+/// Build and sign a spend. Checks, in order: the chain's parent is one the
+/// table carries (its family decides the signature); the amount is positive
+/// and not dust for its script; the mature coins cover it plus the fee bound
 /// ([`crate::select`]); the fee, sized or given, meets `minFeeRate`; the
-/// policy permits the intent. Then every input is signed and re-verified
-/// under `sidestr-core`'s rule before the transaction is returned.
+/// policy permits the intent. Then every input is signed under the family's
+/// sighash and re-verified under `sidestr-core`'s rule for that family
+/// before the transaction is returned.
 pub fn build_spend(
     req: &SpendRequest<'_>,
     signer: &dyn SpendSigner,
@@ -201,6 +206,8 @@ pub(crate) fn assemble(
             script: plan.output_script.to_hex_string(),
         });
     }
+    // SPEC 3 (0.0.3): the signature follows the parent's family
+    let rules = rules_for(chain.parent()?.family);
     let me = signer.script();
     let rate = chain.min_fee_rate;
     let picked = select(
@@ -249,8 +256,8 @@ pub(crate) fn assemble(
         input: inputs,
         output: layout(fee.unwrap_or(0))?.0,
     };
-    // size it as it will be signed: one 64-byte signature per input
-    let placeholder = Witness::from_slice(&[[0u8; 64]]);
+    // size it as it will be signed: one 64-byte signature and its hash type per input
+    let placeholder = Witness::from_slice(&[[0u8; 65]]);
     for i in &mut tx.input {
         i.witness = placeholder.clone();
     }
@@ -282,7 +289,7 @@ pub(crate) fn assemble(
         })
         .map_err(Error::Policy)?;
 
-    // sign: BIP 341 key path, SIGHASH_DEFAULT, over every prevout (all pay `me`)
+    // sign: the key path under the family's sighash, over every prevout (all pay `me`)
     let prevouts: Vec<TxOut> = picked
         .picked
         .iter()
@@ -292,14 +299,15 @@ pub(crate) fn assemble(
         })
         .collect();
     for i in 0..tx.input.len() {
-        let digest = SighashCache::new(&tx)
-            .taproot_key_spend_signature_hash(i, &Prevouts::All(&prevouts), TapSighashType::Default)
+        let (digest, hash_type) = key_path_sighash(&tx, i, &prevouts, rules)
             .map_err(|e| Error::Signer(format!("sighash: {e}")))?;
-        let sig = signer.sign_key_path(digest.as_ref())?;
-        tx.input[i].witness = Witness::from_slice(&[sig.serialize()]);
+        let sig = signer.sign_key_path(&digest)?;
+        let mut item = sig.serialize().to_vec();
+        item.push(hash_type);
+        tx.input[i].witness = Witness::from_slice(&[item]);
     }
     for i in 0..tx.input.len() {
-        verify_key_path_input(&tx, i, &prevouts)
+        verify_taproot_key_path(&tx, i, &prevouts, rules)
             .map_err(|e| Error::Signer(format!("input {i} does not verify after signing: {e}")))?;
     }
     let vsize = tx.weight().to_wu().div_ceil(4);

@@ -96,7 +96,9 @@ fn spend_accepts_and_sizes_the_fee() {
     for i in 0..2 {
         verify_key_path_input(&s.tx, i, &p).unwrap();
         assert_eq!(s.tx.input[i].witness.len(), 1);
-        assert_eq!(s.tx.input[i].witness[0].len(), 64);
+        // beside tbtc4: a BIP 341 signature with its hash type, 0x01 (SPEC 3, txsign.mjs)
+        assert_eq!(s.tx.input[i].witness[0].len(), 65);
+        assert_eq!(s.tx.input[i].witness[0][64], 0x01);
     }
     // deterministic: the same request signs the same bytes
     assert_eq!(build_spend(&req, &me, &Permissive).unwrap().hex, s.hex);
@@ -133,7 +135,7 @@ fn spend_change_under_dust_goes_to_the_fee() {
     let chain = doc(1, 10_000);
     let me = key("alice");
     let coins = vec![coin(1, 10_400, 1, false)];
-    // 10_400 - 10_000 - 111 (one-in-one-out) = 289 < 330 dust: no change output
+    // 10_400 - 10_000 - 112 (one-in-one-out) = 288 < 330 dust: no change output
     let s = build_spend(
         &SpendRequest {
             chain: &chain,
@@ -148,7 +150,7 @@ fn spend_change_under_dust_goes_to_the_fee() {
     )
     .unwrap();
     assert_eq!(s.tx.output.len(), 1);
-    assert_eq!((s.change, s.fee, s.vsize), (0, 400, 111));
+    assert_eq!((s.change, s.fee, s.vsize), (0, 400, 112));
 }
 
 #[test]
@@ -194,7 +196,7 @@ fn spend_rejects() {
         &Permissive
     )
     .is_ok());
-    // covers the bound but not the sized fee: three inputs come to 269 vB (538 sats at 2 sat/vB),
+    // covers the bound but not the sized fee: three inputs come to 270 vB (540 sats at 2 sat/vB),
     // more than the 400-sat bound selection covered, and the change would be negative
     let three = vec![
         coin(3, 20_000, 1, false),
@@ -216,7 +218,7 @@ fn spend_rejects() {
             e,
             Error::InsufficientForFee {
                 amount: 59_500,
-                fee: 538
+                fee: 540
             }
         ),
         "{e}"
@@ -254,8 +256,8 @@ fn spend_rejects() {
             e,
             Error::FeeBelowMinimum {
                 fee: 100,
-                min: 308,
-                vsize: 154,
+                min: 310,
+                vsize: 155,
                 rate: 2
             }
         ),

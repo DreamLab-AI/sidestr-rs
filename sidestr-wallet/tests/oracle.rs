@@ -6,10 +6,9 @@
 //! `SIDESTR_SIDING`, `SCHEMA` and `BLAKETESTNODE`; without them it reports
 //! itself skipped and the Rust half still runs.
 //!
-//! Byte equality with `siding send` is not the bar: `spend.mjs` signs with
-//! the schema kernel's unified sighash (`0x21`), which `sidestr-core`
-//! refuses, and this crate signs plain BIP 341 `SIGHASH_DEFAULT`, which
-//! both engines accept. Acceptance by both is the oracle.
+//! Both engines sign by the parent's family since 0.0.3 (`0x01` here, beside
+//! tbtc4); `tests/txsign.rs` holds the byte-for-byte signature parity with
+//! the reference on both families. Acceptance by both is this file's oracle.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -21,11 +20,12 @@ use bitcoin::Transaction;
 use sidestr_core::block::{challenge_for, pubkey_of};
 use sidestr_core::document::{ChainDocument, Peg};
 use sidestr_core::marker::parse_peg_marker;
+use sidestr_core::parent::find_pegin;
 use sidestr_core::state::{NextBlock, State};
 use sidestr_wallet::burn::{build_burn, BurnRequest};
 use sidestr_wallet::coins::from_state;
 use sidestr_wallet::key::address_for;
-use sidestr_wallet::pegin::{build_pegin, scan_pegin};
+use sidestr_wallet::pegin::build_pegin;
 use sidestr_wallet::spend::{build_spend, SpendRequest};
 use sidestr_wallet::{Permissive, PlainKey, SpendSigner};
 
@@ -228,7 +228,14 @@ fn spend_and_burn_pass_core_rules_and_siding_submit() {
         parse_peg_marker(&tx.output[1].script_pubkey, &doc.id).unwrap(),
         wallet.script()
     );
-    assert_eq!(scan_pegin(&tx, &doc.id).unwrap().amount, 250_000);
+    let peg = p.peg.script_pubkey.clone();
+    let ours = |s: &bitcoin::Script| s == peg.as_script();
+    assert_eq!(
+        find_pegin(&tx, &doc.id, 1, None, Some(&ours))
+            .unwrap()
+            .amount,
+        250_000
+    );
 
     // --- siding: the same document, the same genesis, the same transactions ---
     if ["SIDESTR_SIDING", "SCHEMA", "BLAKETESTNODE"]

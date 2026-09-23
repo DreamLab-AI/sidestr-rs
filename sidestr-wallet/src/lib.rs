@@ -17,7 +17,8 @@
 //!
 //! This crate is a port of **siding**, the reference implementation by
 //! Melvin Carvalho (<https://github.com/sidestr/spec>, AGPL-3.0), ported from
-//! commit `2de40bdac4cba01be0864156a553d8287c22e279` — `siding/lib/spend.mjs`,
+//! commit `2de40bdac4cba01be0864156a553d8287c22e279` and brought to SPEC 0.0.3
+//! at `722ad42d3271efccfdfaf57c3c6943f58fc168f8` (`lib/txsign.mjs`) — `siding/lib/spend.mjs`,
 //! `lib/address.mjs`, the construction halves of `lib/parent.mjs` and
 //! `lib/checkpoint.mjs`, and the `send` and `faucet` commands of
 //! `bin/siding.mjs` — and carries the same licence, AGPL-3.0-only. `SPEC.md`
@@ -92,8 +93,10 @@
 //!
 //! # Conventions that matter
 //!
-//! - **Keys stay behind [`SpendSigner`].** A builder computes the BIP 341
-//!   key-path sighash and asks the port to sign it; it never holds a secret.
+//! - **Keys stay behind [`SpendSigner`].** A builder computes the key-path
+//!   sighash the chain's family requires (BIP 341 beside stock Bitcoin,
+//!   Knots' unified beside BLAKE2b) and asks the port to sign it; it never
+//!   holds a secret.
 //!   [`PlainKey`] is the in-memory implementation; a signer that holds a
 //!   derived role key and permits named operations only (ADR-2101) fits the
 //!   same trait. [`key::derive_spend_key`] is the derivation; the identity
@@ -102,7 +105,7 @@
 //!   consults a [`SpendPolicy`] with the chain, kind, script, amount, fee
 //!   and input count before signing. [`Permissive`] says yes; the authority
 //!   gate (ADR-2100) is the caller's implementation.
-//! - **The fee is `minFeeRate × vsize`, exactly**, sized with the 64-byte
+//! - **The fee is `minFeeRate × vsize`, exactly**, sized with the 65-byte
 //!   witness the signer will produce, unless the caller fixes one — and a
 //!   fixed fee under the rate is refused here rather than by the producer.
 //! - **No I/O by default.** `deliver` returns URLs, bodies and event
@@ -113,15 +116,13 @@
 //!
 //! # Where this port departs from siding
 //!
-//! - **The signature is plain BIP 341, `SIGHASH_DEFAULT`, 64 bytes.**
-//!   `spend.mjs` signs with the schema kernel's *unified* sighash (hash type
-//!   `0x01 | 0x20`, a 65-byte witness) — a construction only that kernel
-//!   verifies, which [`sidestr_core::block::verify_key_path_input`] refuses
-//!   as an invalid taproot sighash type. siding's own verifier accepts the
-//!   standard form as well (its `verifyInput` falls through to BIP 341 when
-//!   the `0x20` bit is absent), so a transaction from this crate is accepted
-//!   by both engines and a byte-for-byte match with the kernel's output is
-//!   not a goal; acceptance is (`tests/oracle.rs`).
+//! - **The signature carries its hash type explicitly.** As `txsign.mjs`
+//!   does since 0.0.3: `0x01` beside stock Bitcoin, `0x21` beside a BLAKE2b
+//!   parent, so every witness is 65 bytes and the fee is sized for that.
+//!   The message is the reference's (`tests/oracle.rs` checks each engine
+//!   verifies the other's signature); the signature itself differs, since
+//!   [`PlainKey`] signs with zero auxiliary randomness and siding with
+//!   fresh randomness, so byte equality of whole transactions is not a goal.
 //! - **Dust is refused.** siding will pay 1 sat to a taproot script and
 //!   return 1 sat of change; this crate refuses an amount under the script's
 //!   dust threshold ([`spend::dust_threshold`], 330 sats for taproot) and
