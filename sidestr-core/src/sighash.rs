@@ -26,6 +26,7 @@ use bitcoin::sighash::{Annex, Prevouts, SighashCache, TapSighashType};
 use bitcoin::{Transaction, TxOut};
 
 use crate::block::{annex_of, schnorr_verify};
+use crate::parents::Family;
 
 /// Knots' opt-in bit in the hash-type byte (`SIGHASH_UNIFIED` in the
 /// reference interpreter).
@@ -250,6 +251,107 @@ pub fn verify_taproot_key_path(
     } else {
         Err("invalid key-path schnorr signature")
     }
+}
+
+/// The signature-hash rules a chain inherits from its parent's family (SPEC
+/// 3, 0.0.3): Knots' unified sighash beside a BLAKE2b parent, BIP 341
+/// beside stock Bitcoin. The same answer [`HeaderFamily::sighash_rules`]
+/// gives for a sidestr chain of that family, whose fork height is 0, for a
+/// caller — a wallet — that holds a chain document and no family type
+/// (`siding/lib/txsign.mjs usesUnifiedSighash`).
+///
+/// ```
+/// use sidestr_core::parents::{resolve_parent, Family};
+/// use sidestr_core::sighash::{rules_for, SighashRules};
+///
+/// assert_eq!(rules_for(resolve_parent("tbtc4").unwrap().family), SighashRules::Bip341);
+/// assert_eq!(rules_for(Family::Blake2b), SighashRules::KnotsUnified);
+/// ```
+///
+/// [`HeaderFamily::sighash_rules`]: crate::block::HeaderFamily::sighash_rules
+pub fn rules_for(family: Family) -> SighashRules {
+    match family {
+        Family::Stock => SighashRules::Bip341,
+        Family::Blake2b => SighashRules::KnotsUnified,
+    }
+}
+
+/// The hash type a key-path signature carries under `rules`
+/// (`txsign.mjs keyPathSighash`): `0x21` (`SIGHASH_ALL | SIGHASH_UNIFIED`)
+/// where the unified sighash is in force, `0x01` (`SIGHASH_ALL`) under BIP
+/// 341. Always explicit, so every witness is 65 bytes and names its rule.
+pub fn key_path_hash_type(rules: SighashRules) -> u8 {
+    match rules {
+        SighashRules::KnotsUnified => 0x01 | SIGHASH_UNIFIED,
+        SighashRules::Bip341 => 0x01,
+    }
+}
+
+/// The message input `index`'s key-path signature commits to under `rules`,
+/// and the hash-type byte appended to that signature (`txsign.mjs
+/// keyPathSighash`). `prevouts` is every input's, in order. The signer's
+/// witness is the 64-byte BIP 340 signature over the message followed by
+/// the byte: exactly what [`verify_taproot_key_path`] checks under the same
+/// rules, and what the reference producer checks before a transaction enters
+/// its mempool.
+///
+/// ```
+/// use bitcoin::hashes::Hash;
+/// use bitcoin::secp256k1::{Keypair, Message, SecretKey};
+/// use bitcoin::{absolute::LockTime, transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
+/// use sidestr_core::block::{challenge_for, secp};
+/// use sidestr_core::sighash::{key_path_sighash, verify_taproot_key_path, SighashRules};
+///
+/// let kp = Keypair::from_secret_key(secp(), &SecretKey::from_slice(&[0x11; 32]).unwrap());
+/// let me = challenge_for(&kp.x_only_public_key().0);
+/// let prevouts = vec![TxOut { value: Amount::from_sat(50_000), script_pubkey: me.clone() }];
+/// let mut tx = Transaction { version: Version::TWO, lock_time: LockTime::ZERO,
+///     input: vec![TxIn { previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 }, script_sig: ScriptBuf::new(),
+///                        sequence: Sequence(0xffff_fffd), witness: Witness::new() }],
+///     output: vec![TxOut { value: Amount::from_sat(49_000), script_pubkey: me }] };
+///
+/// // beside a BLAKE2b parent: hash type 0x21, refused beside stock Bitcoin (txsign-test.mjs)
+/// let (msg, ht) = key_path_sighash(&tx, 0, &prevouts, SighashRules::KnotsUnified).unwrap();
+/// let sig = secp().sign_schnorr_with_aux_rand(&Message::from_digest(msg), &kp, &[0; 32]);
+/// tx.input[0].witness = Witness::from_slice(&[[sig.serialize().as_slice(), &[ht]].concat()]);
+/// assert_eq!(ht, 0x21);
+/// assert!(verify_taproot_key_path(&tx, 0, &prevouts, SighashRules::KnotsUnified).is_ok());
+/// assert!(verify_taproot_key_path(&tx, 0, &prevouts, SighashRules::Bip341).is_err());
+/// ```
+pub fn key_path_sighash(
+    tx: &Transaction,
+    index: usize,
+    prevouts: &[TxOut],
+    rules: SighashRules,
+) -> Result<([u8; 32], u8), &'static str> {
+    let hash_type = key_path_hash_type(rules);
+    let msg = match rules {
+        SighashRules::KnotsUnified => unified_taproot_sighash(
+            tx,
+            index,
+            prevouts,
+            hash_type,
+            None,
+            UnifiedTaproot::KeyPath,
+        )?,
+        SighashRules::Bip341 => {
+            if prevouts.len() != tx.input.len() {
+                return Err("taproot sighash needs every input prevout");
+            }
+            if index >= tx.input.len() {
+                return Err("no such input");
+            }
+            SighashCache::new(tx)
+                .taproot_key_spend_signature_hash(
+                    index,
+                    &Prevouts::All(prevouts),
+                    TapSighashType::All,
+                )
+                .map_err(|_| "sighash failed")?
+                .to_byte_array()
+        }
+    };
+    Ok((msg, hash_type))
 }
 
 #[cfg(test)]

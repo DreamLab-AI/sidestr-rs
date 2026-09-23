@@ -21,8 +21,8 @@ use sidestr_core::document::ChainDocument;
 use sidestr_core::marker::{parse_claims, parse_peg_marker};
 use sidestr_core::parent::rpc::CoreRpc;
 use sidestr_core::parent::{
-    claimable, outpoints_to_lock, paid_pegouts_in, parent_network, scan_pegins, FoundPegin,
-    ParentRpc, PegWallet,
+    claimable, outpoints_to_lock, owned_by_peg_wallet, paid_pegouts_in, parent_network,
+    scan_pegins, FoundPegin, ParentRpc, PegOwner, PegWallet,
 };
 use sidestr_nostr::event::Event;
 use sidestr_nostr::kinds::{
@@ -503,7 +503,20 @@ impl<F: HeaderFamily> Node<F> {
         };
         if i64::from(tip) > self.pegins.scanned {
             let from = u32::try_from(self.pegins.scanned + 1).unwrap_or(0);
-            match scan_pegins(rpc.as_ref(), &self.doc.id, from, tip, network, |_| {}) {
+            // SPEC 6 (0.0.3): with a peg wallet, the peg is the output it owns
+            // (the k-of-n descriptor it imported); without one, the first taproot
+            // output (`parent.mjs scanPegins`, `parent.walletRpc`)
+            let wallet_owner = owned_by_peg_wallet(rpc.as_ref(), network);
+            let owner: Option<PegOwner<'_>> = rpc.wallet().is_some().then_some(&wallet_owner);
+            match scan_pegins(
+                rpc.as_ref(),
+                &self.doc.id,
+                from,
+                tip,
+                network,
+                owner,
+                |_| {},
+            ) {
                 Ok(found) => {
                     for p in &found {
                         if !self

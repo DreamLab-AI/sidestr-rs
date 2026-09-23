@@ -16,7 +16,9 @@
 //!
 //! This crate is a port of **siding**, the reference implementation by
 //! Melvin Carvalho (<https://github.com/sidestr/spec>, AGPL-3.0), ported from
-//! commit `2de40bdac4cba01be0864156a553d8287c22e279` together with the parts of
+//! commit `2de40bdac4cba01be0864156a553d8287c22e279` and brought to SPEC 0.0.3
+//! at `722ad42d3271efccfdfaf57c3c6943f58fc168f8` (the peg output is the one the peg holders own;
+//! signatures follow the parent's family), together with the parts of
 //! the engine it loads — `bitcoin-desktop/schema` (the block, header and
 //! spending checks) and `bitcoin-blake/blaketestnode` (the block file) — and
 //! carries the same licence, AGPL-3.0-only. `SPEC.md` in that repository is

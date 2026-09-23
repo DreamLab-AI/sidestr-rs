@@ -132,7 +132,7 @@ fn burn_list(s: &State) -> Value {
 fn derived(d: &ChainDocument, me: &ScriptBuf, name: &str, s: &ScriptBuf) -> Value {
     let tx = parent_tx(d, me, s);
     let (claims, errors) = parse_claims(&tx);
-    let pegin = find_pegin(&tx, &d.id, 42, None).map(|p| {
+    let pegin = find_pegin(&tx, &d.id, 42, None, None).map(|p| {
         json!({"txid":p.txid,"vout":p.vout,"amount":p.amount,"script":p.script.to_hex_string(),"height":p.height,"parentAddress":p.parent_address})
     });
     json!({
@@ -267,7 +267,7 @@ fn bom_pegins_name_the_script_the_reference_names() {
     let d = doc("bompegin", &key, vec![]);
     let data = [format!("pegin:{}:", d.id).as_bytes(), BOM, b"abcd"].concat();
     for (form, s) in forms(&data) {
-        let found = find_pegin(&parent_tx(&d, &me, &s), &d.id, 42, None);
+        let found = find_pegin(&parent_tx(&d, &me, &s), &d.id, 42, None, None);
         if matches!(form, "bare" | "p1") {
             let p = found.expect(form);
             assert_eq!(p.script.to_hex_string(), "abcd", "{form}");
@@ -281,6 +281,7 @@ fn bom_pegins_name_the_script_the_reference_names() {
         &parent_tx(&d, &me, &raw(&[rawform.len() as u8], &rawform)),
         &d.id,
         42,
+        None,
         None,
     )
     .unwrap();

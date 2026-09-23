@@ -235,7 +235,7 @@ fn parent_view_adversarial_inputs() {
             .unwrap(),
         },
     ];
-    let valid = find_pegin(&tx, &d.id, 42, Some(Network::Testnet4)).unwrap();
+    let valid = find_pegin(&tx, &d.id, 42, Some(Network::Testnet4), None).unwrap();
     println!(
         "below dust=1sat discovery: amount={} vout={}",
         valid.amount, valid.vout
@@ -245,10 +245,10 @@ fn parent_view_adversarial_inputs() {
     let mut bytes = nonreturn.output[1].script_pubkey.to_bytes();
     bytes[0] = 0x51;
     nonreturn.output[1].script_pubkey = ScriptBuf::from_bytes(bytes);
-    let r = find_pegin(&nonreturn, &d.id, 42, None);
+    let r = find_pegin(&nonreturn, &d.id, 42, None, None);
     println!("marker not OP_RETURN: {r:?}");
     assert!(r.is_none());
-    let r = find_pegin(&tx, "sidestr:other", 42, None);
+    let r = find_pegin(&tx, "sidestr:other", 42, None, None);
     println!("marker for other chain: {r:?}");
     assert!(r.is_none());
     let mut two = tx.clone();
@@ -256,10 +256,10 @@ fn parent_view_adversarial_inputs() {
         value: Amount::ZERO,
         script_pubkey: record_script(&format!("pegin:{}:51", d.id)).unwrap(),
     });
-    let r = find_pegin(&two, &d.id, 42, None).unwrap();
+    let r = find_pegin(&two, &d.id, 42, None, None).unwrap();
     println!("two markers: selected first script={}", r.script);
     assert_eq!(r.script, f.challenge());
-    let main = find_pegin(&tx, &d.id, 42, Some(Network::Bitcoin)).unwrap();
+    let main = find_pegin(&tx, &d.id, 42, Some(Network::Bitcoin), None).unwrap();
     println!(
         "same script: mainnet={} testnet={}",
         main.parent_address.unwrap(),

@@ -8,7 +8,7 @@
 //! The node is behind two traits — [`ParentRpc`] for the chain (read-only)
 //! and [`PegWallet`] for the peg wallet's own RPCs — and everything that
 //! decides is a pure function of what they return: [`find_pegin`] over a
-//! decoded transaction, [`claimable`] over found peg-ins and the chain's
+//! decoded transaction and the peg holders' ownership of its outputs, [`claimable`] over found peg-ins and the chain's
 //! records, [`pegout_payment`] and [`checkpoint_payment`] as the outputs a
 //! `send` call takes, [`reconcile`] over the chain's burns and the wallet's
 //! history. One blocking JSON-RPC implementation, Bitcoin Core's, is behind
@@ -157,6 +157,12 @@ pub trait PegWallet {
     fn sent_transactions(&self) -> Result<Vec<(Txid, Transaction)>>;
     /// Where one of the wallet's transactions sits.
     fn transaction_status(&self, txid: &Txid) -> Result<WalletTxStatus>;
+    /// Whether the wallet owns a parent address: its own keys, or an
+    /// imported k-of-n descriptor (`parent.mjs ownedByPegWallet`,
+    /// `getaddressinfo` `ismine || iswatchonly || solvable`). A failed call
+    /// reads as not owned, as it does in the reference: a peg-in is never
+    /// found on an error.
+    fn owns_address(&self, address: &str) -> bool;
 }
 
 // --- peg-ins (SPEC 6) --------------------------------------------------------------
@@ -178,24 +184,66 @@ pub struct FoundPegin {
     pub parent_address: Option<String>,
 }
 
-/// The peg-in a parent transaction makes for `chain_id`, if any: a marker
-/// naming this chain gives the sidechain script, and the peg output is the
-/// first taproot output (the marker is `OP_RETURN`, never taproot).
+/// Who owns a parent output: the peg holders' view of a script (SPEC 6,
+/// 0.0.3). Level 1: the producer's parent wallet
+/// ([`owned_by_peg_wallet`]); level 2: the chain's challenge
+/// (`|s| s == doc.challenge_script().as_script()`, or the peg wallet that
+/// imported the k-of-n descriptor, as the reference asks it).
+pub type PegOwner<'a> = &'a dyn Fn(&Script) -> bool;
+
+/// The peg-in a parent transaction makes for `chain_id`, if any
+/// (`parent.mjs scanPegins`, SPEC 6 as of 0.0.3). A marker naming this chain
+/// gives the sidechain script; the peg output is then the first taproot
+/// output `owner` says the peg holders own, **at any position** — a wallet
+/// may place its change before the peg — and a marker beside nothing they
+/// own is not a peg-in. With no `owner` (a read-only producer with no peg
+/// wallet to ask) the first taproot output is taken, as the reference does
+/// and as 0.0.1 and 0.0.2 did for every producer.
+///
+/// ```
+/// use bitcoin::script::PushBytesBuf;
+/// use bitcoin::{absolute::LockTime, transaction::Version, Amount, Script, ScriptBuf, Transaction, TxOut};
+/// use sidestr_core::marker::peg_marker_data;
+/// use sidestr_core::parent::find_pegin;
+///
+/// let tr = |b: u8| ScriptBuf::from_hex(&format!("5120{}", format!("{b:02x}").repeat(32))).unwrap();
+/// let named = tr(0xee);
+/// let marker = ScriptBuf::new_op_return(PushBytesBuf::try_from(peg_marker_data("sidestr:scan", &named)).unwrap());
+/// // txsign-test.mjs: the wallet's change (0xaa) comes first, the peg (0xbb) last
+/// let tx = Transaction { version: Version::TWO, lock_time: LockTime::ZERO, input: vec![], output: vec![
+///     TxOut { value: Amount::from_sat(20_000_000), script_pubkey: tr(0xaa) },
+///     TxOut { value: Amount::ZERO, script_pubkey: marker },
+///     TxOut { value: Amount::from_sat(50_000), script_pubkey: tr(0xbb) },
+/// ] };
+/// let peg = tr(0xbb);
+/// let ours = |s: &Script| s == peg.as_script();
+/// let found = find_pegin(&tx, "sidestr:scan", 1, None, Some(&ours)).unwrap();
+/// assert_eq!((found.vout, found.amount, &found.script), (2, 50_000, &named));
+/// // a marker beside nothing the peg holders own is not a peg-in
+/// assert!(find_pegin(&tx, "sidestr:scan", 1, None, Some(&|_: &Script| false)).is_none());
+/// // no owner to ask: the first taproot output, as before 0.0.3
+/// assert_eq!(find_pegin(&tx, "sidestr:scan", 1, None, None).unwrap().vout, 0);
+/// ```
 pub fn find_pegin(
     tx: &Transaction,
     chain_id: &str,
     height: u32,
     network: Option<Network>,
+    owner: Option<PegOwner<'_>>,
 ) -> Option<FoundPegin> {
     let script = tx
         .output
         .iter()
         .find_map(|o| parse_peg_marker(&o.script_pubkey, chain_id))?;
-    let (vout, peg) = tx
+    let mut taproots = tx
         .output
         .iter()
         .enumerate()
-        .find(|(_, o)| o.script_pubkey.is_p2tr())?;
+        .filter(|(_, o)| o.script_pubkey.is_p2tr());
+    let (vout, peg) = match owner {
+        Some(owns) => taproots.find(|(_, o)| owns(&o.script_pubkey))?,
+        None => taproots.next()?,
+    };
     Some(FoundPegin {
         txid: tx.compute_txid().to_string(),
         vout: vout as u32,
@@ -206,6 +254,22 @@ pub fn find_pegin(
             .and_then(|n| Address::from_script(&peg.script_pubkey, n).ok())
             .map(|a| a.to_string()),
     })
+}
+
+/// The level-1 owner: the peg wallet, asked about each taproot output's
+/// parent address (`parent.mjs ownedByPegWallet`: `getaddressinfo` says
+/// `ismine`, `iswatchonly` or `solvable`). An output with no address on
+/// `network`, or with no network to encode one for, is not owned, as the
+/// reference skips an output Core gives no address.
+pub fn owned_by_peg_wallet<W: PegWallet + ?Sized>(
+    wallet: &W,
+    network: Option<Network>,
+) -> impl Fn(&Script) -> bool + '_ {
+    move |script| {
+        network
+            .and_then(|n| Address::from_script(script, n).ok())
+            .is_some_and(|a| wallet.owns_address(&a.to_string()))
+    }
 }
 
 /// The outputs of `tx` paying `script`: `(vout, sats)`. What a wallet's
@@ -220,13 +284,15 @@ pub fn find_payments(tx: &Transaction, script: &Script) -> Vec<(u32, u64)> {
 }
 
 /// Peg-ins for `chain_id` in the parent's blocks `from..=to`
-/// (`parent.mjs scanPegins`); `on_block` hears each height as it is read.
+/// (`parent.mjs scanPegins`), each judged by [`find_pegin`] with `owner`;
+/// `on_block` hears each height as it is read.
 pub fn scan_pegins<R: ParentRpc + ?Sized>(
     rpc: &R,
     chain_id: &str,
     from: u32,
     to: u32,
     network: Option<Network>,
+    owner: Option<PegOwner<'_>>,
     mut on_block: impl FnMut(&ParentBlock),
 ) -> Result<Vec<FoundPegin>> {
     let mut found = Vec::new();
@@ -237,7 +303,7 @@ pub fn scan_pegins<R: ParentRpc + ?Sized>(
             block
                 .txs
                 .iter()
-                .filter_map(|tx| find_pegin(tx, chain_id, h, network)),
+                .filter_map(|tx| find_pegin(tx, chain_id, h, network, owner)),
         );
     }
     Ok(found)
@@ -696,6 +762,15 @@ pub mod rpc {
             }
             Ok(out)
         }
+        fn owns_address(&self, address: &str) -> bool {
+            self.wallet_call("getaddressinfo", json!([address]))
+                .map(|i| {
+                    ["ismine", "iswatchonly", "solvable"]
+                        .iter()
+                        .any(|k| i.get(*k).and_then(Value::as_bool) == Some(true))
+                })
+                .unwrap_or(false)
+        }
         fn transaction_status(&self, txid: &Txid) -> Result<WalletTxStatus> {
             let g = self.wallet_call("gettransaction", json!([txid.to_string()]))?;
             Ok(WalletTxStatus {
@@ -815,14 +890,14 @@ mod tests {
             out(0, data(&peg_marker_data("sidestr:other", &me))),
         ]);
         let no_taproot = tx(vec![out(0, data(&peg_marker_data("sidestr:trial", &me)))]);
-        let f = find_pegin(&peg, "sidestr:trial", 100, Some(Network::Testnet4)).unwrap();
+        let f = find_pegin(&peg, "sidestr:trial", 100, Some(Network::Testnet4), None).unwrap();
         assert_eq!(
             (f.vout, f.amount, &f.script, f.height),
             (0, 250_000, &me, 100)
         );
         assert!(f.parent_address.as_deref().unwrap().starts_with("tb1p"));
-        assert!(find_pegin(&other_chain, "sidestr:trial", 100, None).is_none());
-        assert!(find_pegin(&no_taproot, "sidestr:trial", 100, None).is_none());
+        assert!(find_pegin(&other_chain, "sidestr:trial", 100, None, None).is_none());
+        assert!(find_pegin(&no_taproot, "sidestr:trial", 100, None, None).is_none());
         assert_eq!(find_payments(&peg, &p2tr(0x7e)), vec![(0, 250_000)]);
         assert!(find_payments(&peg, &me).is_empty());
 
@@ -850,7 +925,7 @@ mod tests {
             .collect(),
         };
         let mut seen = vec![];
-        let found = scan_pegins(&mock, "sidestr:trial", 10, 12, None, |b| {
+        let found = scan_pegins(&mock, "sidestr:trial", 10, 12, None, None, |b| {
             seen.push(b.height)
         })
         .unwrap();
@@ -878,7 +953,84 @@ mod tests {
         assert!(claimable(&found, 16, 6, |_, _| true).is_empty());
         assert_eq!(outpoints_to_lock(&found, |_, _| false).len(), 1);
         assert!(outpoints_to_lock(&found, |_, _| true).is_empty());
-        assert!(scan_pegins(&mock, "sidestr:trial", 10, 13, None, |_| {}).is_err());
+        assert!(scan_pegins(&mock, "sidestr:trial", 10, 13, None, None, |_| {}).is_err());
+    }
+
+    /// A peg wallet that owns one parent address and answers nothing else.
+    struct OneAddress(String);
+    impl PegWallet for OneAddress {
+        fn lock_outputs(&self, _: &[OutPoint], _: bool) -> Result<usize> {
+            Ok(0)
+        }
+        fn send(&self, _: &[SendOutput]) -> Result<Txid> {
+            Err(Error::Parent("read-only".into()))
+        }
+        fn sent_transactions(&self) -> Result<Vec<(Txid, Transaction)>> {
+            Ok(vec![])
+        }
+        fn transaction_status(&self, _: &Txid) -> Result<WalletTxStatus> {
+            Ok(WalletTxStatus::default())
+        }
+        fn owns_address(&self, address: &str) -> bool {
+            address == self.0
+        }
+    }
+
+    /// `siding/test/txsign-test.mjs` (0.0.3), the scanner half: a marker
+    /// transaction whose change (not the peg holders') comes before the peg.
+    #[test]
+    fn the_peg_is_the_output_the_peg_holders_own() {
+        let named = p2tr(0xee);
+        let t = tx(vec![
+            out(20_000_000, p2tr(0xaa)),
+            out(0, data(&peg_marker_data("sidestr:scan", &named))),
+            out(50_000, p2tr(0xbb)),
+        ]);
+        let mock = Mock {
+            blocks: vec![ParentBlock {
+                height: 1,
+                hash: BlockHash::from_byte_array([1; 32]),
+                time: 0,
+                txs: vec![tx(vec![]), t.clone()],
+            }],
+            unspent: BTreeMap::new(),
+        };
+        let net = Some(Network::Testnet4);
+        let peg_addr = Address::from_script(&p2tr(0xbb), Network::Testnet4)
+            .unwrap()
+            .to_string();
+        let wallet = OneAddress(peg_addr.clone());
+        let owner = owned_by_peg_wallet(&wallet, net);
+        let found = scan_pegins(&mock, "sidestr:scan", 1, 1, net, Some(&owner), |_| {}).unwrap();
+        assert_eq!(found.len(), 1, "with a peg wallet, the owned output");
+        assert_eq!(
+            (found[0].vout, found[0].amount, &found[0].script),
+            (2, 50_000, &named)
+        );
+        assert_eq!(found[0].parent_address.as_deref(), Some(peg_addr.as_str()));
+        // a marker beside nothing the wallet owns is not a peg-in
+        let nobody = OneAddress(String::new());
+        let none = owned_by_peg_wallet(&nobody, net);
+        assert!(
+            scan_pegins(&mock, "sidestr:scan", 1, 1, net, Some(&none), |_| {})
+                .unwrap()
+                .is_empty()
+        );
+        // without a network no address can be asked about: nothing is owned
+        let blind = owned_by_peg_wallet(&wallet, None);
+        assert!(find_pegin(&t, "sidestr:scan", 1, None, Some(&blind)).is_none());
+        // without a peg wallet the first taproot output is taken (read-only producers)
+        let legacy = scan_pegins(&mock, "sidestr:scan", 1, 1, net, None, |_| {}).unwrap();
+        assert_eq!((legacy.len(), legacy[0].vout), (1, 0));
+        // level 2: the challenge script is the owner
+        let challenge = p2tr(0xbb);
+        let level2 = |s: &Script| s == challenge.as_script();
+        assert_eq!(
+            find_pegin(&t, "sidestr:scan", 1, None, Some(&level2))
+                .unwrap()
+                .vout,
+            2
+        );
     }
 
     #[test]

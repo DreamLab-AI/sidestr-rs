@@ -2,21 +2,22 @@
 //! `#[ignore]`): read-only, every call a query. Nothing here sends, signs,
 //! locks or spends on the parent.
 //!
-//! Enabled by `SIDESTR_PARENT_RPC` (the node's JSON-RPC URL); the cookie file
-//! is `SIDESTR_PARENT_COOKIE` or the estate's default; the peg wallet is
+//! Enabled by `SIDESTR_PARENT_RPC` (the node's JSON-RPC URL) and
+//! `SIDESTR_PARENT_COOKIE` (its cookie file); the peg wallet is
 //! `SIDESTR_PARENT_WALLET` or `sidestr-peg`; the scan starts at
 //! `SIDESTR_PARENT_FROM` or 153500, the height before the wallet was funded.
 //!
 //! ```sh
-//! SIDESTR_PARENT_RPC=http://<node>:48332/ cargo test -p sidestr-core --features rpc --test parent_live -- --ignored
+//! SIDESTR_PARENT_RPC=http://<node>:48332/ SIDESTR_PARENT_COOKIE=<datadir>/testnet4/.cookie \
+//!   cargo test -p sidestr-core --features rpc --test parent_live -- --ignored
 //! ```
 #![cfg(feature = "rpc")]
 
 use bitcoin::Txid;
 use sidestr_core::parent::rpc::CoreRpc;
 use sidestr_core::parent::{
-    find_payments, paid_pegouts_in, peg_status, scan_pegins, sent_checkpoints_in, ParentRpc,
-    PegWallet,
+    find_payments, owned_by_peg_wallet, paid_pegouts_in, peg_status, scan_pegins,
+    sent_checkpoints_in, ParentRpc, PegWallet,
 };
 
 #[test]
@@ -26,8 +27,10 @@ fn the_peg_wallets_funding_is_found_from_the_parent_side() {
         eprintln!("skipped: SIDESTR_PARENT_RPC is not set");
         return;
     };
-    let cookie = std::env::var("SIDESTR_PARENT_COOKIE")
-        .unwrap_or_else(|_| "/var/lib/agentbox/secrets/sidestr-tbtc4.cookie".into());
+    let Ok(cookie) = std::env::var("SIDESTR_PARENT_COOKIE") else {
+        eprintln!("skipped: SIDESTR_PARENT_COOKIE (the node's .cookie file) is not set");
+        return;
+    };
     let wallet = std::env::var("SIDESTR_PARENT_WALLET").unwrap_or_else(|_| "sidestr-peg".into());
     let from: u32 = std::env::var("SIDESTR_PARENT_FROM")
         .ok()
@@ -61,29 +64,45 @@ fn the_peg_wallets_funding_is_found_from_the_parent_side() {
     // and the scan from the funding height finds the payment in its block, transactions decoded from hex
     let mut where_found = None;
     let mut scanned = 0;
-    let found = scan_pegins(&rpc, "sidestr:dreamlab", from, tip, None, |b| {
-        scanned += 1;
-        for tx in &b.txs {
-            if tx.compute_txid() == txid {
-                where_found = Some((b.height, find_payments(tx, &script)));
+    // SPEC 6 (0.0.3): the peg is the output the peg wallet owns, at any position
+    let owner = owned_by_peg_wallet(&rpc, Some(bitcoin::Network::Testnet4));
+    assert!(owner(&script), "the wallet owns its own funding output");
+    let found = scan_pegins(
+        &rpc,
+        "sidestr:dreamlab",
+        from,
+        tip,
+        Some(bitcoin::Network::Testnet4),
+        Some(&owner),
+        |b| {
+            scanned += 1;
+            for tx in &b.txs {
+                if tx.compute_txid() == txid {
+                    where_found = Some((b.height, find_payments(tx, &script)));
+                }
             }
-        }
-    })
+        },
+    )
     .unwrap();
     let (height, payments) = where_found.expect("the funding transaction in a scanned block");
     assert_eq!(payments, vec![(vout, 100_000)]);
     assert!(height > from && height <= tip);
-    // sidestr:dreamlab has no pegs yet: a bare payment to the peg wallet carries no marker
-    assert!(found.is_empty(), "{found:?}");
-    // the wallet has paid no burn and sent no checkpoint
+    // every peg-in found pays an address the peg wallet owns; the bare funding carries no marker
+    for p in &found {
+        let a = p.parent_address.as_deref().expect("an address on testnet4");
+        assert!(rpc.owns_address(a), "{p:?}");
+        assert_ne!(p.txid, txid.to_string(), "the funding is not a peg-in");
+    }
+    // the wallet's own history reads back: burns paid and checkpoints sent
     let sent = rpc.sent_transactions().unwrap();
-    assert!(paid_pegouts_in(&sent, "sidestr:dreamlab").is_empty());
-    assert!(sent_checkpoints_in(&sent, "sidestr:dreamlab").is_empty());
+    let paid = paid_pegouts_in(&sent, "sidestr:dreamlab").len();
+    let ckpts = sent_checkpoints_in(&sent, "sidestr:dreamlab").len();
     let st = rpc.transaction_status(&txid).unwrap();
     assert_eq!(st.block_height, Some(height));
     eprintln!(
-        "{}:{vout} — 0.001 tBTC to the peg wallet at parent height {height}, {} confirmations at tip {tip}; {scanned} blocks scanned, no peg-in markers for sidestr:dreamlab",
+        "{}:{vout} — 0.001 tBTC to the peg wallet at parent height {height}, {} confirmations at tip {tip}; {scanned} blocks scanned, {} peg-ins owned, {paid} burns paid, {ckpts} checkpoints",
         txid,
-        status.confirmations.unwrap()
+        status.confirmations.unwrap(),
+        found.len()
     );
 }
