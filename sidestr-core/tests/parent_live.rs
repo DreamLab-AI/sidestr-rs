@@ -136,6 +136,8 @@ fn the_live_pegin_as_read_with_and_without_the_peg_wallet() {
     let owned = scan_pegins(&rpc, CHAIN, from, to, net, Some(&owner), |_| {}).unwrap();
     // ... so vout 0 is not the peg; but the wallet funded the peg-in, and the first taproot output
     // it owns is its own change, which the rule (and the reference, at 722ad42) takes as the peg
+    // reference behaviour at 722ad42; expected to change when sidestr/spec#15 is fixed
+    // (https://github.com/sidestr/spec/issues/15) — this assertion will then fail and say so
     let q = owned
         .iter()
         .find(|q| q.txid == PEGIN)
