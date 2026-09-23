@@ -22,7 +22,8 @@
 //!     output the peg holders own", reads that change as the peg. The
 //!     reference's `scanPegins` at `722ad42` gives the same answer against
 //!     this node: vout 2, 49,000 sats. Both are pinned here, as a fact about
-//!     the rule; it is reported upstream as a spec question. A peg-in paid
+//!     the rule, reported upstream as sidestr/spec#15; when that is fixed
+//!     the pin fails and says to follow. A peg-in paid
 //!     from the peg wallet itself makes its own change look like the peg.
 //! - **The peg-out.** The wallet's history pays one burn of the chain, in
 //!   parent transaction `0ceb01d3…`.
