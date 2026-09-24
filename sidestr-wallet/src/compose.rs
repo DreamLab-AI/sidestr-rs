@@ -39,7 +39,7 @@ use bitcoin::transaction::Version;
 use bitcoin::{absolute::LockTime, Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness};
 use sidestr_core::document::ChainDocument;
 use sidestr_core::records::record_script;
-use sidestr_core::sighash::{key_path_sighash, rules_for, verify_taproot_key_path};
+use sidestr_core::sighash::rules_for;
 
 use crate::coins::{mature, Coin};
 use crate::error::{Error, Result};
@@ -225,18 +225,7 @@ pub fn build_outputs(
             script_pubkey: me.clone(),
         })
         .collect();
-    for i in 0..tx.input.len() {
-        let (digest, hash_type) = key_path_sighash(&tx, i, &prevouts, rules)
-            .map_err(|e| Error::Signer(format!("sighash: {e}")))?;
-        let sig = signer.sign_key_path(&digest)?;
-        let mut item = sig.serialize().to_vec();
-        item.push(hash_type);
-        tx.input[i].witness = Witness::from_slice(&[item]);
-    }
-    for i in 0..tx.input.len() {
-        verify_taproot_key_path(&tx, i, &prevouts, rules)
-            .map_err(|e| Error::Signer(format!("input {i} does not verify after signing: {e}")))?;
-    }
+    crate::spend::sign_inputs(&mut tx, &prevouts, rules, signer)?;
     let vsize = tx.weight().to_wu().div_ceil(4);
     Ok(Spend {
         hex: serialize_hex(&tx),

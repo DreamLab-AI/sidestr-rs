@@ -51,7 +51,7 @@ use bitcoin::{
 };
 use sidestr_core::address::{decode_address, script_to_address};
 use sidestr_core::document::ChainDocument;
-use sidestr_core::sighash::{key_path_sighash, rules_for, verify_taproot_key_path};
+use sidestr_core::sighash::{key_path_sighash, rules_for, verify_taproot_key_path, SighashRules};
 
 use crate::coins::{mature, Coin};
 use crate::error::{Error, Result};
@@ -184,6 +184,40 @@ pub fn dust_threshold(script: &ScriptBuf) -> u64 {
     TxOut::minimal_non_dust(script.clone()).value.to_sat()
 }
 
+/// Sign every input on the key path under `rules`, each over all of
+/// `prevouts`, and verify each signature as a validator would. For a signer
+/// that [signs elsewhere](SpendSigner::signs_elsewhere) every input keeps a
+/// 65-byte zero placeholder instead (the size it will have), and nothing is
+/// signed or verified here: [`crate::external::accept_signed`] verifies what
+/// comes back.
+pub(crate) fn sign_inputs(
+    tx: &mut Transaction,
+    prevouts: &[TxOut],
+    rules: SighashRules,
+    signer: &dyn SpendSigner,
+) -> Result<()> {
+    if signer.signs_elsewhere() {
+        let placeholder = Witness::from_slice(&[[0u8; 65]]);
+        for i in &mut tx.input {
+            i.witness = placeholder.clone();
+        }
+        return Ok(());
+    }
+    for i in 0..tx.input.len() {
+        let (digest, hash_type) = key_path_sighash(tx, i, prevouts, rules)
+            .map_err(|e| Error::Signer(format!("sighash: {e}")))?;
+        let sig = signer.sign_key_path(&digest)?;
+        let mut item = sig.serialize().to_vec();
+        item.push(hash_type);
+        tx.input[i].witness = Witness::from_slice(&[item]);
+    }
+    for i in 0..tx.input.len() {
+        verify_taproot_key_path(tx, i, prevouts, rules)
+            .map_err(|e| Error::Signer(format!("input {i} does not verify after signing: {e}")))?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assemble(
     chain: &ChainDocument,
@@ -298,18 +332,7 @@ pub(crate) fn assemble(
             script_pubkey: me.clone(),
         })
         .collect();
-    for i in 0..tx.input.len() {
-        let (digest, hash_type) = key_path_sighash(&tx, i, &prevouts, rules)
-            .map_err(|e| Error::Signer(format!("sighash: {e}")))?;
-        let sig = signer.sign_key_path(&digest)?;
-        let mut item = sig.serialize().to_vec();
-        item.push(hash_type);
-        tx.input[i].witness = Witness::from_slice(&[item]);
-    }
-    for i in 0..tx.input.len() {
-        verify_taproot_key_path(&tx, i, &prevouts, rules)
-            .map_err(|e| Error::Signer(format!("input {i} does not verify after signing: {e}")))?;
-    }
+    sign_inputs(&mut tx, &prevouts, rules, signer)?;
     let vsize = tx.weight().to_wu().div_ceil(4);
     Ok(Spend {
         hex: serialize_hex(&tx),

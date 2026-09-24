@@ -66,6 +66,17 @@ pub trait SpendSigner {
     fn script(&self) -> ScriptBuf {
         script_for(&self.pubkey())
     }
+    /// Whether this key signs somewhere else, later: a browser extension
+    /// behind `window.nostr.sidestr` (spec `proposals/browser-signer.md`),
+    /// which computes the sighashes itself and signs only after the person
+    /// confirms. When `true` a builder lays the transaction out and sizes it
+    /// exactly as if signed, never calls [`sign_key_path`](Self::sign_key_path),
+    /// and returns it with 65-byte placeholder witnesses;
+    /// [`crate::external::accept_signed`] then takes the signed transaction
+    /// back and verifies it. `false` for every in-memory key.
+    fn signs_elsewhere(&self) -> bool {
+        false
+    }
 }
 
 /// A signer holding its secret key in memory: siding's model, for a test, a

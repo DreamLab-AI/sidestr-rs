@@ -148,6 +148,7 @@ pub mod coins;
 pub mod compose;
 pub mod deliver;
 pub mod error;
+pub mod external;
 pub mod key;
 pub mod pegin;
 pub mod policy;

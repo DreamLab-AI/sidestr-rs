@@ -2,6 +2,25 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
+## 0.4.1 — 2026-09-24
+
+### Added
+
+- Spends signed somewhere else (spec `proposals/browser-signer.md`,
+  `window.nostr.sidestr.signTransaction`). `SpendSigner::signs_elsewhere`
+  (default `false`): when `true`, every builder lays out, sizes, checks and
+  returns the spend with 65-byte placeholder witnesses and signs nothing.
+  `external::ExternalSigner` is such a signer for a public key alone;
+  `external::unsigned_hex` is the request a browser signer takes; and
+  `external::accept_signed` takes the signed transaction back only when its
+  txid is the one built and every input verifies under the parent family's
+  sighash against the caller's own prevouts.
+
+### Changed
+
+- `build_spend`, `build_outputs` and the builders on them sign through one
+  internal step, so the sign-then-verify path is written once.
+
 ## 0.4.0 — 2026-09-24
 
 Breaking only in that `Error` gains a variant; `Error` is now
