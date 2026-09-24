@@ -9,6 +9,7 @@
 /// Everything that can go wrong between "I want to pay" and a transaction
 /// the producer accepts.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// The amount is zero (`spend.mjs`: "the amount is a whole number of sats").
     #[error("the amount is a whole number of sats")]
@@ -94,6 +95,11 @@ pub enum Error {
     /// The [`SpendSigner`](crate::key::SpendSigner) could not sign.
     #[error("signer: {0}")]
     Signer(String),
+    /// An issued-asset build the `assets` view would not read as asked
+    /// (SPEC 12): too little of the asset, a memo shaped like an assets
+    /// record, an input carrying another asset.
+    #[error("asset: {0}")]
+    Asset(String),
     /// A producer answered `{"error": …}` to a `POST /tx`.
     #[error("producer refused: {0}")]
     Refused(String),

@@ -1,6 +1,6 @@
 [package]
 name = "sidestr-agent"
-version = "0.2.0"
+version = "0.3.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
@@ -21,12 +21,22 @@ all-features = true
 [[bin]]
 name = "sidestr-agent"
 path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The `sidestr-agent` binary and what only it needs: argument parsing, an
+# async runtime, relay delivery and HTTP to a producer or mirror. The library
+# without it is pure (no network, no runtime) and builds for wasm32, so a
+# browser wallet links the same builders an agent does:
+# `sidestr-agent = { version = "0.3", default-features = false }`.
+cli = ["dep:clap", "dep:tokio", "dep:ureq", "dep:sidestr-round", "sidestr-wallet/client"]
 
 [dependencies]
-sidestr-core = { path = "../sidestr-core", version = "0.3" }
-sidestr-wallet = { path = "../sidestr-wallet", version = "0.3", features = ["client"] }
+sidestr-core = { path = "../sidestr-core", version = "0.3.1" }
+sidestr-wallet = { path = "../sidestr-wallet", version = "0.4" }
 sidestr-nostr = { path = "../sidestr-nostr", version = "0.3" }
-sidestr-round = { path = "../sidestr-round", version = "0.2", features = ["relay"] }
+sidestr-round = { path = "../sidestr-round", version = "0.2", features = ["relay"], optional = true }
 bitcoin = { workspace = true }
 bech32 = { workspace = true }
 # The peg-in plan's descriptor, address and checksum: rust-bitcoin's own
@@ -36,7 +46,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
-clap = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+clap = { version = "4", features = ["derive"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 # HTTPS mirrors as well as a producer on loopback: ureq's rustls backend.
-ureq = { version = "3", default-features = false, features = ["rustls"] }
+ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }

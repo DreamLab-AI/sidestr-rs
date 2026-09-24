@@ -2,6 +2,27 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
+## 0.4.0 — 2026-09-24
+
+Breaking only in that `Error` gains a variant; `Error` is now
+`#[non_exhaustive]`, so later variants will not break.
+
+### Added
+
+- `compose::build_outputs`: a spend laid out as named outputs, then
+  `OP_RETURN` records, then change, with coins that must be spent
+  (`required`) beside the ones the selector may choose. Selection retries
+  with the laid-out fee when records make the transaction larger than the
+  plain-spend bound.
+- `asset` (SPEC 12): `build_issue` and `build_transfer` (with memo records
+  such as `tip:nostr:<event id>`), `sort_coins`, `plain_coins`,
+  `balance_of`, and `CARRIER` (330 sats, taproot dust). A transfer spends
+  carriers of one asset only, pays the fee from plain coins, and is checked
+  against the `AssetView` before it is returned. `tests/assets_on_chain.rs`
+  runs issue, tip and plain payment through `State::submit` and replays the
+  block file to the same balances.
+- `Error::Asset`.
+
 ## 0.3.0 — 2026-09-23
 
 SPEC 0.0.3 (`lib/txsign.mjs`, reference `722ad42`). Breaking.

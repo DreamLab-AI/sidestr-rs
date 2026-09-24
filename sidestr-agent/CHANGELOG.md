@@ -2,6 +2,32 @@
 
 All notable changes to `sidestr-agent`. The crate follows semantic versioning.
 
+## 0.3.0 — 2026-09-24
+
+### Changed
+
+- The binary's dependencies (clap, tokio, ureq, `sidestr-round`, the
+  wallet's HTTP client) are behind the default feature `cli`. With
+  `default-features = false` the library is pure and builds for
+  `wasm32-unknown-unknown`, so a browser wallet signs with the same code an
+  agent does.
+- `send` and `burn` spend only coins that carry no asset, read from the
+  block file (`--blocks`, a path or URL; `<url>/blocks.dat` by default).
+  Before, a plain payment could spend a coin carrying an issued asset and
+  destroy it.
+- Depends on `sidestr-wallet` 0.4 and `sidestr-core` 0.3.1.
+
+### Added
+
+- `AgentKey::from_secret_bytes`.
+- `ChainView`: a block file replayed with the assets view (`coins`,
+  `plain_coins`, `asset_balance`, `find_asset`).
+- `prepare_transfer` and `prepare_issue`: an asset move or issue and its
+  kind-23500 event, both signed by the agent's key.
+- Commands `assets`, `issue`, `send-asset` (with `--memo`) and `faucet`,
+  which answers kind-23501 requests with plain sats and, optionally, units
+  of an asset, one grant per script per window.
+
 ## 0.2.0 — 2026-09-23
 
 ### Changed

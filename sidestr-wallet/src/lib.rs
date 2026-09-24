@@ -142,8 +142,10 @@
     rustdoc::broken_intra_doc_links
 )]
 
+pub mod asset;
 pub mod burn;
 pub mod coins;
+pub mod compose;
 pub mod deliver;
 pub mod error;
 pub mod key;

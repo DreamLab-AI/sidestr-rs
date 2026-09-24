@@ -261,6 +261,7 @@
 #![cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
 
 pub mod address;
+pub mod assets;
 pub mod block;
 #[cfg(feature = "std")]
 pub mod blockfile;
@@ -270,8 +271,10 @@ pub mod document;
 pub mod error;
 pub mod federation;
 pub mod marker;
+pub mod mirror;
 pub mod parent;
 pub mod parents;
+pub mod records;
 pub mod rules;
 pub mod sighash;
 pub mod state;

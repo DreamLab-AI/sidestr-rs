@@ -41,6 +41,14 @@ sidestr-agent --key-file alice.key send npub1… 30000
 sidestr-agent --key-file alice.key send did:nostr:<hex> 30000 --post   # also POST /tx
 sidestr-agent --key-file alice.key send npub1… 30000 --dry-run         # print, deliver nothing
 
+# issued assets (SPEC 12): what exists, what the key holds; issue one; move it
+sidestr-agent --key-file alice.key assets
+sidestr-agent --key-file alice.key issue DREAM 1000000
+sidestr-agent --key-file alice.key send-asset DREAM npub1… 50 --memo tip:nostr:<event id>
+
+# a faucet: answer kind-23501 requests with 2,000 sats and 100 DREAM, once a day per script
+sidestr-agent --key-file faucet.key faucet --sats 2000 --asset DREAM --units 100 --state faucet.json
+
 # peg out: burn sats the peg holders owe to a testnet4 address
 sidestr-agent --key-file alice.key burn tb1p… 20000
 
@@ -57,6 +65,23 @@ sidestr-agent --chain chain.json pegin-plan --amount 50000 --refund npub1… --t
 | `--relays` | relays for the kind-23500 event, comma-separated | siding's five defaults |
 | `--key-file` | 64 hex characters or an `nsec1…`; a key is never taken on the command line | — |
 | `--chain` | read the chain document from a file instead of `<url>/chain.json` | — |
+| `--blocks` | the block file for the assets view: a path or an http(s) URL | `<url>/blocks.dat` |
+
+`send` and `burn` spend only coins that carry no issued asset: every spend
+reads the block file first. An asset on a coin a plain payment spent would
+be destroyed.
+
+## As a library
+
+```toml
+sidestr-agent = { version = "0.3", default-features = false }
+```
+
+Without the `cli` feature the crate is pure: no runtime, no network, and it
+builds for `wasm32-unknown-unknown`. `ChainView::replay` validates a
+mirror's `blocks.dat` you fetched yourself; `prepare`, `prepare_transfer`
+and `prepare_issue` return the signed transaction and the signed kind-23500
+event for you to deliver.
 
 Every command prints one JSON object.
 

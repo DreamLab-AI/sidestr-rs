@@ -2,6 +2,36 @@
 
 All notable changes to `sidestr-core`. The crate follows semantic versioning.
 
+## 0.3.1 — 2026-09-24
+
+Additive.
+
+### Added
+
+- `mirror`: a block file held in memory. `records` splits the
+  `[u32le height][u32le size][block]` framing without a file system;
+  `StateOf::replay` and `StateOf::replay_with` validate a mirror's
+  `blocks.dat` into a state, the second calling back with the state before
+  each block so a wallet can read its own history. A browser that fetched
+  `blocks.dat` replays `sidestr:dreamlab`'s 367 blocks in about 30 ms
+  natively. `encode_record` writes one record, for tests and tools.
+- `records` (SPEC 12.1, a port of `siding/lib/records.mjs`): `record_text`,
+  `record_script`, `records_of`, `parse_issue`, `parse_tally`, `parse_pool`,
+  `classify` and `tally_text`.
+- `assets` (SPEC 12.2): `AssetView`, the `assets` rule of
+  `siding/lib/overlays/assets.mjs` applied as a view, block by block: what
+  each unspent output carries, what was issued, and how each transaction
+  was read (`Outcome`). On a chain whose document names no rules it is how a
+  client reads an asset its holders validate; a transaction that breaks the
+  rule is read as carrying nothing rather than refused. `check` judges a
+  transaction before it is signed.
+
+### Departure
+
+- `record_text` holds the push length to the data: `6a 03 616263 51` is not
+  a record. The reference's `recordText` has its length check after a `//`
+  on the same line, so it reads trailing bytes into the text.
+
 ## 0.3.0 — 2026-09-23
 
 SPEC 0.0.3, ported from the reference at `722ad42` (Melvin Carvalho). Breaking.

@@ -25,6 +25,8 @@
 //! | [`parse_pubkey`], [`npub`], [`Identity`] | `npub` / hex / `did:nostr:` ↔ x-only key ↔ script ↔ chain address |
 //! | [`destination`], [`refuse_secret`] | a pay-to: an `npub`, a `did:nostr:`, a chain address or a script hex; never secret-shaped text |
 //! | [`prepare`] | a spend or peg-out burn, signed by the key, and its kind-23500 event, signed by the same key |
+//! | [`ChainView`] | a mirror's block file replayed, with the SPEC 12 assets view: coins, plain coins, asset balances |
+//! | [`prepare_transfer`], [`prepare_issue`] | move or issue an asset (with memo records such as `tip:nostr:<event id>`), and the event |
 //! | [`pegin_plan`] | what a parent wallet pays to peg in: the peg address (and its refund descriptor), the marker |
 //!
 //! It is a port in the AGPL sense: it builds on `sidestr-core`,
@@ -84,16 +86,23 @@ use bech32::primitives::decode::CheckedHrpstring;
 use bech32::{Bech32, Hrp};
 use bitcoin::key::XOnlyPublicKey;
 use bitcoin::secp256k1::SecretKey;
+use bitcoin::Txid;
 use bitcoin::{Address, ScriptBuf};
 use serde::Serialize;
 use sidestr_core::address::script_to_address;
+use sidestr_core::assets::{AssetView, Issued};
 use sidestr_core::block::{key_from_hex, pubkey_of};
 use sidestr_core::document::ChainDocument;
 use sidestr_core::federation::Federation;
 use sidestr_core::parent::parent_network;
+use sidestr_core::state::State;
 use sidestr_nostr::event::{Event, SecretKeySigner};
 use sidestr_nostr::tx::sign_transaction_event;
+use sidestr_wallet::asset::{
+    balance_of, build_issue, build_transfer, plain_coins, IssueRequest, TransferRequest,
+};
 use sidestr_wallet::burn::{build_burn, BurnRequest};
+use sidestr_wallet::coins::from_state;
 use sidestr_wallet::coins::Coin;
 use sidestr_wallet::key::{script_for, PlainKey};
 use sidestr_wallet::pegin::build_pegin;
@@ -204,6 +213,14 @@ impl AgentKey {
         } else {
             key_from_hex(t).map_err(|_| Error::Key("want 64 hex characters or an nsec1…"))?
         };
+        Ok(Self { secret })
+    }
+
+    /// From the 32 secret bytes held in memory (a browser session's key).
+    /// The error does not echo the bytes.
+    pub fn from_secret_bytes(bytes: &[u8; 32]) -> Result<Self> {
+        let secret =
+            SecretKey::from_slice(bytes).map_err(|_| Error::Key("not a secp256k1 secret key"))?;
         Ok(Self { secret })
     }
 
@@ -345,6 +362,10 @@ pub struct Prepared {
 /// sidechain destination for [`Payment::Send`] (see [`destination`]) and a
 /// parent address or script for [`Payment::Burn`]; `created_at` is the
 /// event's time.
+///
+/// `coins` are spent as sats. On a chain where issued assets ride on coins,
+/// pass [`ChainView::plain_coins`], never every coin the key holds: a coin
+/// spent here carries nothing onward, so an asset on it would be destroyed.
 #[allow(clippy::too_many_arguments)]
 pub fn prepare(
     key: &AgentKey,
@@ -384,6 +405,129 @@ pub fn prepare(
             &Permissive,
         )?,
     };
+    let event = sign_transaction_event(&key.event_signer(), &chain.id, &spend.hex, created_at)?;
+    Ok(Prepared { spend, event })
+}
+
+/// A chain replayed from a block file and read under the `assets` rule:
+/// the UTXO set and what each unspent output carries (SPEC 12). What an
+/// agent needs before it moves an issued asset or pays plain sats beside
+/// coins that carry one.
+#[derive(Debug)]
+pub struct ChainView {
+    /// The validated chain at the file's last block.
+    pub state: State,
+    /// What each unspent output carries.
+    pub assets: AssetView,
+}
+
+impl ChainView {
+    /// Replay a block file's bytes (`GET <mirror>/blocks.dat`) against the
+    /// chain document the caller trusts. `now` is the clock for the
+    /// future-time rule, `None` to skip it. Stock-header chains.
+    pub fn replay(doc: ChainDocument, dat: &[u8], now: Option<u32>) -> Result<Self> {
+        let mut assets = AssetView::new();
+        let state = State::replay_with(doc, dat, now, |_, h, block| {
+            assets.apply_transactions(&block.txdata, h);
+        })?;
+        Ok(Self { state, assets })
+    }
+
+    /// The coins a script holds at the tip.
+    pub fn coins(&self, script: &bitcoin::Script) -> Vec<Coin> {
+        from_state(&self.state, script)
+    }
+
+    /// The coins a script holds that carry nothing: what a plain payment
+    /// may spend without destroying an asset.
+    pub fn plain_coins(&self, script: &bitcoin::Script) -> Vec<Coin> {
+        plain_coins(&self.coins(script), &self.assets)
+    }
+
+    /// How much of `asset` a script holds.
+    pub fn asset_balance(&self, script: &bitcoin::Script, asset: &Txid) -> u64 {
+        balance_of(&self.coins(script), &self.assets, asset)
+    }
+
+    /// An asset by id, or by ticker (the earliest issued under it).
+    pub fn find_asset(&self, text: &str) -> Option<(Txid, Issued)> {
+        if let Ok(id) = text.parse::<Txid>() {
+            return self.assets.issued().get(&id).map(|i| (id, i.clone()));
+        }
+        self.assets.by_ticker(text).map(|(id, i)| (*id, i.clone()))
+    }
+}
+
+/// An asset transfer signed with the agent's key, and the kind-23500 event
+/// that carries it: `amount` units of `asset` to `to` (a
+/// [`destination`]), with `memos` as records beside the tally. Plain coins
+/// pay the fee; no other asset is touched.
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_transfer(
+    key: &AgentKey,
+    view: &ChainView,
+    asset: Txid,
+    to: &str,
+    amount: u64,
+    memos: &[String],
+    fee: Option<u64>,
+    created_at: u64,
+) -> Result<Prepared> {
+    let chain = view.state.document();
+    let coins = view.coins(&key.script());
+    let t = build_transfer(
+        &TransferRequest {
+            chain,
+            coins: &coins,
+            view: &view.assets,
+            tip_height: view.state.height(),
+            asset,
+            to,
+            amount,
+            memos,
+            fee,
+        },
+        &key.spend_signer(),
+        &Permissive,
+    )?;
+    let event = sign_transaction_event(&key.event_signer(), &chain.id, &t.spend.hex, created_at)?;
+    Ok(Prepared {
+        spend: t.spend,
+        event,
+    })
+}
+
+/// Issue an asset from the agent's plain coins, its whole supply on one
+/// carrier to `to` (the agent itself when `None`), and the kind-23500
+/// event. The asset's id is the spend's txid.
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_issue(
+    key: &AgentKey,
+    view: &ChainView,
+    ticker: &str,
+    decimals: u8,
+    supply: u64,
+    to: Option<&str>,
+    fee: Option<u64>,
+    created_at: u64,
+) -> Result<Prepared> {
+    let chain = view.state.document();
+    let coins = view.coins(&key.script());
+    let spend = build_issue(
+        &IssueRequest {
+            chain,
+            coins: &coins,
+            view: &view.assets,
+            tip_height: view.state.height(),
+            ticker,
+            decimals,
+            supply,
+            to,
+            fee,
+        },
+        &key.spend_signer(),
+        &Permissive,
+    )?;
     let event = sign_transaction_event(&key.event_signer(), &chain.id, &spend.hex, created_at)?;
     Ok(Prepared { spend, event })
 }

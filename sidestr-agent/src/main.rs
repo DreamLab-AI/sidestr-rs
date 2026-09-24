@@ -8,8 +8,8 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use sidestr_agent::{
-    destination, identity, parse_pubkey, pegin_plan, prepare, refuse_secret, AgentKey, Payment,
-    PegTarget,
+    destination, identity, parse_pubkey, pegin_plan, prepare, prepare_issue, prepare_transfer,
+    refuse_secret, AgentKey, ChainView, Payment, PegTarget, Prepared,
 };
 use sidestr_core::document::ChainDocument;
 use sidestr_round::relay::{ok_count, publish_all, unix_now};
@@ -39,6 +39,11 @@ struct Cli {
     /// Read the chain document from this file instead of `<url>/chain.json`.
     #[arg(long, global = true)]
     chain: Option<PathBuf>,
+    /// The block file to replay for the assets view (SPEC 12): a path, or
+    /// an http(s) URL; `<url>/blocks.dat` when absent. Plain payments spend
+    /// only coins that carry no asset, so every spend reads it.
+    #[arg(long, global = true)]
+    blocks: Option<String>,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -64,6 +69,56 @@ enum Cmd {
         amount: u64,
         #[command(flatten)]
         deliver: Deliver,
+    },
+    /// Issued assets on the chain, and what the agent holds of each.
+    Assets,
+    /// Issue an asset (SPEC 12): the whole supply on one carrier to the agent.
+    Issue {
+        /// 1 to 8 of A-Z0-9.
+        ticker: String,
+        /// Units created.
+        supply: u64,
+        /// Display decimals, 0 to 8.
+        #[arg(long, default_value_t = 0)]
+        decimals: u8,
+        #[command(flatten)]
+        deliver: Deliver,
+    },
+    /// Move units of an issued asset: an npub, a did:nostr, an address or a script hex.
+    SendAsset {
+        /// The asset: its id (the issuing txid) or its ticker.
+        asset: String,
+        /// Where to.
+        to: String,
+        /// Units.
+        amount: u64,
+        /// A record written beside the tally (repeatable), e.g. `tip:nostr:<event id>`.
+        #[arg(long)]
+        memo: Vec<String>,
+        #[command(flatten)]
+        deliver: Deliver,
+    },
+    /// Answer kind-23501 faucet requests on the relays with plain sats and,
+    /// optionally, units of an asset; one grant per script per window.
+    Faucet {
+        /// Plain sats per grant.
+        #[arg(long, default_value_t = 2_000)]
+        sats: u64,
+        /// An asset to grant too (id or ticker).
+        #[arg(long)]
+        asset: Option<String>,
+        /// Units of the asset per grant.
+        #[arg(long, default_value_t = 100)]
+        units: u64,
+        /// Hours before one script may be paid again.
+        #[arg(long, default_value_t = 24)]
+        per_address_hours: u64,
+        /// Grants per hour, all scripts together.
+        #[arg(long, default_value_t = 20)]
+        per_hour: usize,
+        /// Where grants are remembered across restarts.
+        #[arg(long)]
+        state: PathBuf,
     },
     /// Peg out: burn sats owed to a parent address (SPEC 7).
     Burn {
@@ -159,6 +214,10 @@ fn destination_args(args: &[String]) -> Vec<&str> {
             i += 1;
         } else if a == "send" || a == "burn" {
             payment = true;
+        } else if a == "send-asset" {
+            // `send-asset <asset> <to> …`: the destination is the second positional
+            out.extend(args.get(i + 2).map(String::as_str));
+            i += 2;
         } else if payment && !positional_seen && !a.starts_with('-') {
             out.push(a);
             positional_seen = true;
@@ -188,6 +247,8 @@ async fn main() {
         }
     }
 }
+
+mod faucet;
 
 async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     match &cli.cmd {
@@ -233,6 +294,98 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
             amount,
             deliver,
         } => pay(cli, Payment::Burn, refuse_secret(to)?, *amount, deliver).await,
+        Cmd::Assets => {
+            let doc = chain(cli)?;
+            let v = view(cli, doc)?;
+            let me = cli.key_file.as_ref().map(|_| key(cli)).transpose()?;
+            let assets: Vec<serde_json::Value> = v
+                .assets
+                .issued()
+                .iter()
+                .map(|(id, i)| {
+                    let mut a = json!({
+                        "id": id.to_string(), "ticker": i.ticker, "decimals": i.decimals,
+                        "height": i.height, "supply": i.supply,
+                    });
+                    if let Some(k) = &me {
+                        a["held"] = json!(v.asset_balance(&k.script(), id));
+                    }
+                    a
+                })
+                .collect();
+            let mut out = json!({ "tip": v.state.height(), "assets": assets });
+            if let Some(k) = &me {
+                out["plain"] = json!(v
+                    .plain_coins(&k.script())
+                    .iter()
+                    .map(|c| c.value)
+                    .sum::<u64>());
+            }
+            Ok(out)
+        }
+        Cmd::Issue {
+            ticker,
+            supply,
+            decimals,
+            deliver: d,
+        } => {
+            let k = key(cli)?;
+            let v = view(cli, chain(cli)?)?;
+            let id = v.state.document().id.clone();
+            let p = prepare_issue(&k, &v, ticker, *decimals, *supply, None, d.fee, unix_now())?;
+            let mut out = deliver(cli, "issue", &id, p, d).await?;
+            out["asset"] = out["txid"].clone();
+            Ok(out)
+        }
+        Cmd::SendAsset {
+            asset,
+            to,
+            amount,
+            memo,
+            deliver: d,
+        } => {
+            let k = key(cli)?;
+            let v = view(cli, chain(cli)?)?;
+            let (asset_id, info) = v
+                .find_asset(asset)
+                .ok_or_else(|| format!("no asset {asset} on this chain"))?;
+            let id = v.state.document().id.clone();
+            let p = prepare_transfer(
+                &k,
+                &v,
+                asset_id,
+                &destination(to)?,
+                *amount,
+                memo,
+                d.fee,
+                unix_now(),
+            )?;
+            let mut out = deliver(cli, "send-asset", &id, p, d).await?;
+            out["asset"] =
+                json!({ "id": asset_id.to_string(), "ticker": info.ticker, "units": amount });
+            Ok(out)
+        }
+        Cmd::Faucet {
+            sats,
+            asset,
+            units,
+            per_address_hours,
+            per_hour,
+            state,
+        } => {
+            faucet::run(
+                cli,
+                faucet::Grant {
+                    sats: *sats,
+                    asset: asset.clone(),
+                    units: *units,
+                    per_address_secs: per_address_hours * 3600,
+                    per_hour: *per_hour,
+                    state: state.clone(),
+                },
+            )
+            .await
+        }
         Cmd::PeginPlan {
             amount,
             refund,
@@ -273,22 +426,61 @@ async fn pay(
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let k = key(cli)?;
     let doc = chain(cli)?;
-    let tip = client::tip(&cli.url)?;
-    let coins = client::coins(&cli.url, &k.script().to_hex_string())?;
+    let v = view(cli, doc.clone())?;
+    let coins = v.plain_coins(&k.script());
     let p = prepare(
         &k,
         &doc,
         &coins,
-        tip.height,
+        v.state.height(),
         what,
         to,
         amount,
         d.fee,
         unix_now(),
     )?;
+    deliver(cli, what_name(&what), &doc.id, p, d).await
+}
+
+fn what_name(p: &Payment) -> &'static str {
+    match p {
+        Payment::Send => "send",
+        Payment::Burn => "burn",
+    }
+}
+
+/// The block file's bytes, from a path or a URL.
+fn block_file(cli: &Cli) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let src = cli
+        .blocks
+        .clone()
+        .unwrap_or_else(|| format!("{}/blocks.dat", cli.url.trim_end_matches('/')));
+    if src.starts_with("http://") || src.starts_with("https://") {
+        let mut body = ureq::get(&src).call()?.into_body();
+        Ok(body.with_config().limit(256 * 1024 * 1024).read_to_vec()?)
+    } else {
+        Ok(std::fs::read(&src)?)
+    }
+}
+
+fn view(cli: &Cli, doc: ChainDocument) -> Result<ChainView, Box<dyn std::error::Error>> {
+    Ok(ChainView::replay(
+        doc,
+        &block_file(cli)?,
+        Some(unix_now() as u32),
+    )?)
+}
+
+async fn deliver(
+    cli: &Cli,
+    what: &str,
+    chain_id: &str,
+    p: Prepared,
+    d: &Deliver,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let mut out = json!({
         "cmd": what,
-        "chain": doc.id,
+        "chain": chain_id,
         "txid": p.spend.txid.to_string(),
         "event": p.event.id,
         "amount": p.spend.amount,
