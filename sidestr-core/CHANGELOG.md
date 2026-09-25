@@ -2,6 +2,19 @@
 
 All notable changes to `sidestr-core`. The crate follows semantic versioning.
 
+## 0.3.2 — 2026-09-25
+
+A fix.
+
+### Fixed
+
+- The crate builds without the `std` feature again. `Error::BlockFile` was
+  gated on `std`, but the in-memory mirror reader (`mirror`), which needs no
+  file system, reports a malformed block file with it; the variant is no
+  longer gated. CI now checks `sidestr-core` alone with
+  `--no-default-features`, natively and for wasm32: built beside the other
+  crates, feature unification had turned `std` back on and hidden this.
+
 ## 0.3.1 — 2026-09-24
 
 Additive.

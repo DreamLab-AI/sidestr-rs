@@ -66,6 +66,15 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+      # sidestr-core on its own, without std: built beside the other crates,
+      # Cargo unifies features and their default dependency on sidestr-core
+      # turns std back on, which is how a std-only error variant in the
+      # mirror reader went unnoticed until 0.3.2.
+      - name: sidestr-core alone, no std (native and wasm32)
+        run: |
+          cargo check -p sidestr-core --no-default-features
+          cargo check -p sidestr-core --no-default-features --target wasm32-unknown-unknown
+
       # The pure halves a browser wallet links (the forum's): secp256k1's C
       # builds with the runner's clang for wasm32.
       - name: wasm32 (the libraries without the agent's CLI)

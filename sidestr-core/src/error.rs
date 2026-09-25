@@ -84,10 +84,11 @@ pub enum Error {
     #[cfg(feature = "std")]
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    /// The block file and its index disagree (feature `std`): an index entry
-    /// that runs past the end of `blocks.dat`, or a record whose
-    /// `[u32 height][u32 size]` prefix is not what the index entry says.
-    #[cfg(feature = "std")]
+    /// The block file and its index disagree: an index entry that runs past
+    /// the end of `blocks.dat`, or a record whose `[u32 height][u32 size]`
+    /// prefix is not what the index entry says. Not gated on `std`: a
+    /// mirror's bytes are read the same way in a browser
+    /// ([`crate::mirror`]) as the file is on disk.
     #[error("block file: {0}")]
     BlockFile(String),
 }
