@@ -31,7 +31,7 @@ The dependency edge runs from `sidestr-header` to this crate, never back.
 This crate is a port of **siding**, the reference implementation of sidestr by
 Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
 AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279` and
-brought to SPEC 0.0.3 at `722ad42d3271efccfdfaf57c3c6943f58fc168f8`
+brought to SPEC 0.0.4 (`@sidestr/spec` 0.0.6) at `fa86dac83d47b8f70195132e91e9dc083e1d9228`
 (`siding/lib/{parents,block,chain,overlay,marker,records,address,checkpoint}.mjs`,
 `bin/siding.mjs`, and the tests in `siding/test/`). Two parts come from the
 engine siding loads, by the same author and under the same licence:
@@ -100,7 +100,7 @@ cites its sections, and every ported function names its original.
 
 Level 1 (one signer), both header families, end to end: genesis from the
 document, block production, validation, the mempool policy, the block file.
-SPEC 0.0.3 (reference `722ad42`): the peg output is the taproot output the
+SPEC 0.0.3: the peg output is the taproot output the
 peg holders own, at any position (`parent::find_pegin` with a `PegOwner`;
 `owned_by_peg_wallet` asks the node as the reference does), and
 `sighash::key_path_sighash` signs by the parent's family, the rule the

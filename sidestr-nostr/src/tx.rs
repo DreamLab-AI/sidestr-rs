@@ -1,5 +1,5 @@
-//! Transactions and faucet requests over a relay, kinds 23500 and 23501
-//! (SPEC 11; `siding/lib/relay.mjs`).
+//! Transactions, faucet requests and parent transactions over a relay, kinds
+//! 23500, 23501 and 23503 (SPEC 11; `siding/lib/relay.mjs`).
 //!
 //! From `relay.mjs`: a signed transaction travels as a kind 23500 event whose
 //! content is the transaction hex and whose `chain` tag names the chain. The
@@ -7,7 +7,12 @@
 //! signs the event with a throwaway key and never needs an identity. Kind
 //! 23501 asks for coins: content an address (or script hex), tagged the same
 //! way; a faucet that follows the relay may answer with a payment, at its
-//! own limits (`bin/siding.mjs faucet`).
+//! own limits (`bin/siding.mjs faucet`). Kind 23503 (SPEC 0.0.4) carries a
+//! signed *parent* transaction from a wallet with no node: a producer with a
+//! parent node broadcasts it if and only if that node's mempool policy
+//! accepts it as it stands, and never retries a refusal
+//! (`parent.mjs relayParentTx`). This is how a peg-in built without a node
+//! reaches the parent.
 //!
 //! Nothing here decodes the transaction: a producer's mempool judges it
 //! (`sidestr_core::state::State::submit`), and a faucet resolves the address
@@ -28,11 +33,17 @@
 //!
 //! let ask = sign_faucet_request(&throwaway, "sidestr:example", "ex1p…", 1_790_100_000).unwrap();
 //! assert_eq!(parse_faucet_request(&ask, None).unwrap().destination, "ex1p…");
+//!
+//! // a peg-in from a wallet with no node: the parent transaction rides kind 23503
+//! use sidestr_nostr::tx::{parse_parent_transaction, sign_parent_transaction_event};
+//! let up = sign_parent_transaction_event(&throwaway, "sidestr:example", "02000000000101CD", 1_790_100_000).unwrap();
+//! assert_eq!(up.kind, 23503);
+//! assert_eq!(parse_parent_transaction(&up, Some("sidestr:example")).unwrap().tx_hex, "02000000000101cd");
 //! ```
 
 use crate::error::{any_hex, Error, Result};
 use crate::event::{sign, Event, Signer, UnsignedEvent};
-use crate::kinds::{expect_kind, KIND_FAUCET_REQUEST, KIND_TRANSACTION};
+use crate::kinds::{expect_kind, KIND_FAUCET_REQUEST, KIND_PARENT_TRANSACTION, KIND_TRANSACTION};
 use crate::tags::{chain_tag, tag, TAG_CHAIN};
 
 /// A transaction as an event carries it.
@@ -76,6 +87,48 @@ pub fn parse_transaction(ev: &Event, expect: Option<&str>) -> Result<Transaction
     Ok(TransactionEvent {
         chain_id: chain_tag(&ev.tags, expect)?.to_string(),
         tx_hex: any_hex("transaction", &ev.content)?,
+    })
+}
+
+/// The unsigned kind-23503 event (`relay.mjs parentTxEvent`, SPEC 0.0.4):
+/// `chain` tag, content a signed parent transaction as hex (trimmed and
+/// lower-cased, as the kind-23500 event's is). Sign it with a throwaway key:
+/// the transaction authorises itself.
+pub fn parent_transaction_event(
+    chain_id: &str,
+    tx_hex: &str,
+    created_at: u64,
+) -> Result<UnsignedEvent> {
+    Ok(UnsignedEvent {
+        pubkey: String::new(),
+        created_at,
+        kind: KIND_PARENT_TRANSACTION,
+        tags: vec![tag(TAG_CHAIN, chain_id)],
+        content: any_hex("parent transaction", tx_hex)?,
+    })
+}
+
+/// Sign a kind-23503 event.
+pub fn sign_parent_transaction_event(
+    signer: &dyn Signer,
+    chain_id: &str,
+    tx_hex: &str,
+    created_at: u64,
+) -> Result<Event> {
+    sign(
+        signer,
+        parent_transaction_event(chain_id, tx_hex, created_at)?,
+    )
+}
+
+/// Decode a kind-23503 event; `expect` is the chain a producer follows. The
+/// hex comes back lowercase (`relayParentTx` lower-cases it) and is not
+/// decoded here: the producer's parent node is the judge.
+pub fn parse_parent_transaction(ev: &Event, expect: Option<&str>) -> Result<TransactionEvent> {
+    expect_kind(ev.kind, KIND_PARENT_TRANSACTION, "parent transaction")?;
+    Ok(TransactionEvent {
+        chain_id: chain_tag(&ev.tags, expect)?.to_string(),
+        tx_hex: any_hex("parent transaction", &ev.content)?,
     })
 }
 
@@ -134,6 +187,27 @@ mod tests {
 
     fn signer() -> SecretKeySigner {
         SecretKeySigner::from_bytes(&[42u8; 32]).unwrap()
+    }
+
+    #[test]
+    fn parent_transaction_round_trip_and_rejections() {
+        let ev =
+            sign_parent_transaction_event(&signer(), "sidestr:t", " 02000000CD \n", 1).unwrap();
+        assert_eq!(ev.kind, 23503);
+        assert_eq!(ev.tags, vec![vec!["chain", "sidestr:t"]]);
+        assert_eq!(ev.content, "02000000cd");
+        ev.verify().unwrap();
+        let t = parse_parent_transaction(&ev, Some("sidestr:t")).unwrap();
+        assert_eq!(
+            (t.chain_id.as_str(), t.tx_hex.as_str()),
+            ("sidestr:t", "02000000cd")
+        );
+        assert!(parse_parent_transaction(&ev, Some("sidestr:other")).is_err());
+        // a kind-23500 event is not a parent transaction, nor the reverse
+        let child = sign_transaction_event(&signer(), "sidestr:t", "02000000ab", 1).unwrap();
+        assert!(parse_parent_transaction(&child, None).is_err());
+        assert!(parse_transaction(&ev, None).is_err());
+        assert!(parent_transaction_event("sidestr:t", "xyz", 1).is_err());
     }
 
     #[test]

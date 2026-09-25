@@ -572,6 +572,76 @@ pub struct PeginPlan {
     pub note: String,
 }
 
+/// The parent address of the peg script a chain's signer announces with
+/// every tip (SPEC 0.0.4, the `peg` tag; [`sidestr_nostr::tip::newest_peg_script`]):
+/// what a level-1 peg-in pays when no `--peg-address` is given, as the JS
+/// wallet's `pegInScript` does. The scanner counts only a taproot output
+/// paying it, so anything else is refused.
+///
+/// ```
+/// use sidestr_agent::announced_peg_address;
+/// use sidestr_core::document::ChainDocument;
+///
+/// let doc = ChainDocument::from_json(r#"{"id":"sidestr:x","name":"x","parent":"tbtc4",
+///   "challenge":"5120c95b519579bda3b5e29f5dca4a0b8f9f1d04d1979d2e4c3a33483a6b34b61d88",
+///   "powLimit":"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","addressPrefix":"ex",
+///   "genesisTime":1790000000,"refundBlocks":10000,"pegs":[]}"#).unwrap();
+/// let peg = format!("5120{}", "ab".repeat(32));
+/// assert!(announced_peg_address(&doc, &peg).unwrap().starts_with("tb1p"));
+/// assert!(announced_peg_address(&doc, "0014aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").is_err());
+/// ```
+pub fn announced_peg_address(chain: &ChainDocument, peg_script_hex: &str) -> Result<String> {
+    let parent = chain.parent()?;
+    let network = parent_network(parent).ok_or(sidestr_core::Error::ReservedParent {
+        alias: parent.alias,
+        label: parent.label,
+    })?;
+    let script = ScriptBuf::from_hex(peg_script_hex)
+        .map_err(|e| Error::Plan(format!("the announced peg script is not hex: {e}")))?;
+    if !script.is_p2tr() {
+        return Err(Error::Plan(
+            "the announced peg script is not a taproot output, which is all the scanner counts (SPEC 6)"
+                .into(),
+        ));
+    }
+    Address::from_script(&script, network)
+        .map(|a| a.to_string())
+        .map_err(|_| Error::Plan("the announced peg script has no parent address".into()))
+}
+
+/// The peg script `chain`'s signer announces with its newest tip, asked of
+/// `relays` once (`announce.mjs fetchLatestTip` then `pegScript`, as the JS
+/// wallet's `pegInScript` does): only the chain document's signer counts,
+/// and `None` when the newest announcement carries none. Feature `cli`.
+#[cfg(feature = "cli")]
+pub async fn fetch_announced_peg_script(
+    relays: &[String],
+    chain: &ChainDocument,
+    timeout: std::time::Duration,
+) -> Option<String> {
+    let events =
+        sidestr_round::relay::fetch(relays, sidestr_nostr::relay::tip_filter(&chain.id), timeout)
+            .await;
+    sidestr_nostr::tip::newest_peg_script(&events, &chain.id, chain.signer.as_deref())
+}
+
+/// The public explorer API a wallet with no node broadcasts a parent
+/// transaction to, per parent (the JS wallet's `parentApi`): mempool.guide
+/// beside a BLAKE2b parent, mempool.space beside stock Bitcoin, `/testnet4`
+/// off mainnet; `None` for a parent the table does not know.
+pub fn parent_explorer_api(chain: &ChainDocument) -> Option<String> {
+    let p = chain.parent().ok()?;
+    let host = match p.family {
+        sidestr_core::parents::Family::Blake2b => "https://mempool.guide",
+        sidestr_core::parents::Family::Stock => "https://mempool.space",
+    };
+    Some(if p.mainnet {
+        format!("{host}/api")
+    } else {
+        format!("{host}/testnet4/api")
+    })
+}
+
 /// The signing key a level-1 document names: its `signer`, else the key of a
 /// `5120‖key` challenge. `None` for a level-2 document. This is what
 /// [`PegTarget::Key`] takes when the peg holders choose to import a
@@ -660,8 +730,9 @@ pub fn pegin_plan(
     if target.is_none() && Federation::for_document(chain)?.is_none() {
         return Err(Error::Plan(
             "level 1: the peg output is the one the producer's parent wallet owns (SPEC 6): \
-             pay an address that wallet gave (--peg-address), or pass --peg-key for a \
-             descriptor the peg holders import"
+             pay the peg script the signer announces (announced_peg_address), an address \
+             that wallet gave (--peg-address), or pass --peg-key for a descriptor the peg \
+             holders import"
                 .into(),
         ));
     }

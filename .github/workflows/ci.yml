@@ -11,9 +11,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # The reference engine the oracle suites drive (sidestr/spec 0.0.3 and the
-  # two checkouts siding loads). Bump together, and say so in the changelogs.
-  SIDESTR_SPEC_REF: 722ad42d3271efccfdfaf57c3c6943f58fc168f8
+  # The reference engine the oracle suites drive (sidestr/spec SPEC 0.0.4,
+  # @sidestr/spec 0.0.6, and the two checkouts siding loads). Bump together,
+  # and say so in the changelogs.
+  SIDESTR_SPEC_REF: fa86dac83d47b8f70195132e91e9dc083e1d9228
   SCHEMA_REF: b8cbf6337c7450fe14ddc5bce00c7280059aab5d
   BLAKETESTNODE_REF: d2764d21fe1f8c29b1979e49eb8287a72dd2347e
 
@@ -81,7 +82,7 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown -p sidestr-core -p sidestr-wallet -p sidestr-nostr -p sidestr-agent --no-default-features
 
   oracle:
-    name: against the reference (siding at 722ad42)
+    name: against the reference (siding at fa86dac)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -115,9 +116,13 @@ jobs:
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
 
-      # The reference's own test of the 0.0.3 change, as a sanity check of the checkouts.
-      - name: Reference txsign-test
-        run: node reference/spec/siding/test/txsign-test.mjs
+      # The reference's own tests of the changes ported here, as a sanity check
+      # of the checkouts: 0.0.3 (txsign), 0.0.4 (the peg tag, kind 23503).
+      - name: Reference txsign, announce and parentrelay tests
+        run: |
+          node reference/spec/siding/test/txsign-test.mjs
+          node reference/spec/siding/test/announce-test.mjs
+          node reference/spec/siding/test/parentrelay-test.mjs
         env:
           SCHEMA: ${{ github.workspace }}/reference/schema
           BLAKETESTNODE: ${{ github.workspace }}/reference/blaketestnode

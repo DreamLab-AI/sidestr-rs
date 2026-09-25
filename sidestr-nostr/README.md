@@ -5,7 +5,7 @@
 The Nostr plane of [sidestr](https://github.com/sidestr/spec) sidechains, in
 Rust: an owned NIP-01 event with BIP-340 verification and a sealed signer port,
 the tip announcement (kind 33333) with the mirror trust rule, transactions and
-faucet requests over a relay (23500, 23501), rule and genesis documents (33500,
+faucet requests over a relay (23500, 23501), parent transactions to broadcast (23503), rule and genesis documents (33500,
 33501), the dual-schema 33502 record decoded as peg record, pledge or
 ambiguous, the level-2 round envelopes (23510–23514), and agentbox's account
 binding and settlement events (38420–38425).
@@ -39,8 +39,9 @@ assert_eq!(parse_tip(&ev).unwrap().mirrors, ["https://mirror.example/x"]);
 This crate is a port of **siding**, the reference implementation of sidestr by
 Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
 AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279`
-(the tip parser follows `announce.mjs` at `e457737`; the oracle runs at
-`722ad42`, SPEC 0.0.3, which changes nothing on the Nostr plane)
+(the tip announcement and transaction events follow `announce.mjs` and
+`relay.mjs` at `fa86dac`, SPEC 0.0.4, `@sidestr/spec` 0.0.6: the `peg` tag and
+kind 23503)
 (`siding/lib/{announce,relay,pledge,round,pegoutround,spend}.mjs`,
 `bin/siding.mjs`, `test/announce-test.mjs`). The event id and signature rule
 comes from the schema kernel siding loads, by the same author and under the

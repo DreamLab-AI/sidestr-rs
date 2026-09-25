@@ -2,6 +2,20 @@
 
 All notable changes to `sidestr-core`. The crate follows semantic versioning.
 
+## 0.3.3 — 2026-09-25
+
+SPEC 0.0.4 (`@sidestr/spec` 0.0.6, reference `fa86dac`). Additive.
+
+### Added
+
+- `parent::find_pegin_announced` and `parent::scan_pegins_announced`: the
+  peg script the signer announces with every tip is taken first, so a
+  taproot output paying it is the peg wherever it sits (a wallet's change
+  may come before it); only when no output pays it does the owner decide,
+  and with no owner the first taproot output, as `parent.mjs scanPegins`
+  does at `fa86dac`. `find_pegin` and `scan_pegins` are unchanged: they are
+  the announced forms with no script.
+
 ## 0.3.2 — 2026-09-25
 
 A fix.

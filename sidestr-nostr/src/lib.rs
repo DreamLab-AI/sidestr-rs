@@ -14,9 +14,10 @@
 //!
 //! This crate is a port of **siding**, the reference implementation by
 //! Melvin Carvalho (<https://github.com/sidestr/spec>, AGPL-3.0), ported
-//! from commit `2de40bdac4cba01be0864156a553d8287c22e279` (the tip parser
-//! follows `announce.mjs` at `e457737`; the oracle runs at `722ad42`, SPEC
-//! 0.0.3, which changes nothing on the Nostr plane), with the event
+//! from commit `2de40bdac4cba01be0864156a553d8287c22e279` (the tip
+//! announcement and transaction events follow `announce.mjs` and
+//! `relay.mjs` at `fa86dac`, SPEC 0.0.4: the `peg` tag and kind 23503), with
+//! the event
 //! id and signature rule from the schema kernel it loads
 //! (`bitcoin-desktop/schema`, `codec/nostr.js`), and carries the same
 //! licence, AGPL-3.0-only. `SPEC.md` in that repository is the design;
@@ -31,8 +32,8 @@
 //! | [`event`] | the NIP-01 event, its id (SHA-256), BIP-340 verify, the sealed [`Signer`] port, an in-memory key | — | 11 | `siding/lib/relay.mjs makeEvents`, `schema/codec/nostr.js verifyNostrEvent`, `siding/lib/schnorr.mjs` |
 //! | [`kinds`] | every kind with owner (external / estate), storage class, `d` grammar and conformance | all | App. A | `docs/PROTOCOL-registry.md`, ADR-2098 |
 //! | [`tags`] | the tag grammar, the `chain` check a relay cannot do, outpoints | — | 11 | `siding/lib/relay.mjs subscribe` |
-//! | [`tip`] | the announcement: build, parse (both header families), the mirror trust rule, judging a mirror, the newest | 33333 | 11 | `siding/lib/announce.mjs` |
-//! | [`tx`] | a transaction as an event; a faucet request | 23500, 23501 | 11 | `siding/lib/relay.mjs txEvent`, `bin/siding.mjs faucet` |
+//! | [`tip`] | the announcement: build, parse (both header families), the peg script (0.0.4), the mirror trust rule, judging a mirror, the newest | 33333 | 11 | `siding/lib/announce.mjs` |
+//! | [`tx`] | a transaction as an event; a faucet request; a parent transaction to broadcast | 23500, 23501, 23503 | 11 | `siding/lib/relay.mjs txEvent`, `parentTxEvent`, `bin/siding.mjs faucet` |
 //! | [`rules`] | a rule document; the genesis document — **SPEC prose only**, no upstream code | 33500, 33501 | 8, App. A | — |
 //! | [`record`] | the peg record *or* the desk's pledge: `PegRecord \| Pledge \| Ambiguous`, never guessed | 33502 | 6.2, App. A | `siding/lib/pledge.mjs`, `bin/siding.mjs onPledge` |
 //! | [`round`] | the level-2 envelopes: proposal, partial signature, sealed block, peg-out PSBT and its co-signature | 23510–23514 | 9.1 | `siding/lib/round.mjs`, `pegoutround.mjs` (codecs only) |

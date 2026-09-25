@@ -29,6 +29,10 @@
 pub const KIND_TRANSACTION: u32 = 23500;
 /// Faucet request: content an address, tagged like a transaction (SPEC 11).
 pub const KIND_FAUCET_REQUEST: u32 = 23501;
+/// Parent transaction to broadcast: content a signed *parent* transaction as
+/// hex, tagged like a transaction; a producer with a parent node broadcasts it
+/// if and only if the node's own mempool policy accepts it (SPEC 11, 0.0.4).
+pub const KIND_PARENT_TRANSACTION: u32 = 23503;
 /// Level-2 block proposal: content the block hex without its solution (SPEC 9.1).
 pub const KIND_BLOCK_PROPOSAL: u32 = 23510;
 /// Level-2 partial block signature, `e` = the proposal (SPEC 9.1).
@@ -115,7 +119,7 @@ pub struct KindInfo {
 }
 
 /// The registry, in kind order.
-pub const REGISTRY: [KindInfo; 17] = [
+pub const REGISTRY: [KindInfo; 18] = [
     KindInfo {
         kind: KIND_TRANSACTION,
         name: "transaction",
@@ -135,6 +139,16 @@ pub const REGISTRY: [KindInfo; 17] = [
         conformance: Conformance::Ported,
         spec: "SPEC 11, Appendix A",
         source: "siding/lib/relay.mjs FAUCET_KIND, bin/siding.mjs faucet",
+    },
+    KindInfo {
+        kind: KIND_PARENT_TRANSACTION,
+        name: "parent transaction",
+        owner: Owner::External,
+        class: Class::Ephemeral,
+        d_tag: None,
+        conformance: Conformance::Ported,
+        spec: "SPEC 11, Appendix A (0.0.4)",
+        source: "siding/lib/relay.mjs PARENT_TX_KIND parentTxEvent, lib/parent.mjs relayParentTx",
     },
     KindInfo {
         kind: KIND_BLOCK_PROPOSAL,

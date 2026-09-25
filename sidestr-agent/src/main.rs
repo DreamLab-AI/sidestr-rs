@@ -8,8 +8,9 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use sidestr_agent::{
-    destination, identity, parse_pubkey, pegin_plan, prepare, prepare_issue, prepare_transfer,
-    refuse_secret, AgentKey, ChainView, Payment, PegTarget, Prepared,
+    announced_peg_address, destination, fetch_announced_peg_script, identity, parent_explorer_api,
+    parse_pubkey, pegin_plan, prepare, prepare_issue, prepare_transfer, refuse_secret, AgentKey,
+    ChainView, Payment, PegTarget, Prepared,
 };
 use sidestr_core::document::ChainDocument;
 use sidestr_round::relay::{ok_count, publish_all, unix_now};
@@ -140,14 +141,33 @@ enum Cmd {
         /// Where the coins appear on the sidechain; the agent's own script by default.
         #[arg(long)]
         to: Option<String>,
-        /// Level 1 (required there): an address the producer's parent wallet
-        /// gave, which it owns. Level 2 defaults to the challenge address.
+        /// Level 1: an address the producer's parent wallet gave, which it
+        /// owns. Absent, the peg script the chain's signer announces with its
+        /// tip is used (SPEC 0.0.4, the `peg` tag). Level 2 defaults to the
+        /// challenge address.
         #[arg(long)]
         peg_address: Option<String>,
         /// Instead: build `tr(<key>, and_v(v:pk(<refund>), older(n)))` and print
         /// the descriptor, which the peg holders must import before paying it.
         #[arg(long, conflicts_with = "peg_address")]
         peg_key: Option<String>,
+    },
+    /// Send a signed *parent* transaction (a peg-in) with no node of your
+    /// own: to the parent's public explorer, and if that refuses or does not
+    /// answer, as a kind-23503 event for a producer with a node to broadcast
+    /// if and only if its node's policy accepts it (SPEC 11, 0.0.4).
+    PublishParent {
+        /// The signed parent transaction, hex.
+        hex: String,
+        /// Skip the explorer: the relays only.
+        #[arg(long)]
+        no_explorer: bool,
+        /// Another explorer API base (Esplora `POST /tx`); the parent's public one by default.
+        #[arg(long, conflicts_with = "no_explorer")]
+        explorer: Option<String>,
+        /// Print the kind-23503 event and deliver nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -405,14 +425,126 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
                 (None, Some(k)) => k.script().to_hex_string(),
                 (None, None) => return Err("--to or --key-file names the sidechain script".into()),
             };
+            let mut announced = None;
             let target = match (peg_key, peg_address) {
                 (Some(k), _) => Some(PegTarget::Key(parse_pubkey(k)?)),
                 (None, Some(a)) => Some(PegTarget::Address(a.clone())),
+                // level 1 with nothing given: the peg script the signer
+                // announces with its tip (SPEC 0.0.4), newest announcement wins
+                (None, None)
+                    if sidestr_core::federation::Federation::for_document(&doc)?.is_none() =>
+                {
+                    match fetch_announced_peg_script(&cli.relays, &doc, Duration::from_secs(6))
+                        .await
+                    {
+                        Some(script) => {
+                            let address = announced_peg_address(&doc, &script)?;
+                            announced = Some(script);
+                            Some(PegTarget::Address(address))
+                        }
+                        None => {
+                            return Err(format!(
+                                "{} announces no peg script yet: its producer predates SPEC 0.0.4 or has no peg wallet. Pass --peg-address (an address the producer's parent wallet gave) or --peg-key",
+                                doc.id
+                            )
+                            .into())
+                        }
+                    }
+                }
                 (None, None) => None,
             };
-            Ok(serde_json::to_value(pegin_plan(
-                &doc, *amount, &refund, &side, target,
-            )?)?)
+            let mut plan =
+                serde_json::to_value(pegin_plan(&doc, *amount, &refund, &side, target)?)?;
+            if let Some(script) = announced {
+                plan["pegScript"] = json!(script);
+                plan["note"] = json!(format!(
+                    "paid to the peg script {} announces with its tip (SPEC 0.0.4); the producer's parent wallet owns it",
+                    doc.id
+                ));
+            }
+            Ok(plan)
+        }
+        Cmd::PublishParent {
+            hex,
+            no_explorer,
+            explorer,
+            dry_run,
+        } => {
+            let doc = chain(cli)?;
+            let hex = hex.trim().to_ascii_lowercase();
+            let tx: bitcoin::Transaction = bitcoin::consensus::encode::deserialize_hex(&hex)
+                .map_err(|e| format!("not a parent transaction: {e}"))?;
+            let txid = tx.compute_txid().to_string();
+            let mut note: Option<String> = None;
+            let api = if *no_explorer {
+                None
+            } else {
+                explorer
+                    .clone()
+                    .or_else(|| parent_explorer_api(&doc))
+                    .map(|a| a.trim_end_matches('/').to_string())
+            };
+            if let (Some(api), false) = (&api, *dry_run) {
+                match ureq::post(&format!("{api}/tx")).send(&hex) {
+                    Ok(mut r) => {
+                        let body = r.body_mut().read_to_string().unwrap_or_default();
+                        let id = body.trim();
+                        return Ok(json!({
+                            "cmd": "publish-parent",
+                            "chain": doc.id,
+                            "txid": if id.is_empty() { txid.clone() } else { id.to_string() },
+                            "via": "explorer",
+                            "explorer": api,
+                        }));
+                    }
+                    Err(ureq::Error::StatusCode(code)) => {
+                        note = Some(format!("the parent explorer refused it (HTTP {code})"));
+                    }
+                    Err(e) => note = Some(format!("the parent explorer did not answer: {e}")),
+                }
+            }
+            // the parent transaction authorises itself: any key signs the event
+            let mut secret = [0u8; 32];
+            getrandom::fill(&mut secret)
+                .map_err(|e| format!("no randomness for the event key: {e}"))?;
+            let throwaway = sidestr_nostr::event::SecretKeySigner::from_bytes(&secret)?;
+            let event = sidestr_nostr::tx::sign_parent_transaction_event(
+                &throwaway,
+                &doc.id,
+                &hex,
+                unix_now(),
+            )?;
+            if *dry_run {
+                return Ok(json!({
+                    "cmd": "publish-parent",
+                    "chain": doc.id,
+                    "txid": txid,
+                    "explorer": api,
+                    "signedEvent": event,
+                }));
+            }
+            let res = publish_all(&cli.relays, &event, Duration::from_secs(8)).await;
+            let ok = ok_count(&res);
+            if ok == 0 {
+                return Err(format!(
+                    "{}no relay accepted the kind-23503 event either",
+                    note.map(|n| format!("{n}; ")).unwrap_or_default()
+                )
+                .into());
+            }
+            Ok(json!({
+                "cmd": "publish-parent",
+                "chain": doc.id,
+                "txid": txid,
+                "via": "relay",
+                "event": event.id,
+                "relaysOk": ok,
+                "relays": res.len(),
+                "note": format!(
+                    "{}sent to the relays for a producer's node to broadcast if its policy accepts it",
+                    note.map(|n| format!("{n}; ")).unwrap_or_default()
+                ),
+            }))
         }
     }
 }

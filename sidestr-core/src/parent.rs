@@ -208,6 +208,8 @@ pub type PegOwner<'a> = &'a dyn Fn(&Script, Option<&str>) -> bool;
 /// wallet to ask) the first taproot output is taken, as the reference does
 /// and as 0.0.1 and 0.0.2 did for every producer. Addresses are derived from
 /// the scripts for `network`; [`scan_pegins`] uses the node's own instead.
+/// Since SPEC 0.0.4 the signer also announces the peg script, taken first:
+/// [`find_pegin_announced`].
 ///
 /// ```
 /// use bitcoin::script::PushBytesBuf;
@@ -240,7 +242,59 @@ pub fn find_pegin(
     network: Option<Network>,
     owner: Option<PegOwner<'_>>,
 ) -> Option<FoundPegin> {
-    pegin_at(tx, chain_id, height, &derived_addresses(tx, network), owner)
+    pegin_at(
+        tx,
+        chain_id,
+        height,
+        &derived_addresses(tx, network),
+        None,
+        owner,
+    )
+}
+
+/// [`find_pegin`] as SPEC 0.0.4 reads a peg-in (`parent.mjs scanPegins`
+/// with `pegScript`): a taproot output paying `announced`, the peg script
+/// the signer announces with every tip, is the peg **wherever it sits**, so
+/// a third party tells peg from change with the announcement alone. Only
+/// when no output pays it does `owner` decide, and with no owner the first
+/// taproot output, as before.
+///
+/// ```
+/// use bitcoin::script::PushBytesBuf;
+/// use bitcoin::{absolute::LockTime, transaction::Version, Amount, Script, ScriptBuf, Transaction, TxOut};
+/// use sidestr_core::marker::peg_marker_data;
+/// use sidestr_core::parent::find_pegin_announced;
+///
+/// let tr = |b: u8| ScriptBuf::from_hex(&format!("5120{}", format!("{b:02x}").repeat(32))).unwrap();
+/// let named = tr(0xee);
+/// let marker = ScriptBuf::new_op_return(PushBytesBuf::try_from(peg_marker_data("sidestr:scan", &named)).unwrap());
+/// // the wallet's change (0xaa) first, the announced peg (0xbb) last
+/// let tx = Transaction { version: Version::TWO, lock_time: LockTime::ZERO, input: vec![], output: vec![
+///     TxOut { value: Amount::from_sat(20_000_000), script_pubkey: tr(0xaa) },
+///     TxOut { value: Amount::ZERO, script_pubkey: marker },
+///     TxOut { value: Amount::from_sat(50_000), script_pubkey: tr(0xbb) },
+/// ] };
+/// let announced = tr(0xbb);
+/// // no wallet to ask, and still the peg, not the change
+/// let found = find_pegin_announced(&tx, "sidestr:scan", 1, None, Some(&announced), None).unwrap();
+/// assert_eq!((found.vout, found.amount), (2, 50_000));
+/// ```
+pub fn find_pegin_announced(
+    tx: &Transaction,
+    chain_id: &str,
+    height: u32,
+    network: Option<Network>,
+    announced: Option<&Script>,
+    owner: Option<PegOwner<'_>>,
+) -> Option<FoundPegin> {
+    pegin_at(
+        tx,
+        chain_id,
+        height,
+        &derived_addresses(tx, network),
+        announced,
+        owner,
+    )
 }
 
 /// Each output's address for `network`, where it has one.
@@ -262,6 +316,7 @@ fn pegin_at(
     chain_id: &str,
     height: u32,
     addresses: &[Option<String>],
+    announced: Option<&Script>,
     owner: Option<PegOwner<'_>>,
 ) -> Option<FoundPegin> {
     let script = tx
@@ -274,9 +329,18 @@ fn pegin_at(
         .iter()
         .enumerate()
         .filter(|(_, o)| o.script_pubkey.is_p2tr());
-    let (vout, peg) = match owner {
-        Some(owns) => taproots.find(|(n, o)| owns(&o.script_pubkey, address(*n)))?,
-        None => taproots.next()?,
+    // SPEC 0.0.4: a taproot output paying the announced peg script first,
+    // then the owner's, then (no owner to ask) the first taproot output
+    let paying = announced.and_then(|a| {
+        tx.output
+            .iter()
+            .enumerate()
+            .find(|(_, o)| o.script_pubkey.is_p2tr() && o.script_pubkey.as_script() == a)
+    });
+    let (vout, peg) = match (paying, owner) {
+        (Some(p), _) => p,
+        (None, Some(owns)) => taproots.find(|(n, o)| owns(&o.script_pubkey, address(*n)))?,
+        (None, None) => taproots.next()?,
     };
     Some(FoundPegin {
         txid: tx.compute_txid().to_string(),
@@ -322,6 +386,23 @@ pub fn scan_pegins<R: ParentRpc + ?Sized>(
     to: u32,
     network: Option<Network>,
     owner: Option<PegOwner<'_>>,
+    on_block: impl FnMut(&ParentBlock),
+) -> Result<Vec<FoundPegin>> {
+    scan_pegins_announced(rpc, chain_id, from, to, network, None, owner, on_block)
+}
+
+/// [`scan_pegins`] with the peg script the signer announces
+/// (`parent.mjs scanPegins` `pegScript`, SPEC 0.0.4), judged per transaction
+/// as [`find_pegin_announced`] judges it.
+#[allow(clippy::too_many_arguments)]
+pub fn scan_pegins_announced<R: ParentRpc + ?Sized>(
+    rpc: &R,
+    chain_id: &str,
+    from: u32,
+    to: u32,
+    network: Option<Network>,
+    announced: Option<&Script>,
+    owner: Option<PegOwner<'_>>,
     mut on_block: impl FnMut(&ParentBlock),
 ) -> Result<Vec<FoundPegin>> {
     let mut found = Vec::new();
@@ -335,8 +416,15 @@ pub fn scan_pegins<R: ParentRpc + ?Sized>(
                 .get(i)
                 .filter(|a| a.len() == tx.output.len());
             let found_here = match reported {
-                Some(a) => pegin_at(tx, chain_id, h, a, owner),
-                None => pegin_at(tx, chain_id, h, &derived_addresses(tx, network), owner),
+                Some(a) => pegin_at(tx, chain_id, h, a, announced, owner),
+                None => pegin_at(
+                    tx,
+                    chain_id,
+                    h,
+                    &derived_addresses(tx, network),
+                    announced,
+                    owner,
+                ),
             };
             found.extend(found_here);
         }
@@ -1029,6 +1117,100 @@ mod tests {
         fn owns_address(&self, address: &str) -> bool {
             address == self.0
         }
+    }
+
+    /// `parent.mjs scanPegins` at spec fa86dac (0.0.4, `pegScript`): the
+    /// announced peg script is the peg wherever it sits, then the owner's,
+    /// then (no owner) the first taproot output.
+    #[test]
+    fn the_announced_peg_script_is_taken_first() {
+        let named = p2tr(0xee);
+        // the wallet's change (0xaa) before the peg (0xbb)
+        let t = tx(vec![
+            out(20_000_000, p2tr(0xaa)),
+            out(0, data(&peg_marker_data("sidestr:scan", &named))),
+            out(50_000, p2tr(0xbb)),
+        ]);
+        let announced = p2tr(0xbb);
+        // change before peg, with the announced script and no wallet: the peg
+        let f = find_pegin_announced(&t, "sidestr:scan", 1, None, Some(&announced), None).unwrap();
+        assert_eq!((f.vout, f.amount, &f.script), (2, 50_000, &named));
+        // it wins over an owner that would say otherwise
+        let owns_change = |s: &Script, _: Option<&str>| s == p2tr(0xaa).as_script();
+        let f = find_pegin_announced(
+            &t,
+            "sidestr:scan",
+            1,
+            None,
+            Some(&announced),
+            Some(&owns_change),
+        )
+        .unwrap();
+        assert_eq!(f.vout, 2);
+        // a script no output pays: the ownership rule decides, as before
+        let elsewhere = p2tr(0xcc);
+        let owns_peg = |s: &Script, _: Option<&str>| s == p2tr(0xbb).as_script();
+        let f = find_pegin_announced(
+            &t,
+            "sidestr:scan",
+            1,
+            None,
+            Some(&elsewhere),
+            Some(&owns_peg),
+        )
+        .unwrap();
+        assert_eq!(f.vout, 2);
+        let nobody = |_: &Script, _: Option<&str>| false;
+        assert!(
+            find_pegin_announced(&t, "sidestr:scan", 1, None, Some(&elsewhere), Some(&nobody))
+                .is_none()
+        );
+        // a script no output pays and no owner to ask: the first taproot output
+        let f = find_pegin_announced(&t, "sidestr:scan", 1, None, Some(&elsewhere), None).unwrap();
+        assert_eq!(f.vout, 0);
+        // a non-taproot output paying the announced script is not the peg (taproots only)
+        let bare = ScriptBuf::from_hex("0014aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
+        let t2 = tx(vec![
+            out(9_000, bare.clone()),
+            out(0, data(&peg_marker_data("sidestr:scan", &named))),
+            out(50_000, p2tr(0xbb)),
+        ]);
+        assert_eq!(
+            find_pegin_announced(&t2, "sidestr:scan", 1, None, Some(&bare), None)
+                .unwrap()
+                .vout,
+            2
+        );
+        // with no announced script, exactly find_pegin
+        for owner in [None, Some(&owns_peg as PegOwner<'_>)] {
+            assert_eq!(
+                find_pegin_announced(&t, "sidestr:scan", 1, None, None, owner),
+                find_pegin(&t, "sidestr:scan", 1, None, owner)
+            );
+        }
+        // and the scanner over blocks
+        let mock = Mock {
+            blocks: vec![ParentBlock {
+                height: 1,
+                hash: BlockHash::from_byte_array([1; 32]),
+                time: 0,
+                txs: vec![tx(vec![]), t.clone()],
+                addresses: vec![],
+            }],
+            unspent: BTreeMap::new(),
+        };
+        let found = scan_pegins_announced(
+            &mock,
+            "sidestr:scan",
+            1,
+            1,
+            None,
+            Some(&announced),
+            None,
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!((found.len(), found[0].vout), (1, 2));
     }
 
     /// `siding/test/txsign-test.mjs` (0.0.3), the scanner half: a marker

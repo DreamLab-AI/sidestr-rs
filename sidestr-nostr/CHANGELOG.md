@@ -2,6 +2,27 @@
 
 All notable changes to `sidestr-nostr`. The crate follows semantic versioning.
 
+## 0.3.1 — 2026-09-25
+
+SPEC 0.0.4 (`@sidestr/spec` 0.0.6, reference `fa86dac`). Additive.
+
+### Added
+
+- `tip`: the peg script the signer announces with every tip (the `peg`
+  tag). `tip_event_with_peg` / `sign_tip_with_peg` build it after the
+  mirrors, lower-cased, and refuse anything but 2 to 80 bytes of hex, as
+  `announce.mjs tipEvent` does; `peg_script_of` reads the first `peg` tag as
+  `parseTip` does (a malformed first tag means none); `newest_peg_script`
+  takes the newest announcement's, which wins; `newest_event` is `newest`
+  with the event it chose. The built tags match the reference's byte for
+  byte (a test vector from `tipEvent` at `fa86dac`).
+- `kinds::KIND_PARENT_TRANSACTION` (23503) in the registry, and
+  `tx::{parent_transaction_event, sign_parent_transaction_event,
+  parse_parent_transaction}`: a signed parent transaction for a producer
+  with a node to broadcast if its node's policy accepts it (`relay.mjs
+  parentTxEvent`). `REGISTRY` now has 18 rows.
+- `tags::TAG_PEG`.
+
 ## 0.3.0 — 2026-09-23
 
 - Follows `sidestr-core` 0.3. SPEC 0.0.3 changes nothing on the Nostr plane;

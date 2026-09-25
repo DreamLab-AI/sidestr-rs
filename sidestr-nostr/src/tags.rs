@@ -31,6 +31,8 @@ pub const TAG_T: &str = "t";
 pub const TAG_U: &str = "u";
 /// The NIP-31 human summary on a tip.
 pub const TAG_ALT: &str = "alt";
+/// The peg script a peg-in pays, in a tip announcement (SPEC 6 and 11, 0.0.4).
+pub const TAG_PEG: &str = "peg";
 /// The block height a level-2 round event is about.
 pub const TAG_H: &str = "h";
 /// The genesis hash an estate event pins (ADR-2098 amendment: a name is never

@@ -52,11 +52,17 @@ sidestr-agent --key-file faucet.key faucet --sats 2000 --asset DREAM --units 100
 # peg out: burn sats the peg holders owe to a testnet4 address
 sidestr-agent --key-file alice.key burn tb1p… 20000
 
-# peg in: what a parent wallet pays (the peg address and its descriptor, the marker)
+# peg in: what a parent wallet pays (the peg address and its descriptor, the marker);
+# level 1 with no flag: the peg script the signer announces with its tip (SPEC 0.0.4)
+sidestr-agent --key-file alice.key --chain chain.json pegin-plan --amount 50000
 sidestr-agent --key-file alice.key --chain chain.json pegin-plan --amount 50000 \
-  --peg-address tb1p…     # level 1: an address the producer's peg wallet gave you
+  --peg-address tb1p…     # or an address the producer's peg wallet gave you
 sidestr-agent --chain chain.json pegin-plan --amount 50000 --refund npub1… --to drm1p… \
   --peg-key <hex>         # or a descriptor the peg holders import
+
+# a signed parent transaction (a peg-in) with no node of your own: the parent's
+# public explorer, else a kind-23503 event a producer with a node broadcasts
+sidestr-agent --chain chain.json publish-parent <hex>
 ```
 
 | flag | meaning | default |
@@ -88,11 +94,16 @@ Every command prints one JSON object.
 ## The peg-in plan
 
 SPEC 6 (0.0.3) makes the peg output the taproot output the peg holders own,
-at any position. Who owns it depends on the level:
+at any position; since 0.0.4 the signer also announces the script a peg-in
+pays (the tip's `peg` tag), and an output paying it is the peg wherever it
+sits. Who owns it depends on the level:
 
-- **Level 1: the producer's parent wallet.** Pass `--peg-address` with an
-  address that wallet gave (`getnewaddress` on its peg wallet), which it
-  owns. Without one, a level-1 plan is refused rather than guessed.
+- **Level 1: the producer's parent wallet.** With no flag, the plan pays the
+  peg script from the signer's newest announcement (only the chain
+  document's signer counts), as the JS wallet does. Or pass `--peg-address`
+  with an address that wallet gave (`getnewaddress` on its peg wallet). A
+  chain whose producer announces none (before 0.0.4) is refused rather than
+  guessed.
 - **Level 2: the chain's challenge script.** The federation's peg wallet owns
   it. With no flag, the plan pays the challenge address.
 - **`--peg-key`, the explicit alternative:** the peg address becomes

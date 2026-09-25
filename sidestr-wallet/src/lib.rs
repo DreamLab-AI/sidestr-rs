@@ -17,8 +17,8 @@
 //!
 //! This crate is a port of **siding**, the reference implementation by
 //! Melvin Carvalho (<https://github.com/sidestr/spec>, AGPL-3.0), ported from
-//! commit `2de40bdac4cba01be0864156a553d8287c22e279` and brought to SPEC 0.0.3
-//! at `722ad42d3271efccfdfaf57c3c6943f58fc168f8` (`lib/txsign.mjs`) — `siding/lib/spend.mjs`,
+//! commit `2de40bdac4cba01be0864156a553d8287c22e279` and brought to SPEC 0.0.4
+//! (`@sidestr/spec` 0.0.6) at `fa86dac83d47b8f70195132e91e9dc083e1d9228` (`lib/txsign.mjs`) — `siding/lib/spend.mjs`,
 //! `lib/address.mjs`, the construction halves of `lib/parent.mjs` and
 //! `lib/checkpoint.mjs`, and the `send` and `faucet` commands of
 //! `bin/siding.mjs` — and carries the same licence, AGPL-3.0-only. `SPEC.md`

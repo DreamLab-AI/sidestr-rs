@@ -2,6 +2,12 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
+## 0.4.2 — 2026-09-25
+
+Documentation only: the crate now names SPEC 0.0.4 (`@sidestr/spec` 0.0.6,
+reference `fa86dac`) as the one it tracks; nothing in the wallet changes
+with it.
+
 ## 0.4.1 — 2026-09-24
 
 ### Added

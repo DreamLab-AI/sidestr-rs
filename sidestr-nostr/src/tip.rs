@@ -64,8 +64,8 @@ use crate::error::{any_hex, Error, Result};
 use crate::event::{sign, Event, Signer, UnsignedEvent};
 use crate::kinds::{expect_kind, KIND_TIP};
 use crate::tags::{
-    all, first, height_tag, required, tag, MARKER_MIRROR, TAG_ALT, TAG_D, TAG_N, TAG_T, TAG_TIP,
-    TAG_U, TOPIC_SIDESTR,
+    all, first, height_tag, required, tag, MARKER_MIRROR, TAG_ALT, TAG_D, TAG_N, TAG_PEG, TAG_T,
+    TAG_TIP, TAG_U, TOPIC_SIDESTR,
 };
 
 /// How many headers an announcement carries: the last twelve
@@ -188,6 +188,68 @@ pub fn tip_event(t: &TipTemplate, created_at: u64) -> UnsignedEvent {
 /// Sign a tip announcement with the chain's signer.
 pub fn sign_tip(signer: &dyn Signer, t: &TipTemplate, created_at: u64) -> Result<Event> {
     sign(signer, tip_event(t, created_at))
+}
+
+/// A peg script as an announcement carries it (SPEC 6 and 11, 0.0.4): 2 to
+/// 80 bytes of hex, lower-cased, or `None` (`announce.mjs`,
+/// `/^([0-9a-f]{2}){2,80}$/i`, untrimmed).
+pub fn peg_script_hex(s: &str) -> Option<String> {
+    let ok = s.len() % 2 == 0
+        && (4..=160).contains(&s.len())
+        && s.bytes().all(|b| b.is_ascii_hexdigit());
+    ok.then(|| s.to_ascii_lowercase())
+}
+
+/// [`tip_event`] with the peg script a peg-in pays (`announce.mjs tipEvent`
+/// with `pegScript`, SPEC 0.0.4): level 2 the chain's challenge, level 1 one
+/// address of the producer's parent wallet. The `peg` tag follows the
+/// mirrors, lower-cased; `None` adds none. A script that is not 2 to 80
+/// bytes of hex is refused, as the reference throws.
+///
+/// ```
+/// use sidestr_nostr::tip::{peg_script_of, tip_event_with_peg, TipTemplate};
+///
+/// let t = TipTemplate::new("sidestr:x", 0, vec!["00".repeat(80)], vec![]).unwrap();
+/// let ev = tip_event_with_peg(&t, Some(&format!("5120{}", "AB".repeat(32))), 1).unwrap();
+/// assert_eq!(ev.tags.last().unwrap()[0], "peg");
+/// assert!(tip_event_with_peg(&t, Some("51"), 1).is_err());
+/// ```
+pub fn tip_event_with_peg(
+    t: &TipTemplate,
+    peg_script: Option<&str>,
+    created_at: u64,
+) -> Result<UnsignedEvent> {
+    let mut ev = tip_event(t, created_at);
+    if let Some(p) = peg_script {
+        let p = peg_script_hex(p).ok_or_else(|| Error::Hex {
+            what: "peg script",
+            reason: "a script of 2 to 80 bytes as hex".into(),
+        })?;
+        ev.tags.push(tag(TAG_PEG, p));
+    }
+    Ok(ev)
+}
+
+/// Sign [`tip_event_with_peg`] with the chain's signer.
+pub fn sign_tip_with_peg(
+    signer: &dyn Signer,
+    t: &TipTemplate,
+    peg_script: Option<&str>,
+    created_at: u64,
+) -> Result<Event> {
+    sign(signer, tip_event_with_peg(t, peg_script, created_at)?)
+}
+
+/// The peg script an announcement carries (`announce.mjs parseTip`
+/// `pegScript`): the first `peg` tag's value, lower-cased, when it is 2 to 80
+/// bytes of hex; `None` otherwise, including when that first tag is
+/// malformed and a later one is not, as the reference reads only the first.
+pub fn peg_script_of(ev: &Event) -> Option<String> {
+    ev.tags
+        .iter()
+        .find(|t| t.first().is_some_and(|n| n == TAG_PEG))
+        .and_then(|t| t.get(1))
+        .and_then(|p| peg_script_hex(p))
 }
 
 /// A parsed announcement (`announce.mjs parseTip`), plus which family the
@@ -329,7 +391,28 @@ pub fn newest<'a>(
     chain_id: &str,
     signer: Option<&str>,
 ) -> Option<Tip> {
-    let mut best: Option<Tip> = None;
+    newest_event(events, chain_id, signer).map(|(_, t)| t)
+}
+
+/// The peg script of the newest announcement ([`newest`]'s choice), which
+/// wins: a wallet builds a peg-in from it alone (the JS wallet's
+/// `pegInScript`, SPEC 0.0.4). `None` when the newest carries none, even if
+/// an older one did, since the newest announcement's rotates it.
+pub fn newest_peg_script<'a>(
+    events: impl IntoIterator<Item = &'a Event>,
+    chain_id: &str,
+    signer: Option<&str>,
+) -> Option<String> {
+    newest_event(events, chain_id, signer).and_then(|(e, _)| peg_script_of(e))
+}
+
+/// [`newest`] with the event it chose.
+pub fn newest_event<'a>(
+    events: impl IntoIterator<Item = &'a Event>,
+    chain_id: &str,
+    signer: Option<&str>,
+) -> Option<(&'a Event, Tip)> {
+    let mut best: Option<(&'a Event, Tip)> = None;
     for ev in events {
         if ev.kind != KIND_TIP || ev.verify().is_err() {
             continue;
@@ -345,10 +428,10 @@ pub fn newest<'a>(
         }
         let better = match &best {
             None => true,
-            Some(b) => p.tip > b.tip || (p.tip == b.tip && p.created_at > b.created_at),
+            Some((_, b)) => p.tip > b.tip || (p.tip == b.tip && p.created_at > b.created_at),
         };
         if better {
-            best = Some(p);
+            best = Some((ev, p));
         }
     }
     best
@@ -529,6 +612,89 @@ pub fn chain_of(ev: &Event) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `announce.mjs` at spec fa86dac (0.0.6), `tipEvent` with a stub
+    /// `events.signEvent` that returns the unsigned event: the tags it builds.
+    #[test]
+    fn peg_tag_matches_the_reference_byte_for_byte() {
+        let t = TipTemplate::new(
+            "sidestr:vec",
+            9,
+            vec!["01".repeat(80), "02".repeat(80)],
+            vec!["https://a.example/siding/".into()],
+        )
+        .unwrap();
+        let ev = tip_event_with_peg(&t, Some(&format!("5120{}", "AB".repeat(32))), 1_790_300_000)
+            .unwrap();
+        let reference: Vec<Vec<String>> = serde_json::from_str(
+            r#"[["d","sidestr:vec"],["n","sidestr:vec"],["t","sidestr"],["tip","9"],["alt","sidestr headers 8-9 of sidestr:vec"],["u","https://a.example/siding/","mirror"],["peg","5120abababababababababababababababababababababababababababababababab"]]"#,
+        )
+        .unwrap();
+        assert_eq!(ev.tags, reference);
+        // without a peg script the event is exactly the 0.0.3 one
+        assert_eq!(tip_event_with_peg(&t, None, 1).unwrap(), tip_event(&t, 1));
+        // the reference refuses these when building
+        for bad in ["zz", "51", &"00".repeat(81), ""] {
+            assert!(tip_event_with_peg(&t, Some(bad), 1).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn peg_script_is_read_from_the_first_peg_tag_only() {
+        let signer = crate::event::SecretKeySigner::from_bytes(&[7u8; 32]).unwrap();
+        let t = TipTemplate::new("sidestr:vec", 9, vec!["01".repeat(80)], vec![]).unwrap();
+        let with = |tags: Vec<Vec<String>>| {
+            let mut ev = tip_event(&t, 1);
+            ev.tags.extend(tags);
+            sign(&signer, ev).unwrap()
+        };
+        let cd = format!("5120{}", "cd".repeat(32));
+        let peg = |v: &str| vec!["peg".to_string(), v.to_string()];
+        // the reference's parseTip: tag('peg')[0], validated, lower-cased
+        assert_eq!(
+            peg_script_of(&with(vec![peg(&cd.to_uppercase())])),
+            Some(cd.clone())
+        );
+        assert_eq!(peg_script_of(&with(vec![peg("zz"), peg(&cd)])), None);
+        assert_eq!(peg_script_of(&with(vec![peg("51"), peg(&cd)])), None);
+        assert_eq!(
+            peg_script_of(&with(vec![vec!["peg".into()], peg(&cd)])),
+            None
+        );
+        assert_eq!(peg_script_of(&with(vec![peg(&"00".repeat(81))])), None);
+        assert_eq!(
+            peg_script_of(&with(vec![peg(&"00".repeat(80))])).map(|p| p.len()),
+            Some(160)
+        );
+        assert_eq!(peg_script_of(&with(vec![])), None);
+        // parse_tip still reads an announcement that carries one
+        assert_eq!(parse_tip(&with(vec![peg(&cd)])).unwrap().tip, 9);
+    }
+
+    #[test]
+    fn the_newest_announcement_s_peg_script_wins() {
+        let signer = crate::event::SecretKeySigner::from_bytes(&[7u8; 32]).unwrap();
+        let at = |tip: u32, peg: Option<&str>, created: u64| {
+            let t = TipTemplate::new("sidestr:vec", tip, vec!["01".repeat(80)], vec![]).unwrap();
+            sign_tip_with_peg(&signer, &t, peg, created).unwrap()
+        };
+        let a = format!("5120{}", "aa".repeat(32));
+        let b = format!("5120{}", "bb".repeat(32));
+        let evs = [at(5, Some(&a), 10), at(6, Some(&b), 11)];
+        assert_eq!(
+            newest_peg_script(&evs, "sidestr:vec", None),
+            Some(b.clone())
+        );
+        // a newer announcement with none: none, as the reference takes the newest only
+        let evs = [at(5, Some(&a), 10), at(6, None, 11)];
+        assert_eq!(newest_peg_script(&evs, "sidestr:vec", None), None);
+        // another chain's, or another signer's, is not considered
+        assert_eq!(newest_peg_script(&evs[..1], "sidestr:other", None), None);
+        assert_eq!(
+            newest_peg_script(&evs[..1], "sidestr:vec", Some(&"00".repeat(32))),
+            None
+        );
+    }
     use crate::event::SecretKeySigner;
 
     fn signer() -> SecretKeySigner {

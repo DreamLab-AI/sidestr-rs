@@ -110,8 +110,8 @@ peg-ins are claimed and peg-outs paid through the PSBT round.
 
 ## Status
 
-0.2.0: interoperates with siding at commit
-`722ad42d3271efccfdfaf57c3c6943f58fc168f8` (SPEC 0.0.3). Tested against the reference
+0.2.1: interoperates with siding at commit
+`fa86dac83d47b8f70195132e91e9dc083e1d9228` (SPEC 0.0.4, `@sidestr/spec` 0.0.6). Tested against the reference
 engine as an oracle: three signers on one box in {Rust, JS, JS} and
 {Rust, Rust, JS}, both header families, peg-outs proposed by either engine.
 Not yet: a signer on another machine, changing the signer set. Audited

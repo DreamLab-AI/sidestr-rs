@@ -29,7 +29,7 @@ its identity already has, and sign the event that carries each payment.
 |---|---|---|---|
 | [`sidestr-header`](sidestr-header) | both header families: stock 80-byte SHA-256d and Knots' 164-byte v2 BLAKE2b; compact targets, powLimit, BIP-325 block data; `no_std` | [![](https://img.shields.io/crates/v/sidestr-header.svg)](https://crates.io/crates/sidestr-header) | [docs.rs](https://docs.rs/sidestr-header) |
 | [`sidestr-core`](sidestr-core) | the chain document, parents table, signed blocks, peg-in claims and peg-out burns, Knots' unified sighash, the parent view, the block file and a mirror's bytes replayed, SPEC 12 records and the assets view, a validating chain | [![](https://img.shields.io/crates/v/sidestr-core.svg)](https://crates.io/crates/sidestr-core) | [docs.rs](https://docs.rs/sidestr-core) |
-| [`sidestr-nostr`](sidestr-nostr) | the Nostr plane: NIP-01 events, a sealed signer port, tips (33333), transactions (23500/23501), rule and genesis documents, the round envelopes, estate kinds 38420–38425 | [![](https://img.shields.io/crates/v/sidestr-nostr.svg)](https://crates.io/crates/sidestr-nostr) | [docs.rs](https://docs.rs/sidestr-nostr) |
+| [`sidestr-nostr`](sidestr-nostr) | the Nostr plane: NIP-01 events, a sealed signer port, tips (33333, with the peg script), transactions (23500/23501/23503), rule and genesis documents, the round envelopes, estate kinds 38420–38425 | [![](https://img.shields.io/crates/v/sidestr-nostr.svg)](https://crates.io/crates/sidestr-nostr) | [docs.rs](https://docs.rs/sidestr-nostr) |
 | [`sidestr-wallet`](sidestr-wallet) | coins, the reference coin selection, key-path spends and burns signed by the parent's family, spends with records, issued assets (issue, transfer), the peg-in shape, delivery | [![](https://img.shields.io/crates/v/sidestr-wallet.svg)](https://crates.io/crates/sidestr-wallet) | [docs.rs](https://docs.rs/sidestr-wallet) |
 | [`sidestr-round`](sidestr-round) | the level-2 co-signing round and the peg-out PSBT round as pure state machines on the reference's wire, a vote journal, the `cosign` signer | [![](https://img.shields.io/crates/v/sidestr-round.svg)](https://crates.io/crates/sidestr-round) | [docs.rs](https://docs.rs/sidestr-round) |
 | [`sidestr-agent`](sidestr-agent) | an agent wallet where the did:nostr key is the wallet: balance, npub → address, spends, burns and asset transfers as kind-23500 events, a peg-in plan, a faucet; the library builds for wasm32 | [![](https://img.shields.io/crates/v/sidestr-agent.svg)](https://crates.io/crates/sidestr-agent) | [docs.rs](https://docs.rs/sidestr-agent) |
@@ -39,12 +39,18 @@ The dependencies run one way: `core` ← `header`, `nostr`, `wallet` ← `round`
 
 ## Status
 
-**SPEC 0.0.3**, reference commit
-[`722ad42`](https://github.com/sidestr/spec/commit/722ad42d3271efccfdfaf57c3c6943f58fc168f8).
-It brings two changes, both ported:
+**SPEC 0.0.4** (`@sidestr/spec` 0.0.6), reference commit
+[`fa86dac`](https://github.com/sidestr/spec/commit/fa86dac83d47b8f70195132e91e9dc083e1d9228).
+Ported since 0.0.2:
 
-- the peg output is the taproot output the peg holders own, at any position;
-- signatures follow the parent's family.
+- the peg output is the taproot output the peg holders own, at any position (0.0.3);
+- signatures follow the parent's family (0.0.3);
+- the signer announces the peg script with every tip (the `peg` tag), and an
+  output paying it is the peg wherever it sits (0.0.4);
+- kind 23503 carries a signed parent transaction to a producer with a node
+  (0.0.4);
+- a record is exactly its push: bytes after it or missing refuse it
+  (sidestr/spec#17; sidestr-rs always read it so).
 
 - **Level 1 (one signer): complete.** Both header families work end to end:
   genesis from the document, production, validation, the mempool policy,
@@ -54,8 +60,8 @@ It brings two changes, both ported:
   three signers on one box, in both mixes of Rust and JS. **Not yet done:** a
   signer on another machine, changing the signer set, and a Byzantine
   fault-tolerant redesign of the round.
-- Out of scope: the EVM rule, assets (SPEC 12, reserved), and a
-  trust-minimised peg-out.
+- Out of scope: the EVM and pool rules, assets as consensus (sidestr-core
+  reads them as a holders' view, `assets`), and a trust-minimised peg-out.
 
 ## What is proven against the reference
 
@@ -89,7 +95,7 @@ To run the oracle suites, check out the three reference repositories at the
 pinned commits and name them:
 
 ```sh
-git clone https://github.com/sidestr/spec && git -C spec checkout 722ad42d3271efccfdfaf57c3c6943f58fc168f8
+git clone https://github.com/sidestr/spec && git -C spec checkout fa86dac83d47b8f70195132e91e9dc083e1d9228
 git clone https://github.com/bitcoin-desktop/schema && git -C schema checkout b8cbf6337c7450fe14ddc5bce00c7280059aab5d
 git clone https://github.com/bitcoin-blake/blaketestnode && git -C blaketestnode checkout d2764d21fe1f8c29b1979e49eb8287a72dd2347e
 

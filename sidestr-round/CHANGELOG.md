@@ -2,6 +2,19 @@
 
 All notable changes to `sidestr-round`. The crate follows semantic versioning.
 
+## 0.2.1 — 2026-09-25
+
+Additive.
+
+### Added
+
+- `relay::fetch` / `fetch_with`: ask each relay once for a filter and
+  collect what it sends until `EOSE`, the one-shot read `announce.mjs
+  fetchLatestTip` makes (where `follow` stays open). A dead relay costs only
+  its own timeout.
+- Interoperates with siding at `fa86dac` (SPEC 0.0.4, `@sidestr/spec`
+  0.0.6); the oracle suites run against it.
+
 ## 0.2.0 — 2026-09-23
 
 - Follows `sidestr-core` 0.3, `sidestr-header` 0.3 and `sidestr-nostr` 0.3.

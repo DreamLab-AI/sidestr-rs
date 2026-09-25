@@ -2,6 +2,25 @@
 
 All notable changes to `sidestr-agent`. The crate follows semantic versioning.
 
+## 0.3.1 — 2026-09-25
+
+SPEC 0.0.4 (`@sidestr/spec` 0.0.6). Additive.
+
+### Added
+
+- `pegin-plan` at level 1 with no `--peg-address` or `--peg-key` pays the
+  peg script the chain's signer announces with its newest tip (the `peg`
+  tag; only the chain document's signer counts), as the JS wallet's
+  `pegInScript` does; a chain that announces none is refused with the
+  reason. Library: `announced_peg_address`, and `fetch_announced_peg_script`
+  (feature `cli`).
+- `publish-parent <hex>`: a signed parent transaction (a peg-in) with no node
+  of your own goes to the parent's public explorer, and if that refuses or
+  does not answer, as a kind-23503 event from a throwaway key for a
+  producer with a node to broadcast if its policy accepts it (the JS
+  wallet's `publishParent`). `--no-explorer`, `--explorer`, `--dry-run`.
+  Library: `parent_explorer_api`.
+
 ## 0.3.0 — 2026-09-24
 
 ### Changed

@@ -164,6 +164,65 @@ pub fn follow_with(
     rx
 }
 
+/// Ask each relay once for the events matching `filter` and collect what they
+/// send until each says `EOSE` (or closes, or `timeout` passes): the one-shot
+/// read `announce.mjs fetchLatestTip` makes, where [`follow`] stays open.
+/// Events arrive unverified, in no particular order and possibly duplicated
+/// across relays; the caller verifies and chooses
+/// ([`sidestr_nostr::tip::newest`] does both for announcements).
+pub async fn fetch(relays: &[String], filter: Filter, timeout: Duration) -> Vec<Event> {
+    fetch_with(relays, filter, timeout, &default_connector()).await
+}
+
+/// [`fetch`] with the TLS connector given.
+pub async fn fetch_with(
+    relays: &[String],
+    filter: Filter,
+    timeout: Duration,
+    connector: &Connector,
+) -> Vec<Event> {
+    let one = |url: String| {
+        let filter = filter.clone();
+        async move {
+            let mut got = Vec::new();
+            let read = async {
+                let Ok(mut ws) = connect(&url, connector).await else {
+                    return;
+                };
+                let req = ClientMessage::Req {
+                    subscription_id: "fetch".into(),
+                    filters: vec![filter],
+                };
+                if ws.send(Message::Text(req.to_json().into())).await.is_err() {
+                    return;
+                }
+                while let Some(msg) = ws.next().await {
+                    match msg {
+                        Ok(Message::Text(t)) => match RelayMessage::from_json(&t) {
+                            Ok(RelayMessage::Event { event, .. }) => got.push(event),
+                            Ok(RelayMessage::Eose(_)) | Ok(RelayMessage::Closed { .. }) => break,
+                            _ => {}
+                        },
+                        Ok(Message::Ping(p)) => {
+                            let _ = ws.send(Message::Pong(p)).await;
+                        }
+                        Ok(Message::Close(_)) | Err(_) => break,
+                        _ => {}
+                    }
+                }
+                let _ = ws.close(None).await;
+            };
+            let _ = tokio::time::timeout(timeout, read).await;
+            got
+        }
+    };
+    futures_util::future::join_all(relays.iter().cloned().map(one))
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
 /// Publish one event to one relay and report what it said (`relay.mjs
 /// publish`): a fresh connection, `["EVENT", …]`, the `OK` for this id
 /// within `timeout`.
@@ -491,6 +550,14 @@ mod tests {
                 _ => {}
             }
         }
-        assert_eq!(got, vec![tip]);
+        assert_eq!(got, vec![tip.clone()]);
+        // the one-shot read: until EOSE, a dead relay costing only its own timeout
+        let fetched = fetch(
+            &[url.clone(), "ws://127.0.0.1:1".into()],
+            sidestr_nostr::relay::tip_filter("sidestr:t"),
+            Duration::from_secs(5),
+        )
+        .await;
+        assert_eq!(fetched, vec![tip]);
     }
 }

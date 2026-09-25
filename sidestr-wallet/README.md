@@ -35,7 +35,7 @@ let post = sidestr_wallet::deliver::tx_post(producer_url, &paid.hex);   // POST 
 This crate is a port of **siding**, the reference implementation of sidestr by
 Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
 AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279` and
-brought to SPEC 0.0.3 at `722ad42d3271efccfdfaf57c3c6943f58fc168f8` (`lib/txsign.mjs`):
+brought to SPEC 0.0.4 (`@sidestr/spec` 0.0.6) at `fa86dac83d47b8f70195132e91e9dc083e1d9228` (`lib/txsign.mjs`):
 `siding/lib/spend.mjs` (`buildSpend`, `resolveTo`, `deliver`),
 `lib/address.mjs`, the transaction and marker construction of
 `lib/parent.mjs` (`scanPegins`, `payPegout`) and `lib/checkpoint.mjs`
