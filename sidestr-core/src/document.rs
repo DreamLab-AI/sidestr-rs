@@ -101,7 +101,8 @@ pub struct ChainDocument {
     /// The genesis hash, set once the genesis is sealed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub genesis_hash: Option<String>,
-    /// Rules the chain names beyond the core (`assets`, `pool`, `evm`).
+    /// Rules the chain names beyond the core (`assets`, `pool`, `evm`); a
+    /// validator must carry every one ([`ChainDocument::validate_with`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rules: Option<Vec<String>>,
     /// Level 2: the signers' x-only public keys, in leaf order. With
@@ -149,8 +150,14 @@ fn is_hex(s: &str, len: usize) -> bool {
 impl ChainDocument {
     /// Parse and validate a document from its JSON text.
     pub fn from_json(text: &str) -> Result<Self> {
+        Self::from_json_with(text, &[])
+    }
+
+    /// [`ChainDocument::from_json`] for a validator that carries the rules
+    /// named in `carried` ([`ChainDocument::validate_with`]).
+    pub fn from_json_with(text: &str, carried: &[&str]) -> Result<Self> {
         let doc: Self = serde_json::from_str(text)?;
-        doc.validate()?;
+        doc.validate_with(carried)?;
         Ok(doc)
     }
 
@@ -170,7 +177,33 @@ impl ChainDocument {
     /// it, so a validator never runs a chain it would misjudge. The parent's
     /// header family is not judged here: both families are carried, and a
     /// state instantiated for the other one refuses the document itself.
+    ///
+    /// The core rules are all this crate carries, so a document naming any
+    /// rule is refused; [`ChainDocument::validate_with`] is the same check
+    /// for a validator that carries further rules.
     pub fn validate(&self) -> Result<()> {
+        self.validate_with(&[])
+    }
+
+    /// [`ChainDocument::validate`] for a validator that carries the rules
+    /// named in `carried` beside the core (`["assets", "evm"]` with
+    /// `sidestr-evm`): every rule the document names must be one of them
+    /// (`siding/lib/overlays/index.mjs rulesFor`), and the pool rule needs the
+    /// assets rule. A state built with rules
+    /// ([`crate::state::StateOf::from_genesis_with_rules`]) checks its
+    /// document this way with the names its rules answer to
+    /// ([`crate::rules::BlockRule::name`]).
+    ///
+    /// ```
+    /// use sidestr_core::document::ChainDocument;
+    ///
+    /// let mut doc: serde_json::Value = serde_json::from_str(include_str!("../fixtures/trial/chain.json")).unwrap();
+    /// doc["rules"] = serde_json::json!(["evm"]);
+    /// let doc: ChainDocument = serde_json::from_value(doc).unwrap();
+    /// assert!(doc.validate().unwrap_err().to_string().contains("does not have"));
+    /// assert!(doc.validate_with(&["assets", "evm"]).is_ok());
+    /// ```
+    pub fn validate_with(&self, carried: &[&str]) -> Result<()> {
         let bad = |m: String| Err(Error::Document(m));
         self.parent()?;
         if self.id.is_empty() || self.name.is_empty() {
@@ -222,8 +255,22 @@ impl ChainDocument {
             }
         }
         if let Some(rules) = &self.rules {
-            if let Some(r) = rules.iter().find(|r| !r.is_empty()) {
-                return bad(format!("chain {} names rule \"{r}\", which this validator does not have (sidestr-core carries the core rules only)", self.id));
+            if let Some(r) = rules
+                .iter()
+                .find(|r| !r.is_empty() && !carried.contains(&r.as_str()))
+            {
+                return bad(if carried.is_empty() {
+                    format!("chain {} names rule \"{r}\", which this validator does not have (sidestr-core carries the core rules only)", self.id)
+                } else {
+                    format!(
+                        "chain {} names rule \"{r}\", which this validator does not have (it carries {})",
+                        self.id,
+                        carried.join(", ")
+                    )
+                });
+            }
+            if rules.iter().any(|r| r == "pool") && !rules.iter().any(|r| r == "assets") {
+                return bad("the pool rule needs the assets rule".into());
             }
         }
         // level 2: the challenge is named only through signers and threshold (overlay.mjs checkFederation)
@@ -310,6 +357,39 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(e.contains("does not have"), "{e}");
+        // a validator carrying further rules accepts exactly the names it carries
+        let named = |rules: serde_json::Value| {
+            let mut v = base.clone();
+            v["rules"] = rules;
+            serde_json::from_value::<ChainDocument>(v).unwrap()
+        };
+        assert!(named(serde_json::json!(["evm"]))
+            .validate_with(&["assets", "evm"])
+            .is_ok());
+        assert!(named(serde_json::json!(["assets", "evm"]))
+            .validate_with(&["assets", "evm"])
+            .is_ok());
+        for (rules, want) in [
+            (
+                serde_json::json!(["evm", "pool"]),
+                "\"pool\", which this validator does not have (it carries assets, evm)",
+            ),
+            (serde_json::json!(["desk"]), "\"desk\""),
+            (serde_json::json!(["evm"]), "carries the core rules only"),
+        ] {
+            let carried: &[&str] = if want.contains("core rules") {
+                &[]
+            } else {
+                &["assets", "evm"]
+            };
+            let e = named(rules).validate_with(carried).unwrap_err().to_string();
+            assert!(e.contains(want), "{e}");
+        }
+        assert!(named(serde_json::json!(["pool"]))
+            .validate_with(&["pool"])
+            .unwrap_err()
+            .to_string()
+            .contains("needs the assets rule"));
         // a BLAKE2b parent is a valid document; which family a validator carries is the state's concern
         assert_eq!(
             with(&|v| v["parent"] = "txbt4".into())

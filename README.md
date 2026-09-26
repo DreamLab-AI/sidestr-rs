@@ -33,9 +33,11 @@ its identity already has, and sign the event that carries each payment.
 | [`sidestr-wallet`](sidestr-wallet) | coins, the reference coin selection, key-path spends and burns signed by the parent's family, spends with records, issued assets (issue, transfer), the peg-in shape, delivery | [![](https://img.shields.io/crates/v/sidestr-wallet.svg)](https://crates.io/crates/sidestr-wallet) | [docs.rs](https://docs.rs/sidestr-wallet) |
 | [`sidestr-round`](sidestr-round) | the level-2 co-signing round and the peg-out PSBT round as pure state machines on the reference's wire, a vote journal, the `cosign` signer | [![](https://img.shields.io/crates/v/sidestr-round.svg)](https://crates.io/crates/sidestr-round) | [docs.rs](https://docs.rs/sidestr-round) |
 | [`sidestr-agent`](sidestr-agent) | an agent wallet where the did:nostr key is the wallet: balance, npub → address, spends, burns and asset transfers as kind-23500 events, a peg-in plan, a faucet; the library builds for wasm32 | [![](https://img.shields.io/crates/v/sidestr-agent.svg)](https://crates.io/crates/sidestr-agent) | [docs.rs](https://docs.rs/sidestr-agent) |
+| [`sidestr-evm`](sidestr-evm) | the `evm` rule: Ethereum transactions carried in sidechain transactions, run through revm (Cancun) beside the UTXO set, deposits and withdrawals at 1 sat = 1 gwei, the state root in the coinbase; every root checked against the reference on ethereumjs | not published | — |
 
 The dependencies run one way: `core` ← `header`, `nostr`, `wallet` ← `round`
-← `agent`. `sidestr-core` never depends on `sidestr-header`.
+← `agent`, and `core` ← `evm`. `sidestr-core` never depends on
+`sidestr-header`, nor on the EVM: revm and alloy stay in `sidestr-evm`.
 
 ## Status
 
@@ -60,8 +62,14 @@ Ported since 0.0.2:
   three signers on one box, in both mixes of Rust and JS. **Not yet done:** a
   signer on another machine, changing the signer set, and a Byzantine
   fault-tolerant redesign of the round.
-- Out of scope: the EVM and pool rules, assets as consensus (sidestr-core
-  reads them as a holders' view, `assets`), and a trust-minimised peg-out.
+- **The `evm` rule: ported** (`sidestr-evm`, not yet published). A follower
+  validates an evm chain end to end, with the assets rule as consensus
+  beside it, as the reference installs it on every chain naming a rule. Every
+  state root of a scripted chain matches siding on ethereumjs byte for byte.
+  The JSON-RPC endpoint (`evmrpc.mjs`) is not ported.
+- Out of scope: the pool rule and a trust-minimised peg-out. Assets are read
+  as a holders' view on any chain (`sidestr-core`'s `assets`), and are
+  consensus on a chain that names a rule.
 
 ## What is proven against the reference
 
@@ -83,6 +91,10 @@ The reference engine is the oracle. What is tested:
   signature.
 - **Round:** Rust and JS co-signers seal the same blocks and pay peg-outs
   proposed by either engine.
+- **EVM:** a scripted `evm` chain of 35 blocks, run by siding's `evm.mjs` on
+  ethereumjs 10.1.3, is replayed by `sidestr-evm`: every accepted block's
+  state root, withdrawals and receipts match byte for byte, and every refused
+  block is refused (`sidestr-evm/tests/oracle.rs`).
 - **Audit regressions:** independent audits' counter-examples are kept as
   `tests/audit_regressions*.rs`. The 0.0.3 release was verified by GPT-6
   Astra before publishing. It re-ran every gate and confirmed each change at

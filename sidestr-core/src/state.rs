@@ -168,8 +168,9 @@ impl<F: HeaderFamily> StateOf<F> {
         Ok(F::default())
     }
 
-    fn empty(doc: ChainDocument) -> Result<Self> {
-        doc.validate()?;
+    fn empty(doc: ChainDocument, rules: Vec<Box<dyn BlockRule<F>>>) -> Result<Self> {
+        let carried: Vec<&str> = rules.iter().filter_map(|r| r.name()).collect();
+        doc.validate_with(&carried)?;
         let family = Self::family_of(&doc)?;
         let bits = doc.bits()?;
         let challenge = doc.challenge_script()?;
@@ -187,7 +188,7 @@ impl<F: HeaderFamily> StateOf<F> {
             records: Records::default(),
             mempool: Vec::new(),
             mempool_spent: HashSet::new(),
-            extra_rules: Vec::new(),
+            extra_rules: rules,
         })
     }
 
@@ -237,8 +238,18 @@ impl<F: HeaderFamily> StateOf<F> {
 
     /// A state at its genesis, sealed with the signer's key.
     pub fn with_key(doc: ChainDocument, key: &SecretKey) -> Result<Self> {
+        Self::with_key_and_rules(doc, key, Vec::new())
+    }
+
+    /// [`StateOf::with_key`] for a chain whose document names further rules,
+    /// carried by `rules` ([`StateOf::from_genesis_with_rules`]).
+    pub fn with_key_and_rules(
+        doc: ChainDocument,
+        key: &SecretKey,
+        rules: Vec<Box<dyn BlockRule<F>>>,
+    ) -> Result<Self> {
         let genesis = Self::genesis_block_for(&doc, key)?;
-        Self::from_genesis(doc, &genesis, None)
+        Self::from_genesis_with_rules(doc, &genesis, None, rules)
     }
 
     /// A state at a sealed genesis. Block 0 is judged first, under every rule
@@ -261,7 +272,23 @@ impl<F: HeaderFamily> StateOf<F> {
         genesis: &F::Block,
         expect: Option<BlockHash>,
     ) -> Result<Self> {
-        let mut s = Self::empty(doc)?;
+        Self::from_genesis_with_rules(doc, genesis, expect, Vec::new())
+    }
+
+    /// [`StateOf::from_genesis`] with block-context rules beyond the core
+    /// (SPEC 12), judged from the genesis on: the rules a chain document
+    /// names in `rules`, carried by implementations of [`BlockRule`] whose
+    /// [`BlockRule::name`] answers to them (`sidestr-evm` carries `assets`
+    /// and `evm`). The document is checked with
+    /// [`ChainDocument::validate_with`] against those names, so a document
+    /// naming a rule none of `rules` carries is still refused.
+    pub fn from_genesis_with_rules(
+        doc: ChainDocument,
+        genesis: &F::Block,
+        expect: Option<BlockHash>,
+        rules: Vec<Box<dyn BlockRule<F>>>,
+    ) -> Result<Self> {
+        let mut s = Self::empty(doc, rules)?;
         if genesis.txdata().is_empty() {
             return Err(Error::Chain("genesis has no coinbase".into()));
         }
@@ -295,10 +322,15 @@ impl<F: HeaderFamily> StateOf<F> {
         apply_block(&mut s.utxo, genesis.txdata(), 0);
         s.headers.push(genesis.header().clone());
         s.hashes.push(hash);
+        for rule in &s.extra_rules {
+            rule.applied(genesis, 0);
+        }
         Ok(s)
     }
 
-    /// Add a block-context rule beyond the core (SPEC 12).
+    /// Add a block-context rule beyond the core (SPEC 12). The document is
+    /// not checked against it: a rule a document names is carried from the
+    /// genesis with [`StateOf::from_genesis_with_rules`].
     pub fn add_rule(&mut self, rule: Box<dyn BlockRule<F>>) {
         self.extra_rules.push(rule);
     }
@@ -462,6 +494,9 @@ impl<F: HeaderFamily> StateOf<F> {
         self.records.pegouts.extend(next.pegouts);
         self.headers.push(block.header().clone());
         self.hashes.push(hash);
+        for rule in &self.extra_rules {
+            rule.applied(block, height);
+        }
         self.mempool.retain(|(_, tx)| {
             tx.input
                 .iter()

@@ -38,7 +38,7 @@
 //! | [`parent`] | the parent chain behind [`parent::ParentRpc`] / [`parent::PegWallet`]: peg-ins found in decoded blocks, peg status, what to claim and lock, the burn payment and checkpoint as `send` outputs, reconciliation; Bitcoin Core's JSON-RPC behind feature `rpc` | 6, 7, 11 | `siding/lib/parent.mjs`, `checkpoint.mjs`, `bin/siding.mjs produce` |
 //! | [`federation`] | level 2, the pure parts: the NUMS internal key, the `multi_a(k, …)` leaf, output key and control block, partial signatures, witness assembly, sealing, and the verifier for exactly that leaf | level-2 | `siding/lib/federation.mjs`; `schema/codec/interpreter.js` (tapscript) |
 //! | [`marker`] | the `OP_RETURN` grammar: `pegin:`, `claim:`, `pegout:`, `ckpt:`, and text records | 6, 7, 11 | `siding/lib/marker.mjs`, `overlay.mjs`, `parent.mjs`, `checkpoint.mjs`, `records.mjs` |
-//! | [`rules`] | the rules in phases with the sidestr overlay: zero subsidy, the signature challenge, the claim rule, the burn rule; the family's own rules; the extension point for more | 4, 6, 7, 12 | `schema/codec/blocks.js`, `headers.js`; `siding/lib/overlay.mjs` |
+//! | [`rules`] | the rules in phases with the sidestr overlay: zero subsidy, the signature challenge, the claim rule, the burn rule; the family's own rules; the extension point for more ([`rules::BlockRule`]: a document's rules, their coinbase allowance, their state committed on apply) | 4, 6, 7, 12 | `schema/codec/blocks.js`, `headers.js`; `siding/lib/overlay.mjs` |
 //! | [`state`] | the chain in memory, generic over the family ([`StateOf`], [`State`] for stock): headers, UTXO set, the overlay's records, a mempool with the producer's policy, block production | 4, 5, 11 | `siding/lib/chain.mjs`, `blaketestnode/lib/node.mjs` |
 //! | [`blockfile`] | `[u32 height][u32 size][block]` with a JSON index (feature `std`) | 11 | `blaketestnode/lib/blockfile.mjs` |
 //! | [`chain`] | the chain on disk ([`chain::ChainOf`], [`chain::Chain`] for stock): replay, genesis when absent, every accepted block written (feature `std`) | 5, 11 | `siding/lib/chain.mjs` |
@@ -243,10 +243,14 @@
 //!   differential in `tests/audit_regressions_records.rs` allows.
 //! - **Zero auxiliary randomness everywhere**, not only for the genesis. Both
 //!   are valid BIP 340; only reproducibility differs.
-//! - **A document naming `assets`, `pool` or `evm` is refused** at
-//!   [`document::ChainDocument::validate`], as `loadEngine` refuses a rule it
-//!   does not have: those overlays are not carried, and a validator must not
-//!   run a chain it would misjudge. The Knots overlay's
+//! - **A document naming a rule is refused unless the rule is carried.**
+//!   [`document::ChainDocument::validate`] refuses every named rule, as
+//!   `loadEngine` refuses a rule it does not have, so a validator never runs
+//!   a chain it would misjudge; a state built with rules
+//!   ([`StateOf::from_genesis_with_rules`]) accepts the names they answer to
+//!   ([`rules::BlockRule::name`]). The assets rule is carried here
+//!   ([`assets::AssetsRule`]); the EVM rule is `sidestr-evm`, which keeps
+//!   revm out of this crate; `pool` is carried nowhere. The Knots overlay's
 //!   RDTS weight cap (`knots:rule-blockctx-weight-rdts`) is not carried
 //!   either: on a sidestr chain `rdtsExpiryTime` is 0, so it is never active.
 

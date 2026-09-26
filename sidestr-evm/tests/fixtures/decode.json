@@ -1,0 +1,233 @@
+{
+ "reference": "sidestr/spec fa86dac83d47b8f70195132e91e9dc083e1d9228 siding/lib/overlays/evm.mjs (sha256 8903eab6c67244ded02edf8122112efb015ee1e3e5d4ca913372e542cc1820cc)",
+ "ethereumjs": "10.1.3",
+ "crossChecked": true,
+ "chainId": 21474,
+ "cases": [
+  {
+   "label": "legacy, EIP-155",
+   "rlp": "f86503843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2058082a7e7a080a38675816bdbc0f4471e9b8cdb435eb777c8d07f578103d57eea86cf716e23a03b5b4c757cb5bc2199633671d87dcac63e8827ce8c8c9848790d724d1a3d1e7d",
+   "ok": true,
+   "sender": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+   "hash": "0x04358cd0fb5f046f6e5c62945a0339939c9f900885a2cc2a6a3ac61073bcf003",
+   "type": 0,
+   "error": null
+  },
+  {
+   "label": "legacy, v = 27/28",
+   "rlp": "f86303843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf205801ba0139de9ff5b01b03dbb87511b5f48d696be47cb11834c175642db003e87969066a01c60661da1aac341a7a67423f5928264e6fee64e62af17f5ae90cf2a082dec24",
+   "ok": true,
+   "sender": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+   "hash": "0x667653747c978a4a1510876d1d4ab1794b941645000082b516882f2cb91ee924",
+   "type": 0,
+   "error": null
+  },
+  {
+   "label": "legacy, EIP-155 for chain 1",
+   "rlp": "f86303843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2058025a069e7c45643f60b86fa62f4eec1a8c2d4ec86307ae5991d863a4c62d6f718b183a035f600b3f921edc980c82452c1fa9f5f051a86e5f66dfe6db732d408b208f79f",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "Incompatible EIP155-based V 37 and chain id 21474. Pass a matching `common` option to createLegacyTx"
+  },
+  {
+   "label": "legacy, contract creation",
+   "rlp": "f86503843b9aca00830186a080809369602a60005260206000f3600052600a6016f382a7e8a091e52b0cd5a4e358e3d98be9ef3cceffa91350a5ae047cc42c7af6f26dd5edc4a0095267e93f96c0947bfa51a18083e842d40117b238888e92da40cedadbcf41a3",
+   "ok": true,
+   "sender": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+   "hash": "0x74c2ff5008f2433861bc0d284118b684910aee2bf7861c26d2f55bd84a3fcb74",
+   "type": 0,
+   "error": null
+  },
+  {
+   "label": "EIP-2930 with an access list",
+   "rlp": "01f8c38253e201847735940082ea6094e0da1edcea030875cd0f199d96eb70f6ab78faf28080f85bf859945975c152fe58cdcb7e25586a3c9b994a16dbb615f842a00000000000000000000000000000000000000000000000000000000000000007a0000000000000000000000000000000000000000000000000000000000000000801a0b566641029186c6956fdaa7b73d63f33c403ca00b56be177ae3069aa435c4de8a050d9213181e636f50844ca2ff2da5dbd8c165ac44467481bb4427e40bacaeef1",
+   "ok": true,
+   "sender": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+   "hash": "0x9409c65b77faa1af4ef5ced552ba412e2daf7dcb7f78b02e0456cd59eb2ab8fb",
+   "type": 1,
+   "error": null
+  },
+  {
+   "label": "EIP-1559",
+   "rlp": "02f8688253e2018084b2d05e0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf20980c001a017ba5c4e3410d703f905bbb06669852f2f72fa6c8aa7e6958b08e348f9661974a04defbfc46428818ebdee910bc3dd99aa9c85d5422877c90c123d22d131776c9e",
+   "ok": true,
+   "sender": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+   "hash": "0x9920cc6b3a056f89974a1a17acc9945dfefcbb4af34270e798c76e2d46fdf4ce",
+   "type": 2,
+   "error": null
+  },
+  {
+   "label": "EIP-1559, contract creation",
+   "rlp": "02f8688253e2018084b2d05e00830186a080809369602a60005260206000f3600052600a6016f3c001a006059ca9d1edd4d7b7da6b1481edded2c4a24643a99206aebeae144aaf43624ea00cbf213426b3bccaa3c103488b7391c9c3f2df22d003412f8e05c64445708cbf",
+   "ok": true,
+   "sender": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+   "hash": "0x89ca9bc87e75985eab563398e1253064faa2297f5f9de7600c02dd276dea2778",
+   "type": 2,
+   "error": null
+  },
+  {
+   "label": "EIP-1559 for chain 1",
+   "rlp": "02f86601018084b2d05e0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf28080c080a024e98b0aa5576c8ac55b65a9662b20f165edf69ad5f388b5f8854f56ecf08ceea00fcb43b8d052cf44f3900806d50f2d7632be4abb6717a3333998b147dc6df4be",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "Common chain ID chainId() {\n        return BigInt(this._chainParams.chainId);\n    } not matching the"
+  },
+  {
+   "label": "EIP-2930 for chain 1",
+   "rlp": "01f8650101843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf28080c080a036c0a9c5d3c3f726217bbfc0f6a2336f850c461ffd8d885102a7decc2800a0e3a026d9627fefc98739533b8c2bd03261ee0a7414489c110e8f32d7532e3d23ea03",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "Common chain ID chainId() {\n        return BigInt(this._chainParams.chainId);\n    } not matching the"
+  },
+  {
+   "label": "legacy with a high s",
+   "rlp": "f86503843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2058082a7e8a080a38675816bdbc0f4471e9b8cdb435eb777c8d07f578103d57eea86cf716e23a0c4a4b38a834a43de669cc98e278235387c26b51822bc07f346c4ec3fb5f922c4",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": 0,
+   "error": "unsigned or bad signature"
+  },
+  {
+   "label": "EIP-1559 with a high s",
+   "rlp": "02f8688253e2018084b2d05e0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf20980c080a017ba5c4e3410d703f905bbb06669852f2f72fa6c8aa7e6958b08e348f9661974a0b210403b9bd77e7142116ef43c2266541e2907a486d0d72fad953bbb9ebed4a3",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "Invalid Signature: s-values greater than secp256k1n/2 are considered invalid (tx type=2 hash=0xfe213"
+  },
+  {
+   "label": "legacy with trailing bytes",
+   "rlp": "f86503843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2058082a7e7a080a38675816bdbc0f4471e9b8cdb435eb777c8d07f578103d57eea86cf716e23a03b5b4c757cb5bc2199633671d87dcac63e8827ce8c8c9848790d724d1a3d1e7d00",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "invalid RLP: remainder must be zero"
+  },
+  {
+   "label": "EIP-1559 with trailing bytes",
+   "rlp": "02f8688253e2018084b2d05e0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf28080c080a0c64287a25712b95f3282bff5e2f8d62de1904b5a64b15656a4fd00a5d809887ea055c9401308d2f8a05d26abdf353fda8f638b82373f60b0bfc7820d52e4fc120b00",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "invalid RLP: remainder must be zero"
+  },
+  {
+   "label": "legacy with r = 0",
+   "rlp": "f84503843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2058082a7e780a03b5b4c757cb5bc2199633671d87dcac63e8827ce8c8c9848790d724d1a3d1e7d",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": 0,
+   "error": "unsigned or bad signature"
+  },
+  {
+   "label": "legacy, unsigned (six fields)",
+   "rlp": "e003843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf20580",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": 0,
+   "error": "unsigned or bad signature"
+  },
+  {
+   "label": "legacy, v r s empty",
+   "rlp": "e303843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf20580808080",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": 0,
+   "error": "unsigned or bad signature"
+  },
+  {
+   "label": "legacy with a leading zero in the nonce",
+   "rlp": "f867820003843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2058082a7e7a080a38675816bdbc0f4471e9b8cdb435eb777c8d07f578103d57eea86cf716e23a03b5b4c757cb5bc2199633671d87dcac63e8827ce8c8c9848790d724d1a3d1e7d",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "nonce cannot have leading zeroes, received: 0x0003"
+  },
+  {
+   "label": "legacy with a 19-byte to",
+   "rlp": "f86403843b9aca0082520893da1edcea030875cd0f199d96eb70f6ab78faf2058082a7e7a080a38675816bdbc0f4471e9b8cdb435eb777c8d07f578103d57eea86cf716e23a03b5b4c757cb5bc2199633671d87dcac63e8827ce8c8c9848790d724d1a3d1e7d",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "Invalid address length"
+  },
+  {
+   "label": "legacy with v = 29",
+   "rlp": "f86303843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf205801da080a38675816bdbc0f4471e9b8cdb435eb777c8d07f578103d57eea86cf716e23a03b5b4c757cb5bc2199633671d87dcac63e8827ce8c8c9848790d724d1a3d1e7d",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "Legacy txs need either v = 27/28 or v >= 37 (EIP-155 replay protection), got v = 29"
+  },
+  {
+   "label": "legacy with a list for data",
+   "rlp": "f86603843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf205c10182a7e7a080a38675816bdbc0f4471e9b8cdb435eb777c8d07f578103d57eea86cf716e23a03b5b4c757cb5bc2199633671d87dcac63e8827ce8c8c9848790d724d1a3d1e7d",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "data cannot be an array"
+  },
+  {
+   "label": "an unknown type byte",
+   "rlp": "05c0",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "TypedTransaction with ID 5 unknown"
+  },
+  {
+   "label": "a bare RLP string",
+   "rlp": "83010203",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "Invalid serialized tx input. Must be array"
+  },
+  {
+   "label": "garbage",
+   "rlp": "01020304",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "invalid RLP: remainder must be zero"
+  },
+  {
+   "label": "EIP-4844 blob transaction",
+   "rlp": "03f84b8253e2018084b2d05e0082c35094e0da1edcea030875cd0f199d96eb70f6ab78faf28080c00ae1a00100000000000000000000000000000000000000000000000000000000000000010101",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "A common object with customCrypto.kzg initialized required to instantiate a 4844 blob tx"
+  },
+  {
+   "label": "EIP-7702 (Prague) transaction",
+   "rlp": "04f8868253e2018084b2d05e0082ea6094e0da1edcea030875cd0f199d96eb70f6ab78faf28080c0dddc8253e2945975c152fe58cdcb7e25586a3c9b994a16dbb6158080010101a0422bec5e9f311406c120276488742bdc9c60d8fa5d54f44ae97a0f64465b613ea011a2788a15a94038c944881baa819251be425f97e0621a2b2476934d613d7bca",
+   "ok": false,
+   "sender": null,
+   "hash": null,
+   "type": null,
+   "error": "EIP-7702 not enabled on Common"
+  }
+ ]
+}

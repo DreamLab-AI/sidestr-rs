@@ -113,6 +113,18 @@ impl<F: HeaderFamily> StateOf<F> {
         Self::replay_with(doc, dat, now, |_, _, _| {})
     }
 
+    /// [`StateOf::replay`] for a chain whose document names further rules,
+    /// carried by `rules` from the genesis on
+    /// ([`StateOf::from_genesis_with_rules`]).
+    pub fn replay_with_rules(
+        doc: ChainDocument,
+        dat: &[u8],
+        now: Option<u32>,
+        rules: Vec<Box<dyn crate::rules::BlockRule<F>>>,
+    ) -> Result<Self> {
+        Self::replay_inner(doc, dat, now, rules, |_, _, _| {})
+    }
+
     /// [`StateOf::replay`], calling `on_block(before, height, block)` for
     /// each block ahead of applying it: `before` is the state at the previous
     /// height (`None` for the genesis). A wallet uses it to read its own
@@ -124,6 +136,16 @@ impl<F: HeaderFamily> StateOf<F> {
         doc: ChainDocument,
         dat: &[u8],
         now: Option<u32>,
+        on_block: impl FnMut(Option<&Self>, u32, &F::Block),
+    ) -> Result<Self> {
+        Self::replay_inner(doc, dat, now, Vec::new(), on_block)
+    }
+
+    fn replay_inner(
+        doc: ChainDocument,
+        dat: &[u8],
+        now: Option<u32>,
+        rules: Vec<Box<dyn crate::rules::BlockRule<F>>>,
         mut on_block: impl FnMut(Option<&Self>, u32, &F::Block),
     ) -> Result<Self> {
         let recs = records(dat)?;
@@ -138,7 +160,7 @@ impl<F: HeaderFamily> StateOf<F> {
         }
         let genesis = F::Block::decode(first.bytes)?;
         on_block(None, 0, &genesis);
-        let mut state = Self::from_genesis(doc, &genesis, None)?;
+        let mut state = Self::from_genesis_with_rules(doc, &genesis, None, rules)?;
         for rec in rest {
             let block = F::Block::decode(rec.bytes)?;
             on_block(Some(&state), rec.height, &block);

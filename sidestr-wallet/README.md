@@ -85,9 +85,11 @@ document come from `sidestr-core` and are not duplicated.
   (audit F4, 0.2.1; the checkpoint's 80-byte bound is `sidestr-core`'s
   `checkpoint_data`). The reference does not check; its `send` fails at the
   node.
-- **Not carried:** the `--evm` deposit branch (ADR-2096 excludes the `evm`
-  rule), assets (SPEC 12, reserved), the faucet's relay loop and rate state
-  (its payment is `build_spend`; the request template is `deliver::faucet_request`).
+- **Not carried:** the `--evm` deposit branch: a deposit is a payment to the
+  chain's reserve followed by a value-0 `evmin:` marker, which the spend
+  builders here do not lay out; the marker is `sidestr-evm`'s
+  `records::deposit_script`. Nor the faucet's relay loop and rate state (its
+  payment is `build_spend`; the request template is `deliver::faucet_request`).
 
 ## Status — 0.3.0
 

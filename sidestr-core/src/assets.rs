@@ -9,8 +9,12 @@
 //!
 //! # Two ways to hold the rule
 //!
-//! On a chain whose document names `assets`, the rule is consensus: a
-//! transaction that breaks it is refused and so is its block. On a chain
+//! On a chain whose document names `assets` — or names any rule at all:
+//! `siding/lib/overlays/index.mjs rulesFor` installs the assets rule
+//! whenever `rules` is not empty, so an `evm` chain carries it too — the
+//! rule is consensus: a transaction that breaks it is refused and so is its
+//! block. [`AssetsRule`] is that rule, a [`BlockRule`] for
+//! [`crate::state::StateOf::from_genesis_with_rules`]. On a chain
 //! that names no rules the records are still mined, as any `OP_RETURN` is,
 //! and a client may *read* them under the same rule. That is an asset
 //! validated by its holders rather than by the chain's signers, and
@@ -56,10 +60,16 @@
 //! ```
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, Mutex, MutexGuard};
 
-use bitcoin::{OutPoint, Transaction, Txid};
+use bitcoin::{BlockHash, OutPoint, Transaction, Txid};
 
+use crate::block::{HeaderFamily, SidestrBlock};
 use crate::records::{classify, AssetRef};
+use crate::rules::{BlockContext, BlockRule};
+
+/// The id the assets rule reports in a verdict (`siding/lib/overlays/assets.mjs RULE`).
+pub const RULE: &str = "sidestr:rule-assets";
 
 /// What one output carries: asset id → amount.
 pub type Carry = BTreeMap<Txid, u64>;
@@ -271,6 +281,116 @@ impl AssetView {
         self.carried
             .iter()
             .filter_map(move |(op, c)| c.get(&asset).map(|n| (op, *n)))
+    }
+}
+
+/// The assets rule as **consensus** (SPEC 12.2, `sidestr:rule-assets`,
+/// `siding/lib/overlays/assets.mjs installChecks`, without the pool rule): a
+/// block is valid under it when its coinbase carries no `issue:`, `tally:`
+/// or malformed record, and every other transaction, in order, keeps the
+/// rule against the view the ones before it leave ([`AssetView::check`]).
+///
+/// It answers to the document name `assets` ([`BlockRule::name`]). The view
+/// a block leaves is kept until the block is applied
+/// ([`BlockRule::applied`]); a block any rule refuses leaves the view as it
+/// was. The rule is a handle: clones share one view, so a caller keeps a
+/// clone to read it ([`AssetsRule::view`]) while the state holds another.
+///
+/// ```
+/// use sidestr_core::assets::AssetsRule;
+/// use sidestr_core::rules::BlockRule;
+/// use sidestr_core::Stock;
+///
+/// let rule = AssetsRule::new();
+/// assert_eq!(BlockRule::<Stock>::name(&rule), Some("assets"));
+/// assert!(rule.view().issued().is_empty());
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct AssetsRule {
+    held: Arc<Mutex<Held>>,
+}
+
+#[derive(Debug, Default)]
+struct Held {
+    view: AssetView,
+    // the views candidate blocks would leave, by block hash, until one is applied
+    pending: Vec<(BlockHash, AssetView)>,
+}
+
+impl AssetsRule {
+    /// The rule on an empty view: a chain before its genesis.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The view as the applied blocks leave it.
+    pub fn view(&self) -> AssetView {
+        self.lock().view.clone()
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Held> {
+        // a panic while the lock was held leaves the data as consistent as the panicking call left it;
+        // the next block is judged afresh from the applied view either way
+        self.held.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The view `txdata` (coinbase first) leaves on top of `view` at
+    /// `height`, or why the block breaks the rule.
+    pub fn judge(
+        view: &AssetView,
+        txdata: &[Transaction],
+        height: u32,
+    ) -> Result<AssetView, String> {
+        if let Some(cb) = txdata.first() {
+            let cls = classify(cb);
+            if !cls.issues.is_empty() || !cls.tallies.is_empty() || !cls.bad.is_empty() {
+                return Err("the coinbase carries no records".into());
+            }
+        }
+        let mut next = view.clone();
+        for o in next.apply_transactions(txdata, height) {
+            if let Some(e) = o.error {
+                return Err(format!("{}: {e}", o.txid));
+            }
+        }
+        Ok(next)
+    }
+}
+
+impl<F: HeaderFamily> BlockRule<F> for AssetsRule {
+    fn id(&self) -> &str {
+        RULE
+    }
+
+    fn name(&self) -> Option<&str> {
+        Some("assets")
+    }
+
+    fn check(&self, ctx: &BlockContext<F>) -> Option<bool> {
+        let hash = F::default().block_hash(ctx.block.header());
+        let mut held = self.lock();
+        match Self::judge(&held.view, ctx.block.txdata(), ctx.height) {
+            Ok(next) => {
+                held.pending.retain(|(h, _)| *h != hash);
+                held.pending.push((hash, next));
+                Some(true)
+            }
+            Err(_) => Some(false),
+        }
+    }
+
+    fn applied(&self, block: &F::Block, height: u32) {
+        let hash = F::default().block_hash(block.header());
+        let mut held = self.lock();
+        let pending = std::mem::take(&mut held.pending);
+        match pending.into_iter().find(|(h, _)| *h == hash) {
+            Some((_, v)) => held.view = v,
+            // a block applied without this rule's check (the rule was added to the state later): read
+            // as the view reads any block, a broken transaction carrying nothing onward
+            None => {
+                held.view.apply_transactions(block.txdata(), height);
+            }
+        }
     }
 }
 

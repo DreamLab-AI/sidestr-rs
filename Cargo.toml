@@ -21,6 +21,10 @@ members = [
     # An agent wallet where a did:nostr key is the wallet: balance, npub → address,
     # spends and burns as kind-23500 events signed by the agent's key, a peg-in plan.
     "sidestr-agent",
+    # The `evm` rule (proposals/evm.md): Ethereum transactions carried in sidechain
+    # transactions, run through revm beside the UTXO set, the state root in the coinbase.
+    # Not published; revm, alloy and alloy-trie stay out of sidestr-core.
+    "sidestr-evm",
 ]
 
 [workspace.package]

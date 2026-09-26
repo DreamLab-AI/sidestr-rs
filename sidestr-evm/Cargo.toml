@@ -1,0 +1,44 @@
+[package]
+name = "sidestr-evm"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+license = "AGPL-3.0-only"
+description = "Rust port of Melvin Carvalho's sidestr sidechains, AGPL-3.0-only: the `evm` rule. Ethereum transactions ride in sidechain transactions, every validator runs them through an EVM (revm, Cancun) beside the UTXO set, and the coinbase commits the state root; 1 sat = 1 gwei."
+readme = "README.md"
+keywords = ["sidestr", "sidechain", "evm", "ethereum", "bitcoin"]
+categories = ["cryptography::cryptocurrencies"]
+# Not published yet: the rule is new upstream (proposals/evm.md, first milestone) and this port
+# waits for a chain that runs it.
+publish = false
+include = ["src/**", "tests/**", "README.md", "CHANGELOG.md", "LICENSE", "Cargo.toml"]
+
+[dependencies]
+sidestr-core = { path = "../sidestr-core", version = "0.3.4" }
+bitcoin = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+# The EVM, Cancun rules. No C: secp256k1 recovery in the ECRECOVER precompile is k256's, and
+# neither c-kzg nor blst is built — the KZG point-evaluation precompile is replaced (see
+# `exec`), and the BLS12-381 ones are Prague's. `optional_block_gas_limit` is the reference's
+# `skipBlockGasLimitValidation`; the balance and base-fee switches are for read-only calls
+# (`EvmState::call`, ethereumjs's `evm.runCall`), never for a carried transaction.
+revm = { version = "43", default-features = false, features = ["std", "optional_block_gas_limit", "optional_balance_check", "optional_no_base_fee"] }
+# Ethereum's types: addresses, U256, keccak; the signed transaction envelope, its RLP and
+# EIP-2718 decoding and the signer's recovery (k256, low s enforced); the Merkle-Patricia
+# state root. Never hand-rolled.
+alloy-primitives = { version = "1.7", default-features = false, features = ["std", "k256"] }
+alloy-consensus = { version = "2.5", default-features = false, features = ["std", "k256"] }
+alloy-eips = { version = "2.5", default-features = false, features = ["std"] }
+alloy-trie = { version = "0.9", default-features = false, features = ["std", "ethereum"] }
+
+[dev-dependencies]
+serde = { workspace = true }
+# Signing the Ethereum transactions the tests carry.
+alloy-signer = "2.5"
+alloy-signer-local = "2.5"
+

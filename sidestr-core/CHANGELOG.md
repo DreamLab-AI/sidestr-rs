@@ -2,6 +2,34 @@
 
 All notable changes to `sidestr-core`. The crate follows semantic versioning.
 
+## Unreleased — 0.3.4
+
+The owner lifted ADR-2096 decision 5: a chain may carry Melvin Carvalho's
+`evm` rule as upstream defines it. The rule itself is the new `sidestr-evm`
+crate (revm stays out of this one); what it needs here is additive.
+
+### Added
+
+- `BlockRule` gains three default methods: `name` (the document name a rule
+  answers to), `coinbase_allowance` (sats `btc:rule-blockctx-coinbase-amount`
+  allows beyond `subsidy + fees + claims`: the EVM rule's withdrawals; `None`
+  fails the rule, as the reference's version does when the rule's verdict on
+  the block is not ok) and `applied` (a rule commits the state it kept for a
+  block once the block is applied, the genesis included). A rule that
+  implements none of them behaves exactly as before.
+- `ChainDocument::validate_with(carried)` and `from_json_with`: a document
+  naming a rule is accepted when the validator carries a rule of that name;
+  the pool rule still needs the assets rule. `validate()` and `from_json()`
+  are `validate_with(&[])` and refuse every named rule, as before.
+- `StateOf::from_genesis_with_rules`, `StateOf::with_key_and_rules`,
+  `StateOf::replay_with_rules` and `ChainOf::open_with_rules`: a state that
+  carries rules from the genesis on, its document checked against their
+  names.
+- `assets::AssetsRule`: the assets rule as consensus (`sidestr:rule-assets`,
+  `overlays/assets.mjs installChecks` without pools). `overlays/index.mjs
+  rulesFor` installs it on every chain whose document names any rule, so an
+  `evm` chain carries it; it answers to `assets`.
+
 ## 0.3.3 — 2026-09-25
 
 SPEC 0.0.4 (`@sidestr/spec` 0.0.6, reference `fa86dac`). Additive.

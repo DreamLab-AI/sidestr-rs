@@ -32,6 +32,7 @@ use crate::block::{HeaderFamily, SidestrBlock, Stock};
 use crate::blockfile::{append_block, read_block, read_index, write_index, Index};
 use crate::document::ChainDocument;
 use crate::error::{Error, Result};
+use crate::rules::BlockRule;
 use crate::state::{Applied, ClaimRequest, NextBlock, StateOf, Submitted};
 
 /// The chain with its block file, for header family `F`.
@@ -63,9 +64,23 @@ impl<F: HeaderFamily> ChainOf<F> {
         dir: impl AsRef<Path>,
         key: Option<&SecretKey>,
     ) -> Result<Self> {
-        doc.validate()?;
+        Self::open_with_rules(doc, dir, key, Vec::new())
+    }
+
+    /// [`ChainOf::open`] for a chain whose document names further rules,
+    /// carried by `rules` from the genesis on
+    /// ([`StateOf::from_genesis_with_rules`]): the replay runs them over
+    /// every block in the file.
+    pub fn open_with_rules(
+        doc: ChainDocument,
+        dir: impl AsRef<Path>,
+        key: Option<&SecretKey>,
+        rules: Vec<Box<dyn BlockRule<F>>>,
+    ) -> Result<Self> {
+        let carried: Vec<&str> = rules.iter().filter_map(|r| r.name()).collect();
+        doc.validate_with(&carried)?;
         let federated = doc.signers.is_some();
-        Self::open_with(doc, dir, |doc| {
+        Self::open_with(doc, dir, rules, |doc| {
             let key = key.ok_or_else(|| {
                 Error::Chain("no chain on disk and no key to make the genesis".into())
             })?;
@@ -90,12 +105,15 @@ impl<F: HeaderFamily> ChainOf<F> {
         seal: impl FnOnce(&F::Block) -> Result<F::Block>,
     ) -> Result<Self> {
         doc.validate()?;
-        Self::open_with(doc, dir, |doc| seal(&StateOf::<F>::build_genesis_for(doc)?))
+        Self::open_with(doc, dir, Vec::new(), |doc| {
+            seal(&StateOf::<F>::build_genesis_for(doc)?)
+        })
     }
 
     fn open_with(
         doc: ChainDocument,
         dir: impl AsRef<Path>,
+        rules: Vec<Box<dyn BlockRule<F>>>,
         genesis: impl FnOnce(&ChainDocument) -> Result<F::Block>,
     ) -> Result<Self> {
         StateOf::<F>::family_of(&doc)?;
@@ -106,7 +124,7 @@ impl<F: HeaderFamily> ChainOf<F> {
         let (state, index) = match read_index(&idx)? {
             None => {
                 let genesis = genesis(&doc)?;
-                let state = StateOf::<F>::from_genesis(doc, &genesis, None)?;
+                let state = StateOf::<F>::from_genesis_with_rules(doc, &genesis, None, rules)?;
                 let mut index = Index::new(&state.document().id);
                 append_block(
                     &dat,
@@ -130,7 +148,7 @@ impl<F: HeaderFamily> ChainOf<F> {
                     )));
                 }
                 let genesis = F::Block::decode(&read_block(&dat, first)?)?;
-                let mut state = StateOf::<F>::from_genesis(
+                let mut state = StateOf::<F>::from_genesis_with_rules(
                     doc,
                     &genesis,
                     Some(
@@ -139,6 +157,7 @@ impl<F: HeaderFamily> ChainOf<F> {
                             .parse()
                             .map_err(|_| Error::Encoding("bad hash in the index".into()))?,
                     ),
+                    rules,
                 )?;
                 for e in &index.blocks[1..] {
                     let expect: BlockHash = e

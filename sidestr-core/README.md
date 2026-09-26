@@ -65,8 +65,11 @@ cites its sections, and every ported function names its original.
   being judged.
 - Blocks are a pure function of their inputs and the key: BIP 340 auxiliary
   randomness is zero for every block, as siding sets it for the genesis.
-- A document naming the `assets`, `pool` or `evm` rules is refused, because
-  this version does not carry them.
+- A document naming a rule is refused unless the state carries a rule of that
+  name (`ChainDocument::validate_with`, `StateOf::from_genesis_with_rules`):
+  the assets rule is here (`assets::AssetsRule`), the EVM rule is
+  `sidestr-evm`, and `pool` is carried nowhere. Plain `validate()` and
+  `State::with_key` still refuse every named rule.
 - Level 2 carries the pure parts of `federation.mjs` and not the round (that
   is [`sidestr-round`](https://crates.io/crates/sidestr-round)): the script
   path is verified for exactly the `multi_a(k, …)` leaf, an unknown leaf
@@ -149,7 +152,7 @@ node without sending anything.
 
 Elsewhere in the stack: the level-2 co-signing round is `sidestr-round`,
 tips and transactions over Nostr are `sidestr-nostr`, spending is
-`sidestr-wallet`. Not yet: the assets and pool rules, a full script
+`sidestr-wallet`, the EVM rule is `sidestr-evm`. Not yet: the pool rule, a full script
 interpreter, and the Byzantine-tolerant consensus protocol above the
 signature (ADR-2101 review), which is a later crate.
 

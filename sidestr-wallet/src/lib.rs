@@ -132,8 +132,10 @@
 //!   siding lets the producer refuse it.
 //! - **Zero BIP 340 auxiliary randomness** in [`PlainKey`], as `sidestr-core`
 //!   seals blocks: a spend is a pure function of its inputs and the key.
-//! - **The EVM deposit branch is not carried** (`--evm`; ADR-2096 excludes
-//!   the `evm` rule), nor are assets (SPEC 12, reserved).
+//! - **The EVM deposit branch is not carried** (`--evm`): a deposit pays the
+//!   chain's reserve and follows it with a value-0 `evmin:` marker, a layout
+//!   the builders here do not make; the marker is `sidestr-evm`'s
+//!   `records::deposit_script`.
 
 #![forbid(unsafe_code)]
 #![deny(

@@ -25,10 +25,11 @@
 //! | header | [`validate_header`] | prev link, proof of work, `bits` unchanged (no retarget), median time past, not too far in the future, version; then the family's own (`knots:rule-header-height`, `knots:rule-header-flags-reserved`) |
 //! | transaction | [`validate_transaction`] | inputs and outputs non-empty, weight, values, unique inputs, coinbase shape, coinbase script 2–100 bytes |
 //! | block | [`validate_block_structure`] | coinbase first and alone, merkle root, no duplicates, sigops, weight, every transaction; **`sidestr:rule-block-signature`**; the family's own (`knots:rule-block-txcount`) |
-//! | block-context | [`validate_block_context`] | BIP 34 height, finality, BIP 68, inputs available, coinbase maturity, fees, **coinbase amount ≤ fees + claims**, witness commitment, scripts under the family's sighash rules; **`sidestr:rule-pegouts`**, **`sidestr:rule-claims`** |
+//! | block-context | [`validate_block_context`] | BIP 34 height, finality, BIP 68, inputs available, coinbase maturity, fees, **coinbase amount ≤ fees + claims** (+ what further rules allow), witness commitment, scripts under the family's sighash rules; **`sidestr:rule-pegouts`**, **`sidestr:rule-claims`**; then every [`BlockRule`] |
 //!
-//! Extension point: [`BlockRule`] adds a block-context rule (the assets and
-//! pool rules of SPEC 12 are rules in that sense) without touching this file.
+//! Extension point: [`BlockRule`] adds a block-context rule (the assets rule
+//! of SPEC 12, [`crate::assets::AssetsRule`], and the EVM rule in
+//! `sidestr-evm` are rules in that sense) without touching this file.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -527,11 +528,41 @@ pub struct BlockContext<'a, F: HeaderFamily> {
 /// An additional block-context rule: the extension point for rules a chain
 /// document may name beyond the core (SPEC 12). It sees the same context
 /// the built-in rules see and answers the same three ways.
+///
+/// A rule that keeps state beside the UTXO set (the EVM's accounts, what
+/// each output carries) works out a block's effects in [`BlockRule::check`]
+/// and keeps them until [`BlockRule::applied`] says the block was applied:
+/// a block refused by any rule leaves the state as it was. The methods take
+/// `&self`, so such a rule holds its state behind interior mutability.
 pub trait BlockRule<F: HeaderFamily>: core::fmt::Debug {
     /// The rule id reported in the verdict.
     fn id(&self) -> &str;
     /// The check.
     fn check(&self, ctx: &BlockContext<F>) -> Option<bool>;
+    /// The name a chain document gives this rule in `rules` (`"evm"`), when
+    /// the rule is one a document can name. A document naming a rule is
+    /// accepted only by a state that carries a rule of that name
+    /// ([`crate::document::ChainDocument::validate_with`]). `None`, the
+    /// default, for a rule a caller adds on its own account.
+    fn name(&self) -> Option<&str> {
+        None
+    }
+    /// Sats the coinbase may pay beyond `subsidy + fees + claims`, which
+    /// `btc:rule-blockctx-coinbase-amount` adds to what it allows: the EVM
+    /// rule's withdrawals (`siding/lib/overlays/evm.mjs` registers its own
+    /// version of that rule for them). `None` fails the rule outright, as the
+    /// reference's version does when the rule's own verdict on the block is
+    /// not ok. The default allows nothing more.
+    fn coinbase_allowance(&self, ctx: &BlockContext<F>) -> Option<u64> {
+        let _ = ctx;
+        Some(0)
+    }
+    /// The block was applied at `height`, having passed every rule: the
+    /// rule commits whatever it kept for it. Called for the genesis too. The
+    /// default does nothing.
+    fn applied(&self, block: &F::Block, height: u32) {
+        let _ = (block, height);
+    }
 }
 
 /// The kernel's lenient BIP 34 read (`blocks.js bip34Height`): `OP_1`..`OP_16`
@@ -682,13 +713,24 @@ pub fn validate_block_context<F: HeaderFamily>(
         Some(spending.premature.is_empty()),
     );
     v.push("btc:rule-blockctx-fees", Some(spending.deficits.is_empty()));
-    // the kernel's rule, plus the paid claims: coinbase value <= subsidy + fees + claims (siding/lib/overlay.mjs).
-    // The subsidy is the pegs at height 0 (SPEC 5) and zero after (SPEC 1); the claim sum is checked, so a
-    // coinbase whose payouts overflow u64 fails rather than wraps
+    let ctx = BlockContext {
+        block,
+        height,
+        spending: &spending,
+        mtp,
+        records,
+    };
+    // the kernel's rule, plus the paid claims: coinbase value <= subsidy + fees + claims (siding/lib/overlay.mjs),
+    // plus whatever the document's further rules allow (the EVM rule's withdrawals, overlays/evm.mjs).
+    // The subsidy is the pegs at height 0 (SPEC 5) and zero after (SPEC 1); the claim and allowance sums
+    // are checked, so a coinbase whose payouts overflow u64 fails rather than wraps
     let (claims, claim_errors) = parse_claims(cb);
     let paid = claims
         .iter()
         .try_fold(0u64, |s, c| s.checked_add(c.payout.value));
+    let allowed = extra
+        .iter()
+        .try_fold(0u64, |s, r| s.checked_add(r.coinbase_allowance(&ctx)?));
     let subsidy = if height == 0 {
         overlay.genesis_subsidy
     } else {
@@ -698,11 +740,14 @@ pub fn validate_block_context<F: HeaderFamily>(
         "btc:rule-blockctx-coinbase-amount",
         Some(
             claim_errors.is_empty()
-                && paid.is_some_and(|paid| {
-                    sum_out(cb).is_some_and(|s| {
-                        s <= subsidy.saturating_add(spending.fees).saturating_add(paid)
-                    })
-                }),
+                && paid
+                    .zip(allowed)
+                    .and_then(|(paid, allowed)| paid.checked_add(allowed))
+                    .is_some_and(|paid| {
+                        sum_out(cb).is_some_and(|s| {
+                            s <= subsidy.saturating_add(spending.fees).saturating_add(paid)
+                        })
+                    }),
         ),
     );
     let has_witness = txdata
@@ -806,13 +851,6 @@ pub fn validate_block_context<F: HeaderFamily>(
         true
     })();
     v.push("sidestr:rule-claims", Some(claims_ok));
-    let ctx = BlockContext {
-        block,
-        height,
-        spending: &spending,
-        mtp,
-        records,
-    };
     for rule in extra {
         let ok = rule.check(&ctx);
         v.push(rule.id(), ok);

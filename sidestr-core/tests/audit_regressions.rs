@@ -386,13 +386,37 @@ fn genesis_without_solution_must_not_validate() {
 fn departures_execute_at_the_boundary() {
     let mut d = ChainDocument::from_json(include_str!("../fixtures/trial/chain.json")).unwrap();
     let k = key_from_hex(include_str!("../fixtures/trial/trial.key")).unwrap();
-    for name in ["assets", "pool", "evm"] {
+    // a rule the validator does not carry is refused; `evm` (ADR-2096 D5 lifted) and `assets` are
+    // accepted where a rule of that name is carried, `pool` and `desk` never are
+    for name in ["assets", "pool", "evm", "desk"] {
         let mut bad = d.clone();
         bad.rules = Some(vec![name.into()]);
         let r = bad.validate();
         println!("unsupported overlay {name}: {r:?}");
         assert!(r.is_err());
+        let carried = bad.validate_with(&["assets", "evm"]);
+        println!("overlay {name} with assets and evm carried: {carried:?}");
+        assert_eq!(carried.is_ok(), name == "assets" || name == "evm");
     }
+    #[derive(Debug)]
+    struct Named;
+    impl sidestr_core::rules::BlockRule<Stock> for Named {
+        fn id(&self) -> &str {
+            "test:rule-evm"
+        }
+        fn name(&self) -> Option<&str> {
+            Some("evm")
+        }
+        fn check(&self, _: &sidestr_core::rules::BlockContext<Stock>) -> Option<bool> {
+            Some(true)
+        }
+    }
+    let mut evm = d.clone();
+    evm.rules = Some(vec!["evm".into()]);
+    evm.genesis_hash = None;
+    assert!(State::with_key(evm.clone(), &k).is_err());
+    assert!(State::with_key_and_rules(evm, &k, vec![Box::new(Named)]).is_ok());
+    println!("evm refused without a rule named evm, accepted with one");
     assert_eq!(
         sidestr_core::marker::record_text(&ScriptBuf::from_hex("6a0261").unwrap()),
         None

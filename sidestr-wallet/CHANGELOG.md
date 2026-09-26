@@ -2,6 +2,14 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
+## Unreleased
+
+Documentation only: the note on the `--evm` deposit branch no longer cites
+ADR-2096 (its exclusion of the `evm` rule is lifted; the rule is
+`sidestr-evm`). The branch is still not carried; the stale "assets
+reserved" in the same note is gone, since issue and transfer have been
+here since 0.4.0.
+
 ## 0.4.2 — 2026-09-25
 
 Documentation only: the crate now names SPEC 0.0.4 (`@sidestr/spec` 0.0.6,

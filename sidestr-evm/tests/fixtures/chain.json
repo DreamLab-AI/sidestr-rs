@@ -1,0 +1,1590 @@
+{
+ "reference": "sidestr/spec fa86dac83d47b8f70195132e91e9dc083e1d9228 siding/lib/overlays/evm.mjs (sha256 8903eab6c67244ded02edf8122112efb015ee1e3e5d4ca913372e542cc1820cc)",
+ "ethereumjs": "10.1.3",
+ "crossChecked": true,
+ "chain": {
+  "id": "sidestr:evmoracle",
+  "challenge": "5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rules": [
+   "evm"
+  ],
+  "evm": {
+   "chainId": 21474,
+   "gasLimit": 30000000
+  }
+ },
+ "emptyRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+ "accounts": {
+  "alice": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+  "bob": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2",
+  "carol": "0x5975c152fe58cdcb7e25586a3c9b994a16dbb615",
+  "dave": "0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
+ },
+ "blocks": [
+  {
+   "label": "empty block 1",
+   "height": 1,
+   "time": 1790000010,
+   "hash": "6e1d57310c069aa3261f4b3db9c5cfee31ac526a5a5bd20251d5dd3d61800709",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+    }
+   ],
+   "txs": [],
+   "verdict": {
+    "ok": true,
+    "root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "error": null,
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "deposits",
+   "height": 2,
+   "time": 1790000020,
+   "hash": "a08a4d385b33ad44182a03490378c14cc2183794c561a059de203d4abf8395ac",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a79d27d1a763daa3f1e78536ab81c74667920b6067a0cb80480fe45efe2adaba2"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "70b6cd77181e4f6156ae89f9d12fb1651fd69e968e6cf768251024aaf00824b4",
+     "outputs": [
+      {
+       "value": 100000000,
+       "script": "5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+       "value": 0,
+       "script": "6a1a65766d696e3a17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+      },
+      {
+       "value": 500000,
+       "script": "5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+       "value": 0,
+       "script": "6a1a65766d696e3a5975c152fe58cdcb7e25586a3c9b994a16dbb615"
+      }
+     ]
+    },
+    {
+     "txid": "0373aeba94f0275d55baf133f6ce2304b3f94044e705a330ec64b02938b87f67",
+     "outputs": [
+      {
+       "value": 2000000,
+       "script": "5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+       "value": 0,
+       "script": "6a1a65766d696e3ae0da1edcea030875cd0f199d96eb70f6ab78faf2"
+      }
+     ]
+    },
+    {
+     "txid": "2a72d4edfea78104c7d860682f1dd7a4672f889f645fd2c8e0bcd9c0104d95ff",
+     "outputs": [
+      {
+       "value": 7,
+       "script": "5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+       "value": 0,
+       "script": "6a1a65766d696e3a9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x79d27d1a763daa3f1e78536ab81c74667920b6067a0cb80480fe45efe2adaba2",
+    "error": null,
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a deposit without the reserve payment before it",
+   "height": 3,
+   "time": 1790000030,
+   "hash": "b7eaa908f2364351a36daae34d44aa6a44457a895e6606eb89b91a098d017483",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "0056a1378945ae07a6ba6faeda111f861e30b5860906ce85bcdd6422aced79dc",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a1a65766d696e3ae0da1edcea030875cd0f199d96eb70f6ab78faf2"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x79d27d1a763daa3f1e78536ab81c74667920b6067a0cb80480fe45efe2adaba2",
+    "error": "tx 1: evmin at output 0 has no reserve payment before it",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a deposit whose reserve payment carries nothing",
+   "height": 3,
+   "time": 1790000030,
+   "hash": "9f73ca5c1033bfc6a9fac43700953ec69b72610c9497e0719e378306beec21c7",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "1e434765a09799be9a1ccb8d7d22d1007a1587028610af94a77398a613a9dde6",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+       "value": 0,
+       "script": "6a1a65766d696e3ae0da1edcea030875cd0f199d96eb70f6ab78faf2"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x79d27d1a763daa3f1e78536ab81c74667920b6067a0cb80480fe45efe2adaba2",
+    "error": "tx 1: evmin at output 1 has no reserve payment before it",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a deposit after a payment to another script",
+   "height": 3,
+   "time": 1790000030,
+   "hash": "0e448826bf9f05f2e6e2fca1efc10934b62d405abe8d335f8c40ab20b690ce7c",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "2a5bc79753bd8d55a2debb19b6f12c0e1ed6ad7af5efd6c658236a3a7d5f59ce",
+     "outputs": [
+      {
+       "value": 5000,
+       "script": "5120bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+       "value": 0,
+       "script": "6a1a65766d696e3ae0da1edcea030875cd0f199d96eb70f6ab78faf2"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x79d27d1a763daa3f1e78536ab81c74667920b6067a0cb80480fe45efe2adaba2",
+    "error": "tx 1: evmin at output 1 has no reserve payment before it",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "transfers: legacy, EIP-1559 with a tip to the zero-address coinbase, EIP-2930",
+   "height": 3,
+   "time": 1790000030,
+   "hash": "025c78cc017358cee9c2fdf7f6e6048aa070427c39308b7362bfda6efe78a320",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a8d602382fef667a1a468ddafc5fa18afc34495a3e06913a2b1e04ccfdf66de12"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "ce1aee9aa122deee32eb08f6150b5e3ef55bebb6709ccd9c333dbfdf5c91d263",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c7165766d3af86b80843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf286e35fa931a0008082a7e7a023038225837c52dcbcb8fafee6c554c2eb5e9ff2128f2b98efcd2000fcd13a3fa022b0c4496b1f1f44d5617c0d3e814e69c17ba381e95dd974691ec21b45c7b302"
+      }
+     ]
+    },
+    {
+     "txid": "1c533fb846b3aa5c0c0d67f0aae4f24c9fb935beac60202571cdc003297b516e",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c7865766d3a02f8718253e280847735940084b2d05e0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf285e8d4a5100080c001a07dea10eecfe68c588b69e8cfe4d32f0da20444be01823f16eb01dc4a1ae6cd9ca01f8202776cdcd30e68da81194132546ca1c4b86698a7e53a30db6efe6801be90"
+      }
+     ]
+    },
+    {
+     "txid": "e9741589b88aed386a1f0535fa18ac8721adf8f4ee681f3574e13cdfd39e9a9e",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4cac65766d3a01f8a58253e201847735940082ea60945975c152fe58cdcb7e25586a3c9b994a16dbb61585012a05f20080f838f794e0da1edcea030875cd0f199d96eb70f6ab78faf2e1a0000000000000000000000000000000000000000000000000000000000000000101a0657e6ac4dcc8072f5c08e0617b731223a15b5b96695f0ab197a0179ebf5d7cd3a0354540f5a2c4005dc2d589e75f00ff8e4a5f36366dc08f1b2d1afbcfe74cbbbe"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x8d602382fef667a1a468ddafc5fa18afc34495a3e06913a2b1e04ccfdf66de12",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0xfb5746c1f93e14d381c460a096e54592b496660f557b3dcc0703044993b7d588",
+     "0x9bcf81e17a9e21531a9f609aa1cfcdb241fd4ebe48d9f7a171fe1249ae175572",
+     "0x6564d7e3f080e4dea775c0e2f3ffa47d702e7d842844fdccbb6440c082ac69b5"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0xfb5746c1f93e14d381c460a096e54592b496660f557b3dcc0703044993b7d588",
+     "status": 1,
+     "gasUsed": "21000",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    },
+    {
+     "hash": "0x9bcf81e17a9e21531a9f609aa1cfcdb241fd4ebe48d9f7a171fe1249ae175572",
+     "status": 1,
+     "gasUsed": "21000",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x5975c152fe58cdcb7e25586a3c9b994a16dbb615"
+    },
+    {
+     "hash": "0x6564d7e3f080e4dea775c0e2f3ffa47d702e7d842844fdccbb6440c082ac69b5",
+     "status": 1,
+     "gasUsed": "25300",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    }
+   ]
+  },
+  {
+   "label": "three deployments, one of them long enough for OP_PUSHDATA2",
+   "height": 4,
+   "time": 1790000040,
+   "hash": "0965155bb208d13e7bbcbd69ddc1158f075e98e16a7f2bf4e1be0d6385f5553c",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a60fcc3e35828841ab961caa528af792bc6d98a57c4c3d4213c3f5915c9ddee7d"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "0ae02d684f963f665bfe8426f029a8095494fce12f29f6312bcac2821e937c6d",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6b65766d3af86502843b9aca00830186a080809369602a60005260206000f3600052600a6016f382a7e7a0a044a66e243bf4d9b0ddcb95b4fcf325255bf892dd6d7c9ecaceea6aee71d3dba017dee19f827e4d79bd3a38e26fb368c0eb7ec7857ad4f0d68aa7f351032c7cc2"
+      }
+     ]
+    },
+    {
+     "txid": "14398daa8f2d3e1b51ada302953c3e575856adcd37fe35e7aa98cc706c339f51",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4dad0165766d3af901a603843b9aca0083030d408080b90152601b80600b6000396000f360003560005560015460010160015560003560005260206000a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000082a7e8a0e74f4e44c1ad419584ce2f2b3559c69955301982aa4462425278f1db465bd42fa04b8ebd42278e89e7752a9a289b19fe0c98cba00c998b7c374b8e616d255c7397"
+      }
+     ]
+    },
+    {
+     "txid": "3f85570a13b14c427ef06f389b25faf55930b9e91b5682eccba877883be12844",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6c65766d3a02f8658253e2048084b2d05e00830186a0808090600580600b6000396000f360006000fdc080a0f0c9008b7cf42586d0af87ff1246cf8648d8ef1dd0d4dab9aa7f76f2663ac19ea067c86dc880cfc3131a5d00c60d741291cea438b6f89548482572e887917c31d8"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x60fcc3e35828841ab961caa528af792bc6d98a57c4c3d4213c3f5915c9ddee7d",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0x222161a16755abd004e1fad141ec697c3eaec0c5495bd99cae1683d31c1fe1cd",
+     "0x78bf12f47cf4a94e278e3b7be3731fe4a763c4b0befa66f5cc2df1ac12386e89",
+     "0xc6581a63584e78bfa1cbe891d96dd9afc85080089ef745ac361871ad240b17e7"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0x222161a16755abd004e1fad141ec697c3eaec0c5495bd99cae1683d31c1fe1cd",
+     "status": 1,
+     "gasUsed": "55288",
+     "contractAddress": "0xf6959d2d3697553b0831533f1bcdbba7ba42ac1a",
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    },
+    {
+     "hash": "0x78bf12f47cf4a94e278e3b7be3731fe4a763c4b0befa66f5cc2df1ac12386e89",
+     "status": 1,
+     "gasUsed": "60158",
+     "contractAddress": "0x4e41d5ab9972fb0ff198a87a8aa79c5cd36e4114",
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    },
+    {
+     "hash": "0xc6581a63584e78bfa1cbe891d96dd9afc85080089ef745ac361871ad240b17e7",
+     "status": 1,
+     "gasUsed": "54234",
+     "contractAddress": "0xb9b9b93cfc684e46d8fcdd13f67a88df450a5939",
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    }
+   ]
+  },
+  {
+   "label": "storage: two writes, a revert that is still applied, a write of zero",
+   "height": 5,
+   "time": 1790000050,
+   "hash": "e3f7c2c08b04b89e39a66c23ff080c924a328bf19dfc99b369cfaca048c02bfa",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743af3c3513a5c5571cc408df79086397f3537284f8221537c8199ccc9b6a4525010"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "3e5dd910c21d65f4afe193b97c532d5889351425c412cb8026edcc6e1a876df2",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c8c65766d3af88605843b9aca00830186a0944e41d5ab9972fb0ff198a87a8aa79c5cd36e411480a0000000000000000000000000000000000000000000000000000000000000002a82a7e8a016ae59642e0e2355d01f9171e0a298a9749331282aee85225b0b69c36b486560a05c82ed77487749b3d958e0d751bb310a20c2cc688db78591053291d33b28c74b"
+      }
+     ]
+    },
+    {
+     "txid": "c46324ff326f7fc34dc9b3d19c723b04d26fdaec08074480c8d5947d46c29a5b",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c8c65766d3af88680843b9aca00830186a0944e41d5ab9972fb0ff198a87a8aa79c5cd36e411480a0000000000000000000000000000000000000000000000000000000000000123482a7e8a0aae8af9de4f1fbce5a596b9c3c5d14c27e165da8a53ae71fac569d7f4a863e5fa043099061c040e81588b287a22ca8dcaab251956f3d938a31b588eb3afea31b07"
+      }
+     ]
+    },
+    {
+     "txid": "fa2dad9d9ecc5c110c8954dc5c3ee1fa715b70414c918793790fc318d2182cea",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6f65766d3a02f8688253e2018084b2d05e0082c35094b9b9b93cfc684e46d8fcdd13f67a88df450a59398080c001a084f37229a4f06becf8fc6b6383ad02cda81932a161a418ab8bf98627c2caf5e8a04c82add15c2707e98a514085a825642600c934cc4d18529c87f8028ecb637aee"
+      }
+     ]
+    },
+    {
+     "txid": "cfa37b10d9d3db7b74cbd6eb028b740fbe14ff19179f78d38344acfac0aeda0f",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c9465766d3a02f88d8253e201843b9aca0084b2d05e00830186a0944e41d5ab9972fb0ff198a87a8aa79c5cd36e411480a00000000000000000000000000000000000000000000000000000000000000000c001a0038c64d7a7fa30fb6edbecbf420d6c2b468dcdf764b139494c0f82b1c0051d93a0151a88cf87ec8754a0f5eeec367fb4c8bcea3a13f6133d413672724f7e5db178"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0xf3c3513a5c5571cc408df79086397f3537284f8221537c8199ccc9b6a4525010",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0x5ae43325c561876043bdb63c5b7b1ae34372cdf99793513c7aa6968ca2e71e09",
+     "0xda3115e9bf9acbd899f8d3c8186b7866bb9581e722bbb65bf48f577d0c11ba2e",
+     "0xa1afd22d96f78a4e4f4085a2d21dfb26fe6ca7d05bc6426c65cede002d1cfb48",
+     "0x07758e0eb93be36eed0fd05f2656eb86115442b6cebe56ecdd9d8685ae325b29"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0x5ae43325c561876043bdb63c5b7b1ae34372cdf99793513c7aa6968ca2e71e09",
+     "status": 1,
+     "gasUsed": "66013",
+     "contractAddress": null,
+     "logs": 1,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    },
+    {
+     "hash": "0xda3115e9bf9acbd899f8d3c8186b7866bb9581e722bbb65bf48f577d0c11ba2e",
+     "status": 1,
+     "gasUsed": "31825",
+     "contractAddress": null,
+     "logs": 1,
+     "from": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2"
+    },
+    {
+     "hash": "0xa1afd22d96f78a4e4f4085a2d21dfb26fe6ca7d05bc6426c65cede002d1cfb48",
+     "status": 0,
+     "gasUsed": "21006",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x5975c152fe58cdcb7e25586a3c9b994a16dbb615"
+    },
+    {
+     "hash": "0x07758e0eb93be36eed0fd05f2656eb86115442b6cebe56ecdd9d8685ae325b29",
+     "status": 1,
+     "gasUsed": "27001",
+     "contractAddress": null,
+     "logs": 1,
+     "from": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2"
+    }
+   ]
+  },
+  {
+   "label": "a contract that stores the block environment, deployed",
+   "height": 6,
+   "time": 1790000650,
+   "hash": "220d4a60083d6097435c45706f433e02e8864aee6059cb8296a0846a021ac0e1",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a2c8d9e1ee8a658dcdd7f94dc3f832de8e8c7cb2d711dc06e26ce0449144e3b0e"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "e325dc96dc141a95cba779f5fb5a228d722a6df320d2da7cc534df177a81262c",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c8d65766d3af88702843b9aca0083030d408080b5602a80600b6000396000f34360005542600155486002554660035545600455446005554a600655600143034060075541316008550082a7e8a0be6fb0ca203bc7c830b1ef8acbaac08d5edf8c8f75bf2be624f0ecac2c916e19a0522a250e9c6d162c9a6e546fc11d0f9a1ac49dc56a0447bdcd66489900d174ee"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x2c8d9e1ee8a658dcdd7f94dc3f832de8e8c7cb2d711dc06e26ce0449144e3b0e",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0x1f1d1faec8bdc6cd2350fcafd391cfd31569dea730bfe96e2a5ee59b188d6f4f"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0x1f1d1faec8bdc6cd2350fcafd391cfd31569dea730bfe96e2a5ee59b188d6f4f",
+     "status": 1,
+     "gasUsed": "62234",
+     "contractAddress": "0xf28eaed8be450b6c04e5cfa3eaf00577b290ae9c",
+     "logs": 0,
+     "from": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2"
+    }
+   ]
+  },
+  {
+   "label": "the block environment read at a later height and time",
+   "height": 7,
+   "time": 1790004250,
+   "hash": "6f994c76652a3ba30ff433fd7e333f945bc6ef132d52abc5c73a45fbb59e781b",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743ae6fd517ea6acac0f5838f13a1f1d93723b57da55600c5b8bb6ccf93ccb951a8a"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "b1215430a9efaf275df0f3ab4cd8106ce75f6205eb8d4b08548e2e20f6be8e93",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c7565766d3a02f86e8253e20384b2d05e0085012a05f20083030d4094f28eaed8be450b6c04e5cfa3eaf00577b290ae9c8080c001a0f992823a1ebcedf3c6b6fa3362ec9ccb363f0fbb9b88c730e098fc468d5df6f5a07fc5c9f7b179107ed012a0bf199f3408b4c94f3f7b8e3ed311c54fb408384a98"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0xe6fd517ea6acac0f5838f13a1f1d93723b57da55600c5b8bb6ccf93ccb951a8a",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0x725e632a6872df741bc18f52044f225a2bebc756644b91035d4e41461253e71c"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0x725e632a6872df741bc18f52044f225a2bebc756644b91035d4e41461253e71c",
+     "status": 1,
+     "gasUsed": "180271",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2"
+    }
+   ]
+  },
+  {
+   "label": "withdrawals: one of 100,000 sats, one of 1.5 gwei paid as 1 sat",
+   "height": 8,
+   "time": 1790004260,
+   "hash": "0bb2befb9ea1850af7043cbfe5e61665237aa2b9cfad3cafc2759eb415fd0eac",
+   "coinbase": [
+    {
+     "value": 100000,
+     "script": "5120bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+     "value": 1,
+     "script": "5120cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a3f06955dbfbce4a741028528060461241d545a3e41bfd952916699cdddce2d29"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "3339a906b1aee45ba1b2883cc0d931f71bbb92705139f1fcc33e4eefc8e7a8a0",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c9365766d3af88d06843b9aca008275309400000000000000000000000000000000000501de865af3107a4000a25120bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb82a7e8a07b5dfb1cd67623c7fa451ea9dd4c01a5cb3eb2832e4584f2eb6aa50f736fdef5a01d794aa438be9d65896a6a35249af19e53000551dbb3931e65f37da914b99b25"
+      }
+     ]
+    },
+    {
+     "txid": "b1afed419d278a970c8eb7f7bf6462c8f9df81e11891afebac59ed1b9c523c51",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c9565766d3a02f88e8253e2028084b2d05e008275309400000000000000000000000000000000000501de8459682f00a25120ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc001a02d804ceaa1a700dcf6ab0a20ced8dd9f4057f72a85e8f116b5448b100725d4e1a0205a2f349d92d151f6ece6a9806b74f3e6e3c83018b4219bc97e125582c8ae05"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x3f06955dbfbce4a741028528060461241d545a3e41bfd952916699cdddce2d29",
+    "error": null,
+    "withdrawals": [
+     {
+      "script": "5120bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "sats": 100000,
+      "hash": "0xe9b1b1c244e9ef3649626195f9a5c5ef1730c82aa033f873174bfe6efea6613e"
+     },
+     {
+      "script": "5120cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sats": 1,
+      "hash": "0x6db56883c5467f491b0bead0bd2346fbf4c0be2de7ddc37177ef07e981cd949a"
+     }
+    ],
+    "hashes": [
+     "0xe9b1b1c244e9ef3649626195f9a5c5ef1730c82aa033f873174bfe6efea6613e",
+     "0x6db56883c5467f491b0bead0bd2346fbf4c0be2de7ddc37177ef07e981cd949a"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0xe9b1b1c244e9ef3649626195f9a5c5ef1730c82aa033f873174bfe6efea6613e",
+     "status": 1,
+     "gasUsed": "21544",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    },
+    {
+     "hash": "0x6db56883c5467f491b0bead0bd2346fbf4c0be2de7ddc37177ef07e981cd949a",
+     "status": 1,
+     "gasUsed": "21544",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x5975c152fe58cdcb7e25586a3c9b994a16dbb615"
+    }
+   ]
+  },
+  {
+   "label": "a zero-value call touches the emptied WITHDRAW account",
+   "height": 9,
+   "time": 1790004270,
+   "hash": "5d2d2f1ba3735e6eea5d11dc91f6160c5d450a947e7bad11c8872095d9204d31",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743af319dc737fb21f4651a8ba6bcb4166758a93e206b111fee0c66e22efe864840b"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "bdbd9ea5e62fe64f3536d3838883d1d77e6bea668c83f16bfafd50be2d5a4073",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6b65766d3af86504843b9aca008275309400000000000000000000000000000000000501de808082a7e8a03b453ba2da8f90787edbd059c22dfb3dcf152032c34a642115335f2305351002a028d2243cfcd76e651e65d11569beb2c28ec933c6f28bf02b883ec77c05a443cb"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0xf319dc737fb21f4651a8ba6bcb4166758a93e206b111fee0c66e22efe864840b",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0x0832ef627360075cf0ada722edcc2d3d0cfe63436eb52f8726f346bd344b8ed9"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0x0832ef627360075cf0ada722edcc2d3d0cfe63436eb52f8726f346bd344b8ed9",
+     "status": 1,
+     "gasUsed": "21000",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2"
+    }
+   ]
+  },
+  {
+   "label": "a withdrawal under a gwei: burned, nothing to pay",
+   "height": 10,
+   "time": 1790004280,
+   "hash": "79e1a8b6e54d40235f97801699f7b426de4801673b7576513724fe76962b5246",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743ac290e916f66205efbeda53c066c27d0497080cee6ea10b628d8ea4931a093ce3"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "ca58f7fa6c388ff47cdcf03b6e5ab59115cb53e4ae4f211e51789c68a69e1f03",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c9165766d3af88b05843b9aca008275309400000000000000000000000000000000000501de843b9ac9ffa25120dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd82a7e8a097bdacbe0e450776ebaf02c36840171627aef257551ef6c5dee292ff81e43afea03f2d3ca5151b073042c96ce72b1a9ac3a5e623156076dd78aa24b5d1cd38a6c3"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0xc290e916f66205efbeda53c066c27d0497080cee6ea10b628d8ea4931a093ce3",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0xe384da6ae7d1b845de92e55d24a36459c0b1d8a26b9050486aedf67c92abbf41"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0xe384da6ae7d1b845de92e55d24a36459c0b1d8a26b9050486aedf67c92abbf41",
+     "status": 1,
+     "gasUsed": "21544",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2"
+    }
+   ]
+  },
+  {
+   "label": "value to WITHDRAW without a script is kept there, then burned by the next withdrawal",
+   "height": 11,
+   "time": 1790004290,
+   "hash": "38a4c7f547c2e8bad95d66858fba8b59abc129e028eda7c964e336cfabb02fbe",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743ae89fdab93bb6e42ae3e2c9878abb4e2804d698beceefc6d44732518a7c5f6d4d"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "37f4128f31a1c37ff6c4494704c364f6d426461f3037c0c0f54ea6783d661f5b",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6f65766d3af86906843b9aca008275309400000000000000000000000000000000000501de84b2d05e008082a7e8a0bc58c9c658864e8563154476d095c751d5a5c5049139a33a820772ce16675745a051d343b72cbbd941b90c58a22b8ff7a4d6530f5ae09db7e62adcd6062ba830e5"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0xe89fdab93bb6e42ae3e2c9878abb4e2804d698beceefc6d44732518a7c5f6d4d",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0x5c25b95cdfadf6801ed33d83eec2c710531e885175f0a009f97129cfd9febb25"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0x5c25b95cdfadf6801ed33d83eec2c710531e885175f0a009f97129cfd9febb25",
+     "status": 1,
+     "gasUsed": "21000",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2"
+    }
+   ]
+  },
+  {
+   "label": "the next withdrawal burns all of it",
+   "height": 12,
+   "time": 1790004300,
+   "hash": "7014e695fb67c0d853977b0196ed689590989231817a0bc1e18d0d82c921d429",
+   "coinbase": [
+    {
+     "value": 2,
+     "script": "5120dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a7e078e1ebb0f44f3d1f3fad4af96d8a207ffc8f961aff7ff660c3dd56d55c0a6"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "42b572f5da3123a5064913465be609d3854fdd653f7b2c5fe96d6d7d7d21c65d",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c9165766d3af88b07843b9aca008275309400000000000000000000000000000000000501de8477359400a25120dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd82a7e8a07353028198c646bf3ca71fcf674ab6b304ecc153d936dd405757330651baee21a0447a96a5fd214bf4079032141c8bc5348b27f3cd30d5112958c7b34bbf02c522"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x7e078e1ebb0f44f3d1f3fad4af96d8a207ffc8f961aff7ff660c3dd56d55c0a6",
+    "error": null,
+    "withdrawals": [
+     {
+      "script": "5120dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "sats": 2,
+      "hash": "0x1477ace17c916e4662c91b1c5529071dc87bc690e9055b3ccef593c47d63b752"
+     }
+    ],
+    "hashes": [
+     "0x1477ace17c916e4662c91b1c5529071dc87bc690e9055b3ccef593c47d63b752"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0x1477ace17c916e4662c91b1c5529071dc87bc690e9055b3ccef593c47d63b752",
+     "status": 1,
+     "gasUsed": "21544",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2"
+    }
+   ]
+  },
+  {
+   "label": "a withdrawal the coinbase does not pay",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "633dcc863d18b6d81566b3ae48edff2f15c84fd4471c19dbf0f6950ef78e11dc",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a3673c41ac60481df32ae719d2a70ab79460a3e319950ec14c295ab8669b85997"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "09d94c90cffe82957ce244e5206208535053a63022efa3fc50c121bf44a5fbae",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c9365766d3af88d07843b9aca008275309400000000000000000000000000000000000501de86065dd0837000a25120bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb82a7e8a061bbfe95705c0cca86dbcf71f4a2a84ccb352621ac1431ff66e4f4bb3910047aa07c02352b14e6ceb697ad9e959e4c9e712c24dcd03155b782baf701bcd84ee31c"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x3673c41ac60481df32ae719d2a70ab79460a3e319950ec14c295ab8669b85997",
+    "error": "withdrawal of 7000 sats to 5120bbbbbbbb… is not paid by the coinbase",
+    "withdrawals": [
+     {
+      "script": "5120bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "sats": 7000,
+      "hash": "0x3c73c9e7ee7773402ede04746158c77a293ea58900bf0b8f7d69e7d84ffa61db"
+     }
+    ],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a withdrawal paid one sat short",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "993e1cde6b8e007d429efa15511f7700380d500d6201d244aa631d9d0956265b",
+   "coinbase": [
+    {
+     "value": 6999,
+     "script": "5120bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a3673c41ac60481df32ae719d2a70ab79460a3e319950ec14c295ab8669b85997"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "c09e21304a69827ced29e077d1774c12d151538721757a05c8550ee2fb1d7fed",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c9365766d3af88d07843b9aca008275309400000000000000000000000000000000000501de86065dd0837000a25120bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb82a7e8a061bbfe95705c0cca86dbcf71f4a2a84ccb352621ac1431ff66e4f4bb3910047aa07c02352b14e6ceb697ad9e959e4c9e712c24dcd03155b782baf701bcd84ee31c"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x3673c41ac60481df32ae719d2a70ab79460a3e319950ec14c295ab8669b85997",
+    "error": "withdrawal of 7000 sats to 5120bbbbbbbb… is not paid by the coinbase",
+    "withdrawals": [
+     {
+      "script": "5120bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "sats": 7000,
+      "hash": "0x3c73c9e7ee7773402ede04746158c77a293ea58900bf0b8f7d69e7d84ffa61db"
+     }
+    ],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a block committing a wrong state root",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "ead90dee83de35080390a6dfdee7462f2a633f7917e2738c82647685d563767e",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a1111111111111111111111111111111111111111111111111111111111111111"
+    }
+   ],
+   "txs": [],
+   "verdict": {
+    "ok": false,
+    "root": "0x7e078e1ebb0f44f3d1f3fad4af96d8a207ffc8f961aff7ff660c3dd56d55c0a6",
+    "error": "coinbase commits 0x111111111111 state root, the block's execution gives 0x7e078e1ebb0f",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a block committing no state root",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "fb3ebfdd0bd27080c8527d20f1ad7409f2e615f897fe7f884a62a5f46d69b755",
+   "coinbase": [],
+   "txs": [],
+   "verdict": {
+    "ok": false,
+    "root": "0x7e078e1ebb0f44f3d1f3fad4af96d8a207ffc8f961aff7ff660c3dd56d55c0a6",
+    "error": "coinbase commits no state root, the block's execution gives 0x7e078e1ebb0f",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a carrier with the wrong nonce",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "4a1b5a5a53d9bfeb417aaf33551fc8e4932748c32888fe1ca81002cca267922b",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "e6db2d6488aa86a6a62973f751c80bdcddcdb95b5f51e47a1bf9d1dd9065e804",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6b65766d3af86580843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2018082a7e7a06e07cd2d84f791bafd3d2115394ed02c68dd92443c4250ce32384086a2cdb3e9a054d115bee965fa8195bd5c22232fc1d35e37b105dc523f18720cc0d506a4cabd"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x7e078e1ebb0f44f3d1f3fad4af96d8a207ffc8f961aff7ff660c3dd56d55c0a6",
+    "error": "tx 1: carrier at output 0: the tx doesn't have the correct nonce. account has nonce of: 7 tx has nonce of: 0 (vm hf=cancun -> block number=13 hash=",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a carrier spending more than the sender holds",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "8d2bd51919834a36a6f88208010bebf3316af51175bfa5b61124a92d03d65d25",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "211ad8b9bccd67fab83ec7334208273c58215cfacc0d991d39edf1869c7edc7e",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6b65766d3af86580843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2018082a7e8a01ce2faf478902278b89d99a2eec1e2cca68d5a5701d8afc5daf147a24c9f18fea0502835a50b62524f6191fa0dded3249d8bc2c3754e00e62e1a427cb352a0ae8c"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x7e078e1ebb0f44f3d1f3fad4af96d8a207ffc8f961aff7ff660c3dd56d55c0a6",
+    "error": "tx 1: carrier at output 0: sender doesn't have enough funds to send tx. The upfront cost is: 21000000000001 and the sender's account (0x9d8a62f656a",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a carrier that is not an Ethereum transaction",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "72c456db3a1e8c2f1b9025b9465a6d04610307f558420b4a0f91fe208d54a09c",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "afc04c3690a8f773b18a0fda5239bb4f8bffc302d2ec136d1f89df619b541de5",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a0865766d3a01020304"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x7e078e1ebb0f44f3d1f3fad4af96d8a207ffc8f961aff7ff660c3dd56d55c0a6",
+    "error": "tx 1: carrier at output 0: not an Ethereum transaction (invalid RLP: remainder must be zero)",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a carrier whose signature was altered",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "e9a7817c91fa30903e092586e207713c1fc685b61fe9562bd39bdcb05b380ff7",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "6e7aeffc85e228282c8ba914ff302ddb02f8bdb65c6f11695820546e5ba4a919",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6b65766d3af86507843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2018082a7e7a0bf5a2775265e357fb5aa58c4b6284fc1a80636429a63222c5667687728d93ff9a06726746abe1b030ff2de665ff4cdbd4b3417ac2484d49e1f95ffaf3d31f884f7"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x7e078e1ebb0f44f3d1f3fad4af96d8a207ffc8f961aff7ff660c3dd56d55c0a6",
+    "error": "tx 1: carrier at output 0: sender doesn't have enough funds to send tx. The upfront cost is: 21000000000001 and the sender's account (0x62941897aec",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a carrier calling the KZG point-evaluation precompile (ethereumjs has no KZG)",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "330906df6b09478b3e771de861534145daf22592b97780de886a1b1d710a0ef0",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "68b647de20c30e49a959ce04b1e79644912da8959968220ffd036453200758d6",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4d2e0165766d3af9012707843b9aca00830186a094000000000000000000000000000000000000000a80b8c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000082a7e8a06dd4e9678f1ac69f4aeff8aae88c0043193c29069d322759909c991a7d9aae1fa0213bf7385c1cb07a384f6583e2e4c85215e6337c4169b1827d806297c9942766"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0xf5138dcfb07b94a0df0da167d75b448e56ea8745ada40a4ded3f76133ad0827f",
+    "error": "tx 1: carrier at output 0: kzg not initialized",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "after the KZG refusal the chain goes on",
+   "height": 13,
+   "time": 1790004310,
+   "hash": "6342596da6ede02a9273203a6bbeabb7ebde6869f380095741237f7a82ba896d",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743aa4c08bc4043c534756162ca5e951a894f1ae48f2f9b128d4c139fbdc912aaf76"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "5b5ee24d174f133af799b5ce7bc8a385f59aeef0e3165125e5b661046fbdb76e",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6b65766d3af86507843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2018082a7e7a0bf5a2775265e357fb5aa58c4b6284fc1a80636429a63222c5667687728d93ff9a06726746abe1b030ff2de665ff4cdbd4b3417ac2484d49e1f95ffaf3d31f884f6"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0xa4c08bc4043c534756162ca5e951a894f1ae48f2f9b128d4c139fbdc912aaf76",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0x3cd41cdd5a1973bd8e9c8030833c795b9a0ecbac4e8c1203d683ac2b12d7a60b"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0x3cd41cdd5a1973bd8e9c8030833c795b9a0ecbac4e8c1203d683ac2b12d7a60b",
+     "status": 1,
+     "gasUsed": "21000",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    }
+   ]
+  },
+  {
+   "label": "a carrier after a good one, with a bad nonce: the whole block is refused",
+   "height": 14,
+   "time": 1790004320,
+   "hash": "8fbf241d86f74be5d9d5df73588efbff5ca0d567d0dd17827067b6236f746fcd",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "0f0fc3ca9e891d82c3052de7bbf14308e159b34cdce7e956e2743c91e3a60e37",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6b65766d3af86508843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2018082a7e7a03b2b8775b729ceef37a4626715f583257934c53b0ba91e18e1836c0cbdbb658ea06d28b5b08706b42eb83952b32492d0b530d5fd6ba4659a8b450408d87fb05eb6"
+      },
+      {
+       "value": 0,
+       "script": "6a4c6b65766d3af8650d843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2018082a7e7a0fd42ccaf810f97bebb4fdf26da730c891008550d4a0c7eba5ab78d111d5110c6a05464aa94ff6dae6804efa2bb7babd1cf008c8e06e510cb62a556e7300b978257"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0x4ebace2c29ecb7fdd53b4a741be40353fab166ba36855a2c57f94997b640bcbd",
+    "error": "tx 1: carrier at output 1: the tx doesn't have the correct nonce. account has nonce of: 9 tx has nonce of: 13 (vm hf=cancun -> block number=14 hash",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "a contract that would call the KZG precompile, deployed",
+   "height": 14,
+   "time": 1790004320,
+   "hash": "aa71c8b1b2afd6cf039844f5eefdadcbecf502ead454f2682529ce953510e4b9",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a254f8ed0ebaf9ff8aa2cf03a4f336e5d251a7716ae157b25b7c3423ff7f899f5"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "784b2d522b1f32e01142e9b13634972ac9eab2006ab5a514f246a890cad43110",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c7765766d3af87108843b9aca0083030d4080809f601480600b6000396000f3600060006000600060006000600a5af16000550082a7e8a057af2ffb42bfe08544ef22d37c803d8fe26927f70d127ccb2c3403883649583aa0718812b3912acae298b98d73f32af28528ebd898d935074a10724b5588b8e636"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x254f8ed0ebaf9ff8aa2cf03a4f336e5d251a7716ae157b25b7c3423ff7f899f5",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0xc3de66599f6765c76b3f7d08b856a68126223fde1e097945a8193c7fa5947fb3"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0xc3de66599f6765c76b3f7d08b856a68126223fde1e097945a8193c7fa5947fb3",
+     "status": 1,
+     "gasUsed": "57402",
+     "contractAddress": "0x2b3324695451f38401790c6eab9c5227a5eb8983",
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    }
+   ]
+  },
+  {
+   "label": "an inner CALL reaching the KZG precompile",
+   "height": 15,
+   "time": 1790004330,
+   "hash": "4176ab8b5fb6c79e325bcd3a6a00002178b4b7d1f1d9e010151099f091952436",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "0bbbe474040d2df3a4e00e8d19f28d3179d22053ad5eabc3708f2e282eaf6e9c",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6c65766d3af86609843b9aca0083030d40942b3324695451f38401790c6eab9c5227a5eb8983808082a7e7a09fdf943b1f5d0a97727738108d20441e66750f91663dcd872c4bb4dea52aa0e4a076199b57a9474b0809334d7c034f5e521e4f4a1de7c3bd0ef7abd57b838194c1"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0xb0e79d2283eabaaf52eea26060ebd406b1c5fc5dc57bef25a07730a6793b798a",
+    "error": "tx 1: carrier at output 0: kzg not initialized",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "an inner CALL too poor to reach the precompile is an ordinary out-of-gas",
+   "height": 15,
+   "time": 1790004330,
+   "hash": "1a7466bc446b4d8d34c3f35fe717f440759aa6819cfa9a1eabdbe0ca4c73e21e",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a88ddd890bbca1fa87a40ca429e2020afe1d45d6aa7b23b7253d72a52c523da2c"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "b0e0ec8a42d71cbb892aeae36301241b9472b93b41bcda2c522d07bf88244e82",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6b65766d3af86509843b9aca00825226942b3324695451f38401790c6eab9c5227a5eb8983808082a7e7a056e42534afe43c00b8e5650b1eabf1f01b57ba22145ad8e4b2c188d1b4778efda0324a45efe0135f88039974e7a9f5c6c952657c3334c92c578fe2b5bfef6ca602"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x88ddd890bbca1fa87a40ca429e2020afe1d45d6aa7b23b7253d72a52c523da2c",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0xcf7bd733a66ff26164466592a8b58af213e0163bd6f85b76fbd71b251b2e1eff"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0xcf7bd733a66ff26164466592a8b58af213e0163bd6f85b76fbd71b251b2e1eff",
+     "status": 0,
+     "gasUsed": "21030",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    }
+   ]
+  },
+  {
+   "label": "a pre-EIP-155 legacy transaction (v = 27/28) is carried",
+   "height": 16,
+   "time": 1790004340,
+   "hash": "3d49627dd6fc03abb0700ee548ef7a0f549a008b70d34a74b93725b8e87b2d1c",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a7269b07a70ad6316fb64a578a24a1fa88a1399de86971618e2e58cd11a3e6a8d"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "eb9d3a226a08a73dc26231dc3ed747550ea625e8b0f8d3935d73c8290909cbf8",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6965766d3af86303843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf203801ba05ef8794bd8d748959de13a899da542e6bf24473e312fe0494828b883f711cd56a03ba42ba9db60701c317e492beb45aaf4f986c5ee27dff64486de32449543cd17"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x7269b07a70ad6316fb64a578a24a1fa88a1399de86971618e2e58cd11a3e6a8d",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0xd33ae4d3b9be367eff04bfaab6767408a65a3822bafef91173897b661672fb35"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0xd33ae4d3b9be367eff04bfaab6767408a65a3822bafef91173897b661672fb35",
+     "status": 1,
+     "gasUsed": "21000",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x5975c152fe58cdcb7e25586a3c9b994a16dbb615"
+    }
+   ]
+  },
+  {
+   "label": "a gas limit above the block gas limit (validation skipped)",
+   "height": 17,
+   "time": 1790004350,
+   "hash": "9466e0023b462c31e7385a3f21a5a1ab214384c0e48c70328b807289abaee09e",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a6d2175fc03ff99add4ea38b866987ff8c09ae3a1edf290164b2b3436e6578173"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "e5c29888b3f39e9af1b445895dee4588c7771fa0d4fd49af1ed93a0dbe1f9ea5",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c6d65766d3af8670a843b9aca008402625a0094e0da1edcea030875cd0f199d96eb70f6ab78faf2018082a7e7a095eb11c82b0b40b8a3d8277b9d8c7f53b8f08e560eb088e25559a77a30e3aa9da050cb45b20d57098a28a4b219286bdb23a4e55080c1a3d4c36c5fe37c5c16b29a"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0x6d2175fc03ff99add4ea38b866987ff8c09ae3a1edf290164b2b3436e6578173",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0x00196aedad2a67f72ca05ea14e677ca3bf330c3239d2d3910306e7a19c2f73ed"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0x00196aedad2a67f72ca05ea14e677ca3bf330c3239d2d3910306e7a19c2f73ed",
+     "status": 1,
+     "gasUsed": "21000",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025"
+    }
+   ]
+  },
+  {
+   "label": "a deposit and a carrier in one transaction: the deposit first, in output order",
+   "height": 18,
+   "time": 1790004360,
+   "hash": "b7db9d0ecd5e554ee8ef3e948249305791bf926a06f1c3562d32e73b8bcfce3a",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743ac22dce4a403a6573702ee49ed7ef17742e7391623b9cbda848e3dcd83b47aab0"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "a285e1651ec364873760c08aedd2640fa5536356b620f967df15f99e8a1de031",
+     "outputs": [
+      {
+       "value": 100000,
+       "script": "5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+       "value": 0,
+       "script": "6a1a65766d696e3a9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
+      },
+      {
+       "value": 0,
+       "script": "6a4c7165766d3af86b80843b9aca00825208945975c152fe58cdcb7e25586a3c9b994a16dbb61586082f79cd90008082a7e8a0a1bc84dda1c506d0fb0f6d1788bd5ae4b30b254cbdb2913af31b8a90c2b2deaba0276897cc57b281a8e71b0a2423d6afd588a31c6291a1558ab999b26bda64a844"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": true,
+    "root": "0xc22dce4a403a6573702ee49ed7ef17742e7391623b9cbda848e3dcd83b47aab0",
+    "error": null,
+    "withdrawals": [],
+    "hashes": [
+     "0xf7c7e604ac82f8df79bae733adac146c8dbbdc81f707e48e481116e6eb849051"
+    ]
+   },
+   "receipts": [
+    {
+     "hash": "0xf7c7e604ac82f8df79bae733adac146c8dbbdc81f707e48e481116e6eb849051",
+     "status": 1,
+     "gasUsed": "21000",
+     "contractAddress": null,
+     "logs": 0,
+     "from": "0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
+    }
+   ]
+  },
+  {
+   "label": "a carrier before the deposit that funds it",
+   "height": 19,
+   "time": 1790004370,
+   "hash": "c489ff296ff75e33bbc8a2f7f26d3853e9f1671f561c2ef1394015d0b81000d3",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743a0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "txs": [
+    {
+     "txid": "87c31fc61b60b9d0f6cec2c3a8cac17e3125aff7ffaeb3a54add192fb26e0a7c",
+     "outputs": [
+      {
+       "value": 0,
+       "script": "6a4c7265766d3af86c01843b9aca00825208945975c152fe58cdcb7e25586a3c9b994a16dbb6158703328b944c40008082a7e7a0836cc7950986db26e3fc7145eff5ed2296ede192cdb921af4e00fe5d0029e1ada0696b927b88cdd408fb2259c6fb530740830aa92fe526e826c439ab2c191cc8e9"
+      },
+      {
+       "value": 1000000,
+       "script": "5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+       "value": 0,
+       "script": "6a1a65766d696e3a9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
+      }
+     ]
+    }
+   ],
+   "verdict": {
+    "ok": false,
+    "root": "0xc22dce4a403a6573702ee49ed7ef17742e7391623b9cbda848e3dcd83b47aab0",
+    "error": "tx 1: carrier at output 0: sender doesn't have enough funds to send tx. The upfront cost is: 921000000000000 and the sender's account (0x9d8a62f656",
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "the coinbase carries a deposit and a carrier: ignored (transactions from index 1)",
+   "height": 19,
+   "time": 1790004370,
+   "hash": "e6357e6848a3958d6cbc638e543f784a4e61d6cf6fad5d2e9a6a5366ed746139",
+   "coinbase": [
+    {
+     "value": 5,
+     "script": "5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+     "value": 0,
+     "script": "6a1a65766d696e3a9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f"
+    },
+    {
+     "value": 0,
+     "script": "6a4c6d65766d3af8678203e7843b9aca0082520894e0da1edcea030875cd0f199d96eb70f6ab78faf2018082a7e8a0cc4030cfdc3545b7e0c0378670ccb9abc484e5ea0e496ca2ce7c2d67c6593a15a053e2d14329d1abf6cb919a84540dd8e9c861fcd148c2e5dfb4041ef9b92c9b47"
+    },
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743ac22dce4a403a6573702ee49ed7ef17742e7391623b9cbda848e3dcd83b47aab0"
+    }
+   ],
+   "txs": [],
+   "verdict": {
+    "ok": true,
+    "root": "0xc22dce4a403a6573702ee49ed7ef17742e7391623b9cbda848e3dcd83b47aab0",
+    "error": null,
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  },
+  {
+   "label": "empty block",
+   "height": 20,
+   "time": 1790004377,
+   "hash": "0cebc09038aef23ebe25e2a2bb3472ec364bf149bc491e6b9f49d452283e9ae8",
+   "coinbase": [
+    {
+     "value": 0,
+     "script": "6a2865766d726f6f743ac22dce4a403a6573702ee49ed7ef17742e7391623b9cbda848e3dcd83b47aab0"
+    }
+   ],
+   "txs": [],
+   "verdict": {
+    "ok": true,
+    "root": "0xc22dce4a403a6573702ee49ed7ef17742e7391623b9cbda848e3dcd83b47aab0",
+    "error": null,
+    "withdrawals": [],
+    "hashes": []
+   },
+   "receipts": []
+  }
+ ],
+ "final": [
+  {
+   "name": "alice",
+   "address": "0x17c5185167401ed00cf5f5b2fc97d9bbfdb7d025",
+   "exists": true,
+   "nonce": "11",
+   "balance": "99200725999999998",
+   "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+   "storageRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+  },
+  {
+   "name": "bob",
+   "address": "0xe0da1edcea030875cd0f199d96eb70f6ab78faf2",
+   "exists": true,
+   "nonce": "8",
+   "balance": "1296761000000006",
+   "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+   "storageRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+  },
+  {
+   "name": "carol",
+   "address": "0x5975c152fe58cdcb7e25586a3c9b994a16dbb615",
+   "exists": true,
+   "nonce": "4",
+   "balance": "381453499999997",
+   "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+   "storageRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+  },
+  {
+   "name": "dave",
+   "address": "0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f",
+   "exists": true,
+   "nonce": "1",
+   "balance": "70007000000000",
+   "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+   "storageRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+  },
+  {
+   "name": "zero",
+   "address": "0x0000000000000000000000000000000000000000",
+   "exists": true,
+   "nonce": "0",
+   "balance": "635114000000000",
+   "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+   "storageRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+  },
+  {
+   "name": "withdraw",
+   "address": "0x00000000000000000000000000000000000501de",
+   "exists": true,
+   "nonce": "0",
+   "balance": "0",
+   "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+   "storageRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+  },
+  {
+   "name": "c42",
+   "address": "0xf6959d2d3697553b0831533f1bcdbba7ba42ac1a",
+   "exists": true,
+   "nonce": "1",
+   "balance": "0",
+   "codeHash": "0x98e3a357b0a9519e7773d42cf7912a620a18c8f53cd8e1525ce5344917d07e76",
+   "storageRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+  },
+  {
+   "name": "cStore",
+   "address": "0x4e41d5ab9972fb0ff198a87a8aa79c5cd36e4114",
+   "exists": true,
+   "nonce": "1",
+   "balance": "0",
+   "codeHash": "0xa369d55bfc6239572137433678aeb40a7e9622f2019cb1eba1c3f95f900f5330",
+   "storageRoot": "0x2a184de557b547f78ef687e9c5bde4f2ba50a56d3ab9bc5b0775a276b2b1dbc9"
+  },
+  {
+   "name": "cRevert",
+   "address": "0xb9b9b93cfc684e46d8fcdd13f67a88df450a5939",
+   "exists": true,
+   "nonce": "1",
+   "balance": "0",
+   "codeHash": "0x9c8d1cd1e8729d5714bbb461fcce463172f4b1c3ae57698a589dc69a747d4051",
+   "storageRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+  },
+  {
+   "name": "cEnv",
+   "address": "0xf28eaed8be450b6c04e5cfa3eaf00577b290ae9c",
+   "exists": true,
+   "nonce": "1",
+   "balance": "0",
+   "codeHash": "0xb55fa83b9b4f5b02131fc5b84ba960480c54bab0452d356d11b3cb421ba05a9c",
+   "storageRoot": "0xc808868e5b8c34d324c8b0e1dd15e40cb85e58f8dc2467b18419e8263032dd86"
+  }
+ ]
+}
