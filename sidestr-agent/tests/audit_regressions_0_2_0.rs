@@ -41,9 +41,14 @@ impl ChainFile {
         Self(path)
     }
 
+    /// Runs `pegin-plan` against this document with the relays pointed at a
+    /// closed local port, so no announcement from a live producer can stand
+    /// in for the `--peg-address` these tests are about. The fixture is
+    /// `sidestr:dreamlab`, whose producer does announce its peg script on the
+    /// public relays since SPEC 0.0.4.
     fn run(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_sidestr-agent"))
-            .args(["pegin-plan", "--chain"])
+            .args(["pegin-plan", "--relays", "ws://127.0.0.1:9", "--chain"])
             .arg(&self.0)
             .args(args)
             .output()

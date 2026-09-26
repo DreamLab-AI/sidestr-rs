@@ -446,9 +446,13 @@ fn the_binary_offline() {
         .as_str()
         .unwrap()
         .starts_with(&format!("tr({ALICE},")));
+    // relays at a closed local port: dreamlab's live producer announces its
+    // peg script since SPEC 0.0.4, and this refusal is about the flag
     let out = Command::new(env!("CARGO_BIN_EXE_sidestr-agent"))
         .args([
             "pegin-plan",
+            "--relays",
+            "ws://127.0.0.1:9",
             "--chain",
             c,
             "--key-file",
