@@ -147,11 +147,11 @@ give the detail.
   start with the sender, target, precompiles and coinbase warm, and keep
   nothing from earlier calls. ethereumjs starts cold and carries warm
   slots over, so its estimate for a repeated call drifts.
-- Two faults in the reference are not reproduced. One is a creation call
-  whose value exceeds the sender's balance, which makes the reference
-  answer with no message and leave a checkpoint open. The other is a call
-  touching the empty WITHDRAW account, which makes the reference's next
-  block commit a root it then refuses.
+- A fault in the reference is not reproduced (sidestr/spec#22). A
+  read-only creation whose value exceeds the sender's balance, or a call
+  reaching the KZG precompile, makes the reference answer with an error and
+  its producer's next block commit a root it then refuses. Here every call
+  runs on a copy, so nothing carries over.
 - The reason text after `not a transaction: ` is this crate's own. The code
   (-32602 or -32000) is the reference's.
 - Some limits are added. A call's negative value or gas is refused.

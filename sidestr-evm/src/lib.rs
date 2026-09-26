@@ -119,17 +119,13 @@
 //!   `eth_estimateGas` measures is 2,500 gas a first touch cheaper (the
 //!   estimate adds half again), which is what the transaction will pay, and
 //!   the same every time.
-//! - **Two reference faults are not reproduced.** A read-only creation
-//!   whose value exceeds the sender's balance makes ethereumjs throw a
-//!   non-`Error` out of `runCall`: the reference answers `{"code":-32000}`
-//!   with no message and leaves a state checkpoint open (as it does when a
-//!   call reaches the KZG precompile, whose answer here is the same
-//!   `kzg not initialized`). Here the answer is `insufficient balance` and
-//!   nothing is left open. And a call that touches an existing empty account
-//!   (the WITHDRAW account after a withdrawal) leaves it in ethereumjs's
-//!   touched set, so the next block the reference's producer sequences
-//!   deletes it and commits a root its own validation then refuses; here
-//!   a call touches nothing.
+//! - **A reference fault is not reproduced** (sidestr/spec#22). A read-only
+//!   creation whose value exceeds the sender's balance makes ethereumjs
+//!   throw out of `runCall`: the reference answers `{"code":-32000}` with no
+//!   message, and its producer's next block commits a root it then refuses
+//!   (as after a call reaching the KZG precompile, whose answer here is the
+//!   same `kzg not initialized`). Here the answer is `insufficient balance`,
+//!   and every call runs on a copy, so nothing carries over.
 //! - **Why a raw transaction does not read** (the text after
 //!   `not a transaction: `) is in this crate's words, as in [`tx`]; the code,
 //!   -32602 or -32000 (`unsigned or bad signature`), is the reference's for
