@@ -25,9 +25,13 @@ members = [
     # transactions, run through revm beside the UTXO set, the state root in the coinbase.
     # Not published; revm, alloy and alloy-trie stay out of sidestr-core.
     "sidestr-evm",
-    # The Liquid reserve for the owner's private USD unit (ADR-2117 amendment):
-    # an LWK reserve wallet, public-Esplora sync and a signable reserve
-    # attestation. Unpublished (publish = false), not live.
+    # The origin-neutral reserve attestation a `bridge` rule checks: origin,
+    # credits, final tip, canonical bytes, BIP-340 signing hook (ADR-2117).
+    # Unpublished (publish = false), not live.
+    "sidestr-reserve",
+    # The Liquid origin adapter for the owner's private USD unit (ADR-2117
+    # amendment): an LWK reserve wallet, public-Esplora sync, and the Liquid
+    # reading of the reserve as a sidestr-reserve attestation. Unpublished, not live.
     "sidestr-bridge-liquid",
 ]
 

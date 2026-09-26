@@ -71,13 +71,10 @@ pub enum Error {
     #[error("proxy: {0}")]
     Proxy(String),
 
-    /// The signing hook failed.
-    #[error("signing: {0}")]
-    Signing(String),
-
-    /// A signed attestation does not verify against its public key.
-    #[error("attestation signature does not verify")]
-    BadSignature,
+    /// The origin-neutral attestation refused its inputs, or a signature
+    /// failed ([`sidestr_reserve::Error`]).
+    #[error("attestation: {0}")]
+    Reserve(#[from] sidestr_reserve::Error),
 }
 
 /// The crate's result type.

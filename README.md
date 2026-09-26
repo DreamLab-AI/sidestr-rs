@@ -39,12 +39,19 @@ its identity already has, and sign the event that carries each payment.
 | [`sidestr-agent`](sidestr-agent) | an agent wallet where the did:nostr key is the wallet: balance, npub → address, spends, burns and asset transfers as kind-23500 events, a peg-in plan, a faucet; the library builds for wasm32 | [![](https://img.shields.io/crates/v/sidestr-agent.svg)](https://crates.io/crates/sidestr-agent) | [docs.rs](https://docs.rs/sidestr-agent) |
 | [`sidestr-evm`](sidestr-evm) | the `evm` rule: Ethereum transactions carried in sidechain transactions, run through revm (Cancun) beside the UTXO set, deposits and withdrawals at 1 sat = 1 gwei, the state root in the coinbase; every root checked against the reference on ethereumjs | not published | — |
 
-Unpublished (`publish = false`), not live:
-[`sidestr-bridge-liquid`](sidestr-bridge-liquid), the Liquid reserve for the
-owner's private USD unit of account (ADR-2117): a watch-only wallet on
-Blockstream's Liquid Wallet Kit, synced from the public Esplora server, and a
-deterministic reserve attestation for the `bridge` rule to check. It depends on
-no other crate here.
+Unpublished (`publish = false`), not live, for the owner's private USD unit
+of account (ADR-2117):
+
+- [`sidestr-reserve`](sidestr-reserve): the reserve attestation the `bridge`
+  rule will check, independent of the reserve's network. It states the
+  origin, the credits keyed by replay id, the final origin tip, canonical
+  bytes and a BIP-340 signing hook.
+- [`sidestr-bridge-liquid`](sidestr-bridge-liquid): the Liquid origin
+  adapter. A watch-only wallet on Blockstream's Liquid Wallet Kit, synced
+  from the public Esplora server, read into a `sidestr-reserve` attestation.
+
+Neither depends on the published crates. Another reserve network would be a
+sibling adapter.
 
 The dependencies run one way: `core` ← `header`, `nostr`, `wallet` ← `round`
 ← `agent`, and `core` ← `evm`. `sidestr-core` never depends on

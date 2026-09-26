@@ -1,5 +1,7 @@
-//! Offline tests: key file, descriptor derivation, asset pin, attestation,
-//! signing. No network.
+//! Offline tests: key file, descriptor derivation, asset pin, the Liquid
+//! reading of the reserve as a `sidestr-reserve` attestation, signing. No
+//! network. The format's own vectors (BIP-340, canonical bytes, field
+//! checks) are `sidestr-reserve`'s tests.
 
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
@@ -7,12 +9,12 @@ use std::str::FromStr;
 
 use lwk_wollet::elements::{AssetId, BlockHash, OutPoint};
 use lwk_wollet::registry::RegistryData;
-use lwk_wollet::secp256k1::{schnorr, Keypair, Secp256k1, SecretKey, XOnlyPublicKey};
+use lwk_wollet::secp256k1::{Keypair, Secp256k1, SecretKey};
 use lwk_wollet::WolletDescriptor;
 use sidestr_bridge_liquid::{
-    attest, reserve_asset, verify_digest, verify_registry_entry, AttestationDigest,
-    AttestationSigner, ChainTip, Error, KeypairSigner, ReserveKey, ReserveSnapshot, ReserveUtxo,
-    ReserveWallet, SignedAttestation, KEY_FILE_MODE, MNEMONIC_WORDS, RESERVE_ASSET_ID,
+    attest, credits, origin, reserve_asset, verify_digest, verify_registry_entry,
+    AttestationDigest, ChainTip, Error, KeypairSigner, ReserveKey, ReserveSnapshot, ReserveUtxo,
+    ReserveWallet, SignedAttestation, KEY_FILE_MODE, MNEMONIC_WORDS, NETWORK, RESERVE_ASSET_ID,
 };
 
 /// The BIP-39 reference mnemonic (all-zero entropy). A test key only.
@@ -224,21 +226,47 @@ fn snapshot() -> ReserveSnapshot {
 const TIME: u64 = 1_790_000_000;
 
 /// The canonical bytes for [`snapshot`] at [`TIME`]. A golden value: any
-/// change to the format changes it, and a JavaScript validator must produce
-/// exactly these bytes.
-const GOLDEN_JSON: &str = r#"{"amount_sats":"2500000000","asset_id":"ce091c998b83c78bb71a632313ba3760f1763d9cfcffae02258ffa9865a37bd2","liquid_tip_hash":"abababababababababababababababababababababababababababababababab","liquid_tip_height":4070000,"network":"liquid","reserve_outpoints":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0","cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:1"],"source":"https://blockstream.info/liquid/api","time":"1790000000","type":"sidestr-bridge-liquid/reserve-attestation/v1"}"#;
+/// change to the Liquid reading or to the `sidestr-reserve` format changes
+/// it, and a JavaScript validator must produce exactly these bytes.
+const GOLDEN_JSON: &str = r#"{"amount":"2500000000","asset":"ce091c998b83c78bb71a632313ba3760f1763d9cfcffae02258ffa9865a37bd2","credits":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0","cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:1"],"decimals":8,"network":"liquid","source":"https://blockstream.info/liquid/api","time":"1790000000","tip_hash":"abababababababababababababababababababababababababababababababab","tip_height":4070000,"type":"sidestr-reserve/attestation/v1"}"#;
 
 #[test]
 fn attestation_counts_only_confirmed_reserve_outputs() {
     let a = attest(&snapshot(), &reserve_asset(), TIME).unwrap();
-    assert_eq!(a.amount_sats, 25_0000_0000);
+    assert_eq!(a.amount, 25_0000_0000);
     assert_eq!(
-        a.reserve_outpoints,
-        vec![outpoint("aa", 0), outpoint("cc", 1)]
+        a.credits,
+        vec![
+            format!("{}:0", "aa".repeat(32)),
+            format!("{}:1", "cc".repeat(32))
+        ]
     );
-    assert_eq!(a.liquid_tip_height, 4_070_000);
-    assert_eq!(a.liquid_tip_hash, hash("ab"));
+    assert_eq!(a.tip.height(), 4_070_000);
+    assert_eq!(a.tip.hash(), hash("ab").to_string());
     assert_eq!(a.time, TIME);
+}
+
+#[test]
+fn the_liquid_origin_is_the_pinned_asset_at_eight_decimals() {
+    let a = attest(&snapshot(), &reserve_asset(), TIME).unwrap();
+    assert_eq!(a.origin, origin());
+    assert_eq!(a.origin.network(), NETWORK);
+    assert_eq!(a.origin.asset(), RESERVE_ASSET_ID);
+    assert_eq!(a.origin.decimals(), 8);
+}
+
+#[test]
+fn credits_are_keyed_by_outpoint() {
+    let c = credits(&snapshot(), &reserve_asset()).unwrap();
+    let mut ids: Vec<&str> = c.iter().map(|c| c.id()).collect();
+    ids.sort();
+    assert_eq!(
+        ids,
+        [
+            format!("{}:0", "aa".repeat(32)),
+            format!("{}:1", "cc".repeat(32))
+        ]
+    );
 }
 
 #[test]
@@ -251,11 +279,11 @@ fn attestation_canonical_bytes_are_golden() {
 fn attestation_digest_is_stable() {
     let a = attest(&snapshot(), &reserve_asset(), TIME).unwrap();
     // sha256 of GOLDEN_JSON, computed independently with coreutils sha256sum.
-    assert_eq!(
-        a.digest().to_string(),
-        "8590c7ac032d8f030972a85e9c3748c0a4a90f11371c14ed6abda6fa41f98e85"
-    );
+    assert_eq!(a.digest().to_string(), GOLDEN_DIGEST);
 }
+
+/// `printf %s "$GOLDEN_JSON" | sha256sum`.
+const GOLDEN_DIGEST: &str = "17764cf0c39adfea3e2244fed84fcdd11c7a471cd5a552695513017112a4f83e";
 
 #[test]
 fn attestation_is_independent_of_utxo_order() {
@@ -269,42 +297,32 @@ fn attestation_is_independent_of_utxo_order() {
 }
 
 #[test]
-fn canonical_json_keys_are_sorted() {
-    let a = attest(&snapshot(), &reserve_asset(), TIME).unwrap();
-    // serde_json keeps document order in this workspace (preserve_order).
-    let parsed: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(&a.canonical_json()).unwrap();
-    let keys: Vec<&String> = parsed.keys().collect();
-    let mut sorted = keys.clone();
-    sorted.sort();
-    assert_eq!(keys, sorted);
-}
-
-#[test]
-fn every_field_changes_the_digest() {
-    let base = attest(&snapshot(), &reserve_asset(), TIME).unwrap();
+fn every_liquid_reading_changes_the_digest() {
+    let base = snapshot();
+    let digest = |s: &ReserveSnapshot| attest(s, &reserve_asset(), TIME).unwrap().digest();
     let mut variants = Vec::new();
-    let mut a = base.clone();
-    a.amount_sats += 1;
-    variants.push(a);
-    let mut a = base.clone();
-    a.liquid_tip_height += 1;
-    variants.push(a);
-    let mut a = base.clone();
-    a.liquid_tip_hash = hash("ac");
-    variants.push(a);
-    let mut a = base.clone();
-    a.reserve_outpoints.pop();
-    variants.push(a);
-    let mut a = base.clone();
-    a.time += 1;
-    variants.push(a);
-    let mut a = base.clone();
-    a.source = "https://example.invalid/api".into();
-    variants.push(a);
-    for v in variants {
-        assert_ne!(v.digest(), base.digest());
+    let mut s = base.clone();
+    s.utxos[0].value += 1;
+    variants.push(s);
+    let mut s = base.clone();
+    s.tip.height += 1;
+    variants.push(s);
+    let mut s = base.clone();
+    s.tip.hash = hash("ac");
+    variants.push(s);
+    let mut s = base.clone();
+    s.utxos.remove(0);
+    variants.push(s);
+    let mut s = base.clone();
+    s.source = "https://example.invalid/api".into();
+    variants.push(s);
+    for v in &variants {
+        assert_ne!(digest(v), digest(&base));
     }
+    assert_ne!(
+        attest(&base, &reserve_asset(), TIME + 1).unwrap().digest(),
+        digest(&base)
+    );
 }
 
 #[test]
@@ -312,9 +330,9 @@ fn an_empty_reserve_attests_zero() {
     let mut state = snapshot();
     state.utxos.clear();
     let a = attest(&state, &reserve_asset(), TIME).unwrap();
-    assert_eq!(a.amount_sats, 0);
-    assert!(a.reserve_outpoints.is_empty());
-    assert!(a.canonical_json().contains(r#""reserve_outpoints":[]"#));
+    assert_eq!(a.amount, 0);
+    assert!(a.credits.is_empty());
+    assert!(a.canonical_json().contains(r#""credits":[]"#));
 }
 
 #[test]
@@ -332,16 +350,19 @@ fn a_duplicated_outpoint_is_refused() {
 }
 
 #[test]
-fn an_overflowing_total_is_refused() {
+fn a_total_beyond_u64_is_carried_exactly() {
+    // Liquid amounts are u64 each; the neutral total is u128, so the sum of
+    // two maximal outputs no longer overflows but is stated exactly.
     let mut state = snapshot();
     state.utxos = vec![
         utxo(outpoint("aa", 0), reserve_asset(), u64::MAX, Some(1)),
         utxo(outpoint("aa", 1), reserve_asset(), 1, Some(1)),
     ];
-    assert!(matches!(
-        attest(&state, &reserve_asset(), TIME),
-        Err(Error::State(_))
-    ));
+    let a = attest(&state, &reserve_asset(), TIME).unwrap();
+    assert_eq!(a.amount, u128::from(u64::MAX) + 1);
+    assert!(a
+        .canonical_json()
+        .contains(r#""amount":"18446744073709551616""#));
 }
 
 // --------------------------------------------------------------- signing
@@ -353,87 +374,25 @@ fn test_signer() -> KeypairSigner {
 }
 
 #[test]
-fn signing_reproduces_bip340_test_vector_0() {
-    // BIP-340 test-vectors.csv, index 0: secret key 3, aux_rand all zero,
-    // message all zero. libsecp256k1 treats absent aux as 32 zero bytes.
-    let mut sk = [0u8; 32];
-    sk[31] = 3;
-    let signer = KeypairSigner::new(Keypair::from_secret_key(
-        &Secp256k1::new(),
-        &SecretKey::from_slice(&sk).unwrap(),
-    ));
-    assert_eq!(
-        signer.x_only_public_key().to_string().to_uppercase(),
-        "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9"
-    );
-    let sig = signer.sign_digest(&AttestationDigest([0u8; 32])).unwrap();
-    assert_eq!(
-        hex::encode_upper(sig.serialize()),
-        "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA821525F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0"
-    );
-}
-
-#[test]
-fn verification_accepts_bip340_test_vector_1() {
-    let pk = XOnlyPublicKey::from_str(
-        "DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA659",
-    )
-    .unwrap();
-    let msg: [u8; 32] =
-        hex::decode("243F6A8885A308D313198A2E03707344A4093822299F31D0082EFA98EC4E6C89")
-            .unwrap()
-            .try_into()
-            .unwrap();
-    let sig = schnorr::Signature::from_str(
-        "6896BD60EEAE296DB48A229FF71DFE071BDE413E6D43F917DC8DCF8C78DE33418906D11AC976ABCCB20B091292BFF4EA897EFCB639EA871CFA95F6DE339E4B0A",
-    )
-    .unwrap();
-    verify_digest(&AttestationDigest(msg), &sig, &pk).unwrap();
-    let mut wrong = msg;
-    wrong[0] ^= 1;
-    assert!(verify_digest(&AttestationDigest(wrong), &sig, &pk).is_err());
-}
-
-#[test]
-fn a_signed_attestation_verifies_and_tampering_breaks_it() {
+fn a_signed_liquid_attestation_verifies_and_tampering_breaks_it() {
     let a = attest(&snapshot(), &reserve_asset(), TIME).unwrap();
     let signed = SignedAttestation::sign(a, &test_signer()).unwrap();
     signed.verify().unwrap();
+    verify_digest(&signed.digest, &signed.signature, &signed.public_key).unwrap();
 
     let mut inflated = signed.clone();
-    inflated.attestation.amount_sats += 1;
-    assert!(matches!(inflated.verify(), Err(Error::BadSignature)));
-
-    let mut reissued = signed.clone();
-    reissued.attestation.amount_sats += 1;
-    reissued.digest = reissued.attestation.digest();
-    assert!(matches!(reissued.verify(), Err(Error::BadSignature)));
-
-    let mut other_key = signed;
-    other_key.public_key = XOnlyPublicKey::from_str(
-        "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9",
-    )
-    .unwrap();
-    assert!(matches!(other_key.verify(), Err(Error::BadSignature)));
-}
-
-#[test]
-fn a_faulty_signer_is_caught() {
-    struct Liar(KeypairSigner);
-    impl AttestationSigner for Liar {
-        fn x_only_public_key(&self) -> XOnlyPublicKey {
-            self.0.x_only_public_key()
-        }
-        fn sign_digest(
-            &self,
-            _: &AttestationDigest,
-        ) -> sidestr_bridge_liquid::Result<schnorr::Signature> {
-            self.0.sign_digest(&AttestationDigest([7; 32]))
-        }
-    }
-    let a = attest(&snapshot(), &reserve_asset(), TIME).unwrap();
+    inflated.attestation.amount += 1;
     assert!(matches!(
-        SignedAttestation::sign(a, &Liar(test_signer())),
-        Err(Error::Signing(_))
+        inflated.verify(),
+        Err(sidestr_reserve::Error::BadSignature)
     ));
+
+    let mut reissued = signed;
+    reissued.attestation.amount += 1;
+    reissued.digest = reissued.attestation.digest();
+    assert!(matches!(
+        reissued.verify(),
+        Err(sidestr_reserve::Error::BadSignature)
+    ));
+    let _: AttestationDigest = reissued.digest;
 }

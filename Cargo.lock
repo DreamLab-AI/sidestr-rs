@@ -4825,7 +4825,7 @@ dependencies = [
 
 [[package]]
 name = "sidestr-bridge-liquid"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "hex",
@@ -4836,6 +4836,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sidestr-reserve",
  "tempfile",
  "thiserror 2.0.20",
  "zeroize",
@@ -4899,6 +4900,17 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sidestr-core",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sidestr-reserve"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "secp256k1 0.29.1",
+ "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.20",
 ]
 

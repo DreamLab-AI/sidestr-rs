@@ -1,13 +1,13 @@
 [package]
 name = "sidestr-bridge-liquid"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
 authors.workspace = true
 license = "AGPL-3.0-only"
-description = "Reserve wiring for the owner's private USD unit on a sidestr chain (ADR-2117): a Liquid reserve wallet on Blockstream's Liquid Wallet Kit, synced from a public Esplora server, and a deterministic, signable reserve attestation. Unpublished; not live."
+description = "The Liquid origin adapter for the owner's private USD unit on a sidestr chain (ADR-2117): a Liquid reserve wallet on Blockstream's Liquid Wallet Kit, synced from a public Esplora server, read into the origin-neutral sidestr-reserve attestation. Unpublished; not live."
 readme = "README.md"
 keywords = ["sidestr", "liquid", "elements", "reserve", "attestation"]
 categories = ["cryptography::cryptocurrencies", "command-line-utilities"]
@@ -28,6 +28,8 @@ lwk_common = { version = "0.19", default-features = false }
 # reqwest 0.12 and take their proxy from the environment; this feature,
 # unified into LWK's reqwest, makes a `socks5h://` proxy (Tor) work.
 reqwest = { version = "0.12", default-features = false, features = ["socks"] }
+# The origin-neutral attestation this crate produces for Liquid.
+sidestr-reserve = { path = "../sidestr-reserve" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

@@ -2,6 +2,27 @@
 
 All notable changes to `sidestr-bridge-liquid`. Unpublished (`publish = false`).
 
+## 0.2.0 — 2026-09-26 (not live)
+
+The attestation is now origin-neutral (ADR-2117 amendment of 2026-09-26).
+This crate is the Liquid origin adapter for it.
+
+- **Breaking:** the attestation format moved to the new `sidestr-reserve`
+  crate and is re-exported here. It is now `sidestr-reserve/attestation/v1`,
+  with keys `amount`, `asset`, `credits`, `decimals`, `network`, `source`,
+  `time`, `tip_hash`, `tip_height` and `type`. It replaces
+  `sidestr-bridge-liquid/reserve-attestation/v1`, whose `amount_sats`,
+  `asset_id`, `liquid_tip_*` and `reserve_outpoints` were specific to
+  Liquid. Nothing had been signed or published under v1, so this is the one
+  format change before the `bridge` rule is written.
+- `credits(snapshot, asset)`: which Liquid outputs count (confirmed at or
+  below the tip, reserve asset only), keyed by outpoint. `origin()`:
+  `liquid`, the pinned asset, 8 decimals.
+- The total is a `u128`. Two maximal outputs are stated exactly rather than
+  refused as an overflow.
+- `Error::Signing` and `Error::BadSignature` are now
+  `sidestr_reserve::Error`, wrapped as `Error::Reserve`.
+
 ## 0.1.0 — 2026-09-23 (not live)
 
 First version: the light Liquid reserve wiring for the owner's private USD

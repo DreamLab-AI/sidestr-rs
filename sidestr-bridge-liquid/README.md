@@ -25,12 +25,16 @@ this crate is the reserve half of that check.
   than bypassing it (tested).
 - **Reserve asset.** Pinned as `RESERVE_ASSET_ID`, verified from two primary
   sources and one computation (below).
-- **Attestation.** `attest(snapshot, asset, time)` is pure. It returns the
-  confirmed reserve outputs, their total, the Liquid tip height and hash, the
-  time and the source server. The canonical form is JSON with sorted keys,
-  amounts as decimal strings and outpoints sorted; its SHA-256 is the digest.
-  Signing sits behind the `AttestationSigner` trait (BIP-340 Schnorr over the
-  digest). No real key is wired: the binary never signs.
+- **Attestation.** `attest(snapshot, asset, time)` is pure. It is this
+  crate's Liquid reading of the reserve: the confirmed outputs of the reserve
+  asset at or below the tip, keyed by outpoint (`txid:vout`), under the
+  origin `liquid` / `RESERVE_ASSET_ID` / 8 decimals. The statement itself
+  belongs to the origin-neutral `sidestr-reserve` crate: total, credits, tip
+  height and hash, time and source in canonical sorted-key JSON, its SHA-256,
+  and the `AttestationSigner` hook (BIP-340 Schnorr over the digest). A
+  `bridge` rule checks the same statement whichever network holds the
+  reserve, so a TRON or EVM adapter would be a sibling of this crate, not a
+  change to it. No real key is wired: the binary never signs.
 
 ## The `usd-reserve` binary
 
@@ -107,7 +111,7 @@ independent reserve-versus-supply check before any release remains in the
 ## Tests
 
 ```text
-cargo test -p sidestr-bridge-liquid                  # offline: 24 + the proxy test + doctests
+cargo test -p sidestr-bridge-liquid                  # offline: 22 + the proxy test + doctests
 SIDESTR_LIQUID_LIVE=1 cargo test -p sidestr-bridge-liquid --test live -- --ignored --nocapture
 ```
 
@@ -116,9 +120,9 @@ The offline tests cover these vectors:
 - **Descriptor.** The descriptor from the BIP-39 test mnemonic equals LWK
   0.19's own mainnet vector.
 - **Addresses.** Its first two addresses are regression values.
-- **Signing.** BIP-340 test vectors 0 (signing) and 1 (verification).
-- **Attestation.** Golden canonical bytes, with a digest computed
-  independently with `sha256sum`.
+- **Attestation.** Golden canonical bytes for the Liquid reading, with a
+  digest computed independently with `sha256sum`. The format's own vectors
+  (BIP-340 test vectors 0 and 1, field checks) are `sidestr-reserve`'s.
 
 The live test is read-only. It derives a fresh wallet in a temporary
 directory, syncs it, expects an empty balance and a current tip, and fetches

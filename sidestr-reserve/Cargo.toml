@@ -1,0 +1,25 @@
+[package]
+name = "sidestr-reserve"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+license = "AGPL-3.0-only"
+description = "The origin-neutral reserve attestation a sidestr `bridge` rule checks (ADR-2117): which reserve, what it held, at which final tip of its own network, in canonical bytes with a BIP-340 signature. Unpublished; not live."
+readme = "README.md"
+keywords = ["sidestr", "reserve", "attestation", "bridge"]
+categories = ["cryptography::cryptocurrencies"]
+# A project-specific construction: stays private to this repository
+# (ADR-2117; the estate does not publish bespoke signed formats).
+publish = false
+
+[dependencies]
+# libsecp256k1's BIP-340, the same 0.29 line bitcoin 0.32 and LWK 0.19
+# re-export, so one copy serves the whole workspace.
+secp256k1 = { version = "0.29", default-features = false, features = ["std"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }

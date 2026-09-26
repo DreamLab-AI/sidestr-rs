@@ -50,7 +50,8 @@ fn an_empty_wallet_syncs_to_the_live_tip_and_the_registry_matches_the_pin() {
     assert!(snapshot.utxos.is_empty());
 
     let attestation = attest(&snapshot, &reserve_asset(), 0).unwrap();
-    assert_eq!(attestation.amount_sats, 0);
+    assert_eq!(attestation.amount, 0);
+    assert!(attestation.credits.is_empty());
     println!("attestation    {}", attestation.canonical_json());
     println!("digest         {}", attestation.digest());
 
