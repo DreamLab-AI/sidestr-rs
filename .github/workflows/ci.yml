@@ -140,8 +140,9 @@ jobs:
 
       # sidestr-evm's fixtures, written again by its ethereumjs oracle at the
       # versions siding pins, cross-checked block by block against the
-      # checked-out evm.mjs (the generator holds it to its SHA-256), must be
-      # the ones committed. Outside the checkout, so node_modules never
+      # checked-out evm.mjs, and the JSON-RPC's answers from the checked-out
+      # evmrpc.mjs (both generators hold the modules to their SHA-256), must
+      # be the ones committed. Outside the checkout, so node_modules never
       # lands in the tree.
       - name: sidestr-evm fixtures (regenerated, no drift)
         run: |
@@ -149,7 +150,13 @@ jobs:
           mkdir -p "$scratch"
           cp sidestr-evm/tests/oracle/{oracle.mjs,package.json,package-lock.json} "$scratch"
           cp reference/spec/siding/lib/overlays/evm.mjs "$scratch/evm.reference.mjs"
-          (cd "$scratch" && npm ci --no-audit --no-fund && node oracle.mjs "$GITHUB_WORKSPACE/sidestr-evm/tests/fixtures")
+          cp sidestr-evm/tests/oracle/rpc-oracle.mjs "$scratch"
+          mkdir -p "$scratch/lib/overlays"
+          cp reference/spec/siding/lib/evmrpc.mjs "$scratch/lib/"
+          cp reference/spec/siding/lib/overlays/evm.mjs "$scratch/lib/overlays/"
+          (cd "$scratch" && npm ci --no-audit --no-fund \
+            && node oracle.mjs "$GITHUB_WORKSPACE/sidestr-evm/tests/fixtures" \
+            && node rpc-oracle.mjs "$GITHUB_WORKSPACE/sidestr-evm/tests/fixtures")
           git diff --exit-code -- sidestr-evm/tests/fixtures
           test -z "$(git status --porcelain -- sidestr-evm/tests/fixtures)"
 
