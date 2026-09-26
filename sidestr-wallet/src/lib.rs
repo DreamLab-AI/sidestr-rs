@@ -1,8 +1,8 @@
 //! `sidestr-wallet` — a wallet for sidestr sidechains, in Rust: the coin
-//! set for a script, the reference coin selection, taproot key-path spends
-//! and peg-out burns signed behind a signer port, the parent-side peg-in
-//! transaction shape, and delivery as a `POST /tx` body or a kind-23500
-//! event.
+//! set for a script, the reference coin selection, taproot key-path spends,
+//! peg-out burns and EVM deposits signed behind a signer port, the
+//! parent-side peg-in transaction shape, and delivery as a `POST /tx` body
+//! or a kind-23500 event.
 //!
 //! A wallet needs a chain id and a relay, and nothing of the producer's
 //! (SPEC 11). It learns the chain from a mirror's `chain.json`, held to the
@@ -35,6 +35,7 @@
 //! | [`select`] | largest-first selection to the amount plus a fee bound | 11 | `spend.mjs buildSpend` |
 //! | [`spend`] | a key-path spend to an address or script, fee at `minFeeRate`, signed, as hex | 11 | `spend.mjs buildSpend`, `resolveTo`; `siding send` |
 //! | [`burn`] | a peg-out: `OP_RETURN pegout:<parent script hex>`, at least `pegoutMin` | 7 | `spend.mjs` (`--pegout`) |
+//! | [`deposit`] | an EVM deposit: the reserve paid, then `OP_RETURN evmin:<address>` | proposals/evm.md | `spend.mjs` (`--evm`) |
 //! | [`pegin`] | the parent side: peg output + `pegin:<chain id>:<script>` marker; the peg-out payment and checkpoint shapes; scanning | 6, 7, 11 | `parent.mjs`, `checkpoint.mjs` |
 //! | [`deliver`] | `POST /tx`, `/coins`, `/tip`, `/chain.json` as data; kind 23500 / 23501 templates; HTTP behind feature `client` | 11 | `spend.mjs deliver`, `bin/siding.mjs` routes |
 //! | [`key`] | the [`SpendSigner`] port, a plain key, pubkey → `5120` script → bech32m, ADR-2101 spend-key derivation | 3 | `sign.mjs`, `address.mjs` |
@@ -132,10 +133,10 @@
 //!   siding lets the producer refuse it.
 //! - **Zero BIP 340 auxiliary randomness** in [`PlainKey`], as `sidestr-core`
 //!   seals blocks: a spend is a pure function of its inputs and the key.
-//! - **The EVM deposit branch is not carried** (`--evm`): a deposit pays the
-//!   chain's reserve and follows it with a value-0 `evmin:` marker, a layout
-//!   the builders here do not make; the marker is `sidestr-evm`'s
-//!   `records::deposit_script`.
+//! - **An EVM deposit needs a chain naming the `evm` rule** ([`deposit`]);
+//!   siding pays the reserve on any chain it is asked to, where without the
+//!   rule nothing is credited. Its transaction is otherwise siding's, byte
+//!   for byte.
 
 #![forbid(unsafe_code)]
 #![deny(
@@ -149,6 +150,7 @@ pub mod burn;
 pub mod coins;
 pub mod compose;
 pub mod deliver;
+pub mod deposit;
 pub mod error;
 pub mod external;
 pub mod key;
@@ -159,6 +161,7 @@ pub mod spend;
 
 pub use burn::{build_burn, BurnRequest};
 pub use coins::Coin;
+pub use deposit::{build_evm_deposit, DepositRequest};
 pub use error::{Error, Result};
 pub use key::{PlainKey, SpendSigner};
 pub use pegin::{build_pegin, PegIn};

@@ -28,3 +28,17 @@ decision 5. Not published.
   10.1.3 driven as `evm.mjs` drives it and cross-checked against the module
   itself: 35 blocks (20 accepted, 15 refused), 25 carrier decodings, 16
   record scripts. Every root is reproduced.
+- `tests/wallet_deposit.rs`: `sidestr-wallet`'s EVM deposit against the
+  rule. The wallet writes the `evmin:` marker and reads the reserve through
+  `sidestr-core` (so it links no revm); the marker is
+  `records::deposit_script`'s bytes and `parse_deposit` reads it, the
+  reserve is `EvmConfig`'s (and both refuse the same malformed `evm`
+  sections), and a deposit the wallet builds passes `check_tx`, is mined and
+  credits the address on the producer and on an independent validator,
+  with the reserve from the challenge and from `evm.reserve`.
+  `sidestr-wallet` is a dev-dependency only.
+- CI's `oracle` job regenerates `tests/fixtures/` with `tests/oracle/`
+  against the checked-out `evm.mjs` and fails on any drift. The crate is not
+  in the wasm32 build: it needs no C beyond secp256k1's, but getrandom 0.2
+  (through k256) refuses `wasm32-unknown-unknown` until the application
+  selects its `js` backend.

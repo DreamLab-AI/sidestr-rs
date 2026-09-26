@@ -295,6 +295,43 @@ impl ChainDocument {
         ))
     }
 
+    /// The script an EVM deposit pays (the `evm` rule, proposals/evm.md):
+    /// the document's `evm.reserve`, else the challenge, as
+    /// `siding/lib/overlays/evm.mjs` reads it
+    /// (`(cfg.reserve ?? chain.challenge)`). An `evm` section that is not an
+    /// object, or a `reserve` that is not a hex string, is
+    /// [`Error::Document`]. The document need not name the rule for this to
+    /// answer; whether a chain credits deposits is [`ChainDocument::rules`].
+    ///
+    /// ```
+    /// use sidestr_core::document::ChainDocument;
+    ///
+    /// let mut doc: serde_json::Value = serde_json::from_str(include_str!("../fixtures/trial/chain.json")).unwrap();
+    /// let challenge = doc["challenge"].as_str().unwrap().to_string();
+    /// let read = |v: &serde_json::Value| serde_json::from_value::<ChainDocument>(v.clone()).unwrap().evm_reserve();
+    /// assert_eq!(read(&doc).unwrap().to_hex_string(), challenge);
+    /// doc["evm"] = serde_json::json!({ "chainId": 777, "reserve": "5120ABCD" });
+    /// assert_eq!(read(&doc).unwrap().to_hex_string(), "5120abcd");
+    /// doc["evm"] = serde_json::json!({ "reserve": 5 });
+    /// assert!(read(&doc).is_err());
+    /// ```
+    pub fn evm_reserve(&self) -> Result<ScriptBuf> {
+        let reserve = match self.extra.get("evm") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::Object(m)) => m.get("reserve").filter(|v| !v.is_null()),
+            Some(v) => return Err(Error::Document(format!("evm must be an object, not {v}"))),
+        };
+        match reserve {
+            None => self.challenge_script(),
+            Some(serde_json::Value::String(h)) => hex::decode(h)
+                .map(ScriptBuf::from_bytes)
+                .map_err(|e| Error::Document(format!("evm.reserve is not a hex script: {e}"))),
+            Some(v) => Err(Error::Document(format!(
+                "evm.reserve must be a hex script, not {v}"
+            ))),
+        }
+    }
+
     /// `powLimit` as a 256-bit target.
     pub fn pow_limit_target(&self) -> Result<Target> {
         let bytes: [u8; 32] = hex::decode(&self.pow_limit)

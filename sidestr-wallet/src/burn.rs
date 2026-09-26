@@ -103,6 +103,7 @@ pub fn build_burn(
             kind: IntentKind::Burn,
             output_script: marker,
             intent_script: parent,
+            marker: None,
             note: Some(note),
         },
     )

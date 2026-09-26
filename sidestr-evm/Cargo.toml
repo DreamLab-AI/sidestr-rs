@@ -38,6 +38,8 @@ alloy-trie = { version = "0.9", default-features = false, features = ["std", "et
 
 [dev-dependencies]
 serde = { workspace = true }
+# The wallet's EVM deposit, built and mined through this rule (`tests/wallet_deposit.rs`).
+sidestr-wallet = { path = "../sidestr-wallet", version = "0.4.3" }
 # Signing the Ethereum transactions the tests carry.
 alloy-signer = "2.5"
 alloy-signer-local = "2.5"

@@ -25,6 +25,7 @@
 //! | [`parse_pubkey`], [`npub`], [`Identity`] | `npub` / hex / `did:nostr:` ↔ x-only key ↔ script ↔ chain address |
 //! | [`destination`], [`refuse_secret`] | a pay-to: an `npub`, a `did:nostr:`, a chain address or a script hex; never secret-shaped text |
 //! | [`prepare`] | a spend or peg-out burn, signed by the key, and its kind-23500 event, signed by the same key |
+//! | [`prepare_evm_deposit`], [`read_assets`] | an EVM deposit (the `evm` rule) and its event; the assets a block file records, unvalidated, where the chain cannot be replayed here |
 //! | [`ChainView`] | a mirror's block file replayed, with the SPEC 12 assets view: coins, plain coins, asset balances |
 //! | [`prepare_transfer`], [`prepare_issue`] | move or issue an asset (with memo records such as `tip:nostr:<event id>`), and the event |
 //! | [`pegin_plan`] | what a parent wallet pays to peg in: the peg address (and its refund descriptor), the marker |
@@ -104,6 +105,7 @@ use sidestr_wallet::asset::{
 use sidestr_wallet::burn::{build_burn, BurnRequest};
 use sidestr_wallet::coins::from_state;
 use sidestr_wallet::coins::Coin;
+use sidestr_wallet::deposit::{build_evm_deposit, DepositRequest};
 use sidestr_wallet::key::{script_for, PlainKey};
 use sidestr_wallet::pegin::build_pegin;
 use sidestr_wallet::spend::{build_spend, Spend, SpendRequest};
@@ -407,6 +409,101 @@ pub fn prepare(
     };
     let event = sign_transaction_event(&key.event_signer(), &chain.id, &spend.hex, created_at)?;
     Ok(Prepared { spend, event })
+}
+
+/// Build and sign an EVM deposit with the agent's key (the `evm` rule,
+/// proposals/evm.md; `siding send --evm --to 0x… --amount N`), and the
+/// kind-23500 event that carries it, signed with the same key (pure: no
+/// network). `amount` sats pay the chain's reserve (`evm.reserve`, else the
+/// challenge) and credit `to`, a `0x` address, with as many gwei. The chain
+/// document must name the `evm` rule. As with [`prepare`], pass coins that
+/// carry no asset ([`read_assets`] and `sidestr_wallet::asset::plain_coins`).
+///
+/// ```
+/// use sidestr_agent::{prepare_evm_deposit, AgentKey};
+/// use sidestr_core::document::ChainDocument;
+/// use sidestr_wallet::coins::Coin;
+///
+/// let alice = AgentKey::parse(&"11".repeat(32)).unwrap();
+/// let doc = ChainDocument::from_json_with(r#"{"id":"sidestr:example","name":"example","parent":"tbtc4",
+///   "challenge":"5120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","powLimit":"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+///   "addressPrefix":"ex","genesisTime":1790000000,"pegs":[],"rules":["evm"]}"#, &["assets", "evm"]).unwrap();
+/// let coins = vec![Coin { outpoint: format!("{}:0", "ab".repeat(32)).parse().unwrap(), value: 100_000, height: 5, coinbase: false }];
+/// let p = prepare_evm_deposit(&alice, &doc, &coins, 10, "0x7777777777777777777777777777777777777777", 25_000, None, 1_790_000_200).unwrap();
+/// assert_eq!(p.spend.tx.output[0].script_pubkey, doc.evm_reserve().unwrap());
+/// assert!(p.event.verify().is_ok() && p.event.kind == 23500 && p.event.pubkey == alice.pubkey().to_string());
+/// ```
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_evm_deposit(
+    key: &AgentKey,
+    chain: &ChainDocument,
+    coins: &[Coin],
+    tip_height: u32,
+    to: &str,
+    amount: u64,
+    fee: Option<u64>,
+    created_at: u64,
+) -> Result<Prepared> {
+    let spend = build_evm_deposit(
+        &DepositRequest {
+            chain,
+            coins,
+            tip_height,
+            to,
+            amount,
+            fee,
+        },
+        &key.spend_signer(),
+        &Permissive,
+    )?;
+    let event = sign_transaction_event(&key.event_signer(), &chain.id, &spend.hex, created_at)?;
+    Ok(Prepared { spend, event })
+}
+
+/// What each unspent output carries (SPEC 12), read from a block file's
+/// transactions **without validating the blocks**: for a chain whose rules
+/// this crate does not carry, so that [`ChainView::replay`] cannot replay
+/// it (a chain naming `evm`, whose rule is `sidestr-evm`'s). It trusts the
+/// mirror as the coin list trusts the producer, and serves one purpose: to
+/// keep a payment off coins that carry an asset. Either header family; the
+/// family is the document's parent's.
+///
+/// ```
+/// use sidestr_agent::read_assets;
+/// use sidestr_core::block::{challenge_for, pubkey_of};
+/// use sidestr_core::document::ChainDocument;
+/// use sidestr_core::mirror::encode_record;
+/// use sidestr_core::state::State;
+///
+/// let producer = bitcoin::secp256k1::SecretKey::from_slice(&[7u8; 32]).unwrap();
+/// let doc = ChainDocument::from_json(&format!(r#"{{"id":"sidestr:example","name":"example","parent":"tbtc4","challenge":"{}",
+///   "powLimit":"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","addressPrefix":"ex",
+///   "genesisTime":1790000000,"pegs":[]}}"#, challenge_for(&pubkey_of(&producer)).to_hex_string())).unwrap();
+/// let genesis = State::genesis_block_for(&doc, &producer).unwrap();
+/// let dat = encode_record(0, &bitcoin::consensus::encode::serialize(&genesis));
+/// assert!(read_assets(&doc, &dat).unwrap().issued().is_empty());
+/// assert!(read_assets(&doc, &dat[..20]).is_err());
+/// ```
+pub fn read_assets(chain: &ChainDocument, dat: &[u8]) -> Result<AssetView> {
+    let header = match chain.family()? {
+        sidestr_core::parents::Family::Stock => 80,
+        sidestr_core::parents::Family::Blake2b => 164,
+    };
+    let mut view = AssetView::new();
+    for r in sidestr_core::mirror::records(dat)? {
+        let txs: Vec<bitcoin::Transaction> = r
+            .bytes
+            .get(header..)
+            .and_then(|b| bitcoin::consensus::deserialize(b).ok())
+            .ok_or_else(|| {
+                sidestr_core::Error::BlockFile(format!(
+                    "the block at height {} does not decode",
+                    r.height
+                ))
+            })?;
+        view.apply_transactions(&txs, r.height);
+    }
+    Ok(view)
 }
 
 /// A chain replayed from a block file and read under the `assets` rule:

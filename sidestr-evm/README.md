@@ -65,6 +65,11 @@ itself and stops on any difference. It writes `tests/fixtures/`, and
 
 `tests/chain.rs` is `siding/test/evm-test.mjs` step by step through
 `sidestr-core`, with a producer and an independent validator.
+`tests/wallet_deposit.rs` holds `sidestr-wallet`'s deposit to this rule: its
+marker (written through `sidestr-core`, so the wallet links no revm) is
+`records::deposit_script`'s bytes, its reserve is `EvmConfig`'s, and a
+deposit it builds is mined and credits the address. CI regenerates the
+fixtures below against the pinned `evm.mjs` and fails on any drift.
 
 To regenerate the fixtures:
 

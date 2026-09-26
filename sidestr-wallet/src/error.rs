@@ -100,6 +100,11 @@ pub enum Error {
     /// record, an input carrying another asset.
     #[error("asset: {0}")]
     Asset(String),
+    /// An EVM deposit that cannot be made as asked: the destination is not
+    /// a `0x` address (`spend.mjs`: "an EVM deposit goes to a 0x
+    /// address"), or the chain does not name the `evm` rule.
+    #[error("evm deposit: {0}")]
+    Evm(String),
     /// A producer answered `{"error": …}` to a `POST /tx`.
     #[error("producer refused: {0}")]
     Refused(String),

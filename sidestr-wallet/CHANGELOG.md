@@ -2,13 +2,36 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
-## Unreleased
+## Unreleased — 0.4.3
 
-Documentation only: the note on the `--evm` deposit branch no longer cites
-ADR-2096 (its exclusion of the `evm` rule is lifted; the rule is
-`sidestr-evm`). The branch is still not carried; the stale "assets
-reserved" in the same note is gone, since issue and transfer have been
-here since 0.4.0.
+The `--evm` deposit branch of `siding send` (`lib/spend.mjs buildSpend`,
+`evmDeposit: true`). Additive: a patch release. Depends on `sidestr-core`
+0.3.4 (`evm_deposit_marker`, `ChainDocument::evm_reserve`).
+
+### Added
+
+- `deposit::build_evm_deposit` (re-exported with `DepositRequest`): the
+  amount pays the chain's reserve (`evm.reserve`, else the challenge), the
+  value-0 `OP_RETURN evmin:<address>` marker follows it, then change; the
+  fee is sized with the marker in place. The transaction is byte for byte
+  the one siding's `buildSpend` makes from the same coins, fee and key
+  (`tests/deposit_oracle.rs`, against the reference with zero auxiliary
+  randomness on both sides; both parent families). Refused before any coin
+  is touched: a chain whose document does not name the `evm` rule (siding
+  would pay the reserve and nothing would be credited), and dust, as for
+  every payment here. `deposit::parse_evm_address` reads the `0x` address
+  as the reference does.
+- `Error::Evm` (the enum is `#[non_exhaustive]`).
+- `tests/xcheck-wallet.mjs deposit`: siding's own `buildSpend` fed a coin
+  list and tip in place of a producer, for the oracle.
+
+### Changed
+
+- Documentation: the note that the branch was not carried is gone; the
+  crate docs, README and module table name the deposit. The note no longer
+  cites ADR-2096 (its exclusion of the `evm` rule is lifted; the rule is
+  `sidestr-evm`), and the stale "assets reserved" is gone, since issue and
+  transfer have been here since 0.4.0.
 
 ## 0.4.2 — 2026-09-25
 

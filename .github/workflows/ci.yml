@@ -77,7 +77,11 @@ jobs:
           cargo check -p sidestr-core --no-default-features --target wasm32-unknown-unknown
 
       # The pure halves a browser wallet links (the forum's): secp256k1's C
-      # builds with the runner's clang for wasm32.
+      # builds with the runner's clang for wasm32. sidestr-evm is not among
+      # them: it needs no further C, but k256 draws in getrandom 0.2, which
+      # refuses wasm32-unknown-unknown until something selects its `js`
+      # backend, and a library must leave that choice to the application
+      # that links it.
       - name: wasm32 (the libraries without the agent's CLI)
         run: cargo build --target wasm32-unknown-unknown -p sidestr-core -p sidestr-wallet -p sidestr-nostr -p sidestr-agent --no-default-features
 
@@ -108,6 +112,13 @@ jobs:
           ref: ${{ env.BLAKETESTNODE_REF }}
           path: reference/blaketestnode
 
+      # siding wants Node 22 or later (WebSocket built in); so does the
+      # sidestr-evm fixture generator's ethereumjs.
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
@@ -127,9 +138,25 @@ jobs:
           SCHEMA: ${{ github.workspace }}/reference/schema
           BLAKETESTNODE: ${{ github.workspace }}/reference/blaketestnode
 
+      # sidestr-evm's fixtures, written again by its ethereumjs oracle at the
+      # versions siding pins, cross-checked block by block against the
+      # checked-out evm.mjs (the generator holds it to its SHA-256), must be
+      # the ones committed. Outside the checkout, so node_modules never
+      # lands in the tree.
+      - name: sidestr-evm fixtures (regenerated, no drift)
+        run: |
+          scratch="$RUNNER_TEMP/evm-oracle"
+          mkdir -p "$scratch"
+          cp sidestr-evm/tests/oracle/{oracle.mjs,package.json,package-lock.json} "$scratch"
+          cp reference/spec/siding/lib/overlays/evm.mjs "$scratch/evm.reference.mjs"
+          (cd "$scratch" && npm ci --no-audit --no-fund && node oracle.mjs "$GITHUB_WORKSPACE/sidestr-evm/tests/fixtures")
+          git diff --exit-code -- sidestr-evm/tests/fixtures
+          test -z "$(git status --porcelain -- sidestr-evm/tests/fixtures)"
+
       # Genesis and blocks both ways, the records, the wallet's spends and
-      # burns through Siding.submit(), the txsign parity (byte-identical
-      # witnesses on both families), and the mixed Rust/JS signing rounds.
+      # burns through Siding.submit(), its EVM deposits byte for byte with
+      # siding's buildSpend, the txsign parity (byte-identical witnesses on
+      # both families), and the mixed Rust/JS signing rounds.
       - name: Oracle and interop suites
         run: cargo test --workspace --all-features
         env:

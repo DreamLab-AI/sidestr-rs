@@ -160,19 +160,24 @@ pub fn build_spend(
             kind: IntentKind::Spend,
             output_script: dest.script.clone(),
             intent_script: dest.script,
+            marker: None,
             note: dest.note,
         },
     )
 }
 
-/// The half of a build that spend and burn share: what the first output is,
-/// and what the policy is told it pays.
+/// The half of a build that spend, burn and EVM deposit share: what the
+/// first output is, what (if anything) follows it, and what the policy is
+/// told it pays.
 pub(crate) struct Plan {
     pub kind: IntentKind,
     /// The script of the amount-carrying output.
     pub output_script: ScriptBuf,
     /// The script the policy weighs: the destination, or the parent script a burn names.
     pub intent_script: ScriptBuf,
+    /// A value-0 output right after the amount (an EVM deposit's `evmin:`
+    /// marker), before the change: `spend.mjs lay`'s `dest.marker`.
+    pub marker: Option<ScriptBuf>,
     pub note: Option<String>,
 }
 
@@ -263,8 +268,9 @@ pub(crate) fn assemble(
         })
         .collect();
     let change_dust = dust_threshold(&me);
-    // outputs for a fee: the amount, then change when it is worth an output;
-    // change below dust is left to the fee rather than made into a coin
+    // outputs for a fee: the amount, its marker if any, then change when it
+    // is worth an output; change below dust is left to the fee rather than
+    // made into a coin
     let layout = |f: u64| -> Result<(Vec<TxOut>, u64, u64)> {
         let change = sum
             .checked_sub(amount)
@@ -274,6 +280,12 @@ pub(crate) fn assemble(
             value: Amount::from_sat(amount),
             script_pubkey: plan.output_script.clone(),
         }];
+        if let Some(marker) = &plan.marker {
+            out.push(TxOut {
+                value: Amount::ZERO,
+                script_pubkey: marker.clone(),
+            });
+        }
         if change > 0 && change >= change_dust {
             out.push(TxOut {
                 value: Amount::from_sat(change),

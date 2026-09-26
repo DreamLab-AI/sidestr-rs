@@ -13,6 +13,7 @@
 //! | burn (peg-out) | sidechain | `pegout:<parent output script hex>` with a value |
 //! | peg-out record | parent | `pegout:<chain id>:` then the sidechain txid as 32 raw bytes |
 //! | checkpoint | parent | `ckpt:<chain id>:` then the height as 4 LE bytes, `:`, the 32-byte hash |
+//! | EVM deposit | sidechain | `evmin:` then a 20-byte Ethereum address, right after a payment to the reserve |
 //!
 //! ```
 //! use sidestr_core::marker::{claim_marker, parse_claims, pegout_marker, parse_pegout};
@@ -463,6 +464,32 @@ pub fn parse_checkpoint(spk: &Script, chain_id: &str) -> Option<(u32, String)> {
         u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]),
         hex::encode(&rest[5..]),
     ))
+}
+
+// --- EVM deposit (the `evm` rule, proposals/evm.md) -------------------------
+
+/// The EVM deposit marker's prefix (`siding/lib/overlays/evm.mjs`).
+pub const EVM_DEPOSIT_PREFIX: &[u8] = b"evmin:";
+
+/// `OP_RETURN evmin:<address>`: the value-0 output that, immediately after
+/// an output paying a chain's EVM reserve ([`crate::ChainDocument::evm_reserve`]),
+/// credits that output's sats to `address` at 1 sat = 1 gwei. A port of
+/// `evm.mjs depositScript`: 26 bytes in one direct push, `6a 1a 65766d696e3a`
+/// then the address. Only the encoding lives here; reading deposits and
+/// crediting them is the `evm` rule's, in `sidestr-evm`, whose
+/// `records::deposit_script` writes the same bytes.
+///
+/// ```
+/// use sidestr_core::marker::evm_deposit_marker;
+///
+/// let s = evm_deposit_marker(&[0x77; 20]);
+/// assert_eq!(s.to_hex_string(), format!("6a1a65766d696e3a{}", "77".repeat(20)));
+/// ```
+pub fn evm_deposit_marker(address: &[u8; 20]) -> ScriptBuf {
+    let mut data = Vec::with_capacity(EVM_DEPOSIT_PREFIX.len() + 20);
+    data.extend_from_slice(EVM_DEPOSIT_PREFIX);
+    data.extend_from_slice(address);
+    op_return(&data)
 }
 
 #[cfg(test)]

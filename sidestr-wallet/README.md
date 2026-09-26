@@ -4,8 +4,9 @@
 
 A wallet for [sidestr](https://github.com/sidestr/spec) sidechains, in Rust:
 the coin set for a script, the reference coin selection, taproot key-path
-spends and peg-out burns signed behind a signer port, the parent-side peg-in
-transaction shape, and delivery as a `POST /tx` body or a kind-23500 event.
+spends, peg-out burns and EVM deposits signed behind a signer port, the
+parent-side peg-in transaction shape, and delivery as a `POST /tx` body or a
+kind-23500 event.
 
 A wallet needs a chain id and a relay, and nothing of the producer's (SPEC 11).
 It reads `chain.json` from a mirror, asks a producer `/coins/<script hex>` — or
@@ -85,11 +86,16 @@ document come from `sidestr-core` and are not duplicated.
   (audit F4, 0.2.1; the checkpoint's 80-byte bound is `sidestr-core`'s
   `checkpoint_data`). The reference does not check; its `send` fails at the
   node.
-- **Not carried:** the `--evm` deposit branch: a deposit is a payment to the
-  chain's reserve followed by a value-0 `evmin:` marker, which the spend
-  builders here do not lay out; the marker is `sidestr-evm`'s
-  `records::deposit_script`. Nor the faucet's relay loop and rate state (its
-  payment is `build_spend`; the request template is `deliver::faucet_request`).
+- **An EVM deposit needs a chain naming the `evm` rule** (`deposit`, since
+  0.4.3; siding's `send --evm`). siding pays the reserve on any chain; where
+  the rule is not named nothing is credited, so this crate refuses. The
+  transaction is otherwise siding's, byte for byte: the reserve
+  (`evm.reserve`, else the challenge) paid, then the value-0
+  `OP_RETURN evmin:<address>` marker, then change. The marker comes from
+  `sidestr-core`, so the wallet does not link revm; `sidestr-evm`'s tests
+  hold it to that crate's `records::deposit_script`.
+- **Not carried:** the faucet's relay loop and rate state (its payment is
+  `build_spend`; the request template is `deliver::faucet_request`).
 
 ## Status — 0.3.0
 
@@ -113,6 +119,14 @@ fixed, are kept as `tests/audit_regressions_0_0_3.rs`. Proven:
   `Siding.submit()` and mined, with the same txid, fee and vsize; a tampered
   signature is refused by both (`tests/oracle.rs`, `tests/xcheck-wallet.mjs`,
   needs the reference checkouts);
+- an EVM deposit is byte for byte the transaction siding's own `buildSpend`
+  (`evmDeposit: true`) makes from the same coins, tip, fee and key, signing
+  with zero auxiliary randomness: one and several inputs, the reserve from
+  the challenge and from `evm.reserve`, a fixed fee, beside tbtc4 and
+  beside the BLAKE2b txbt4; where siding refuses (too few coins, not a `0x`
+  address) this crate refuses in the same words (`tests/deposit_oracle.rs`);
+  and mined through `sidestr-evm`'s rule it credits the address
+  (`sidestr-evm/tests/wallet_deposit.rs`);
 - a peg-in transaction round-trips through rust-bitcoin and its marker parses
   with `sidestr_core::marker`;
 - accept and reject for every builder: insufficient funds, dust, below
@@ -129,7 +143,7 @@ sweep, script-path spends, hardened BIP-32 custody roles (ADR-2101).
 ```sh
 cargo test -p sidestr-wallet                       # unit, builders, doctests; the oracle's Rust half
 SIDESTR_SIDING=<sidestr/spec>/siding SCHEMA=<bitcoin-desktop/schema> BLAKETESTNODE=<bitcoin-blake/blaketestnode> \
-  cargo test -p sidestr-wallet --test oracle       # and siding's verdict on the same transactions
+  cargo test -p sidestr-wallet --test oracle --test deposit_oracle   # and siding's verdict, and its deposits
 RUSTDOCFLAGS="-D warnings" cargo doc -p sidestr-wallet --no-deps
 cargo clippy -p sidestr-wallet --all-targets -- -D warnings && cargo fmt -p sidestr-wallet -- --check
 ```

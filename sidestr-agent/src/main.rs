@@ -9,12 +9,13 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use sidestr_agent::{
     announced_peg_address, destination, fetch_announced_peg_script, identity, parent_explorer_api,
-    parse_pubkey, pegin_plan, prepare, prepare_issue, prepare_transfer, refuse_secret, AgentKey,
-    ChainView, Payment, PegTarget, Prepared,
+    parse_pubkey, pegin_plan, prepare, prepare_evm_deposit, prepare_issue, prepare_transfer,
+    read_assets, refuse_secret, AgentKey, ChainView, Payment, PegTarget, Prepared,
 };
 use sidestr_core::document::ChainDocument;
 use sidestr_round::relay::{ok_count, publish_all, unix_now};
-use sidestr_wallet::deliver::client;
+use sidestr_wallet::asset::plain_coins;
+use sidestr_wallet::deliver::{chain_url, client};
 
 /// The five public relays siding publishes to by default.
 const RELAYS: &str = "wss://nos.lol,wss://relay.damus.io,wss://relay.primal.net,wss://nostr.mom,wss://nostr.oxtr.dev";
@@ -63,11 +64,17 @@ enum Cmd {
         prefix: Option<String>,
     },
     /// Pay a sidechain destination: an npub, a did:nostr, an address or a script hex.
+    /// With `--evm`, deposit into the chain's EVM instead (the `evm` rule).
     Send {
-        /// Where to.
+        /// Where to; with `--evm`, the 0x address credited.
         to: String,
-        /// Sats.
+        /// Sats; with `--evm`, credited as as many gwei.
         amount: u64,
+        /// An EVM deposit (`siding send --evm`): the sats pay the chain's
+        /// reserve and an `evmin:` marker credits `to`, a 0x address, at
+        /// 1 sat = 1 gwei. The chain must name the `evm` rule.
+        #[arg(long)]
+        evm: bool,
         #[command(flatten)]
         deliver: Deliver,
     },
@@ -307,6 +314,13 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
         Cmd::Send {
             to,
             amount,
+            evm: true,
+            deliver,
+        } => evm_deposit(cli, to, *amount, deliver).await,
+        Cmd::Send {
+            to,
+            amount,
+            evm: false,
             deliver,
         } => pay(cli, Payment::Send, &destination(to)?, *amount, deliver).await,
         Cmd::Burn {
@@ -572,6 +586,38 @@ async fn pay(
         unix_now(),
     )?;
     deliver(cli, what_name(&what), &doc.id, p, d).await
+}
+
+/// The rules a deposit's chain document may name. The wallet validates no
+/// block, so it reads a document naming them rather than refuse it; what
+/// it needs of the `evm` rule (the reserve, the marker) it has.
+const DEPOSIT_READS: [&str; 2] = ["assets", "evm"];
+
+/// `send --evm`: coins and tip from the producer, as `siding send --evm`
+/// takes them (this crate cannot replay a chain naming the `evm` rule),
+/// less those the block file records as carrying an asset.
+async fn evm_deposit(
+    cli: &Cli,
+    to: &str,
+    amount: u64,
+    d: &Deliver,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let k = key(cli)?;
+    let text = match &cli.chain {
+        Some(p) => std::fs::read_to_string(p)?,
+        None => ureq::get(&chain_url(&cli.url))
+            .call()?
+            .body_mut()
+            .read_to_string()?,
+    };
+    let doc = ChainDocument::from_json_with(&text, &DEPOSIT_READS)?;
+    let tip = client::tip(&cli.url)?;
+    let coins = client::coins(&cli.url, &k.script().to_hex_string())?;
+    let coins = plain_coins(&coins, &read_assets(&doc, &block_file(cli)?)?);
+    let p = prepare_evm_deposit(&k, &doc, &coins, tip.height, to, amount, d.fee, unix_now())?;
+    let mut out = deliver(cli, "evm-deposit", &doc.id, p, d).await?;
+    out["to"] = json!(to);
+    Ok(out)
 }
 
 fn what_name(p: &Payment) -> &'static str {

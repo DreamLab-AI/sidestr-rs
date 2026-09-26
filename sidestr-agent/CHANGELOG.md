@@ -2,6 +2,26 @@
 
 All notable changes to `sidestr-agent`. The crate follows semantic versioning.
 
+## Unreleased — 0.3.2
+
+EVM deposits (the `evm` rule, proposals/evm.md). Additive: a patch release.
+Depends on `sidestr-wallet` 0.4.3 and `sidestr-core` 0.3.4.
+
+### Added
+
+- `send --evm <0x address> <sats>`, as `siding send --evm --to 0x… --amount
+  N`: the sats pay the chain's reserve and credit the address in its EVM
+  at 1 sat = 1 gwei; a kind-23500 event signed by the agent's key carries
+  it, with `--post`, `--dry-run` and `--fee` as for `send`. The chain
+  document may name the `assets` and `evm` rules. Coins and tip come from
+  the producer's `/coins` and `/tip`, as siding takes them, since this
+  crate cannot replay a chain naming `evm`; the block file is still read,
+  unvalidated, and no coin carrying an asset is spent.
+- Library: `prepare_evm_deposit` (the deposit and its event), and
+  `read_assets` (what a block file's outputs carry, read without
+  validating the blocks, for a chain `ChainView::replay` cannot replay;
+  either header family). Both pure, so the wasm32 build has them.
+
 ## 0.3.1 — 2026-09-25
 
 SPEC 0.0.4 (`@sidestr/spec` 0.0.6). Additive.

@@ -29,6 +29,13 @@ crate (revm stays out of this one); what it needs here is additive.
   `overlays/assets.mjs installChecks` without pools). `overlays/index.mjs
   rulesFor` installs it on every chain whose document names any rule, so an
   `evm` chain carries it; it answers to `assets`.
+- `marker::evm_deposit_marker` and `marker::EVM_DEPOSIT_PREFIX`: the
+  `OP_RETURN evmin:<20-byte address>` an EVM deposit writes (`evm.mjs
+  depositScript`), so a wallet builds one without linking revm;
+  `sidestr-evm`'s tests hold it to that crate's `records::deposit_script`.
+- `ChainDocument::evm_reserve`: the script a deposit pays, `evm.reserve` or
+  else the challenge, read as `evm.mjs` and `spend.mjs` read it; what
+  `sidestr-evm`'s `EvmConfig` refuses, it refuses.
 
 ## 0.3.3 — 2026-09-25
 

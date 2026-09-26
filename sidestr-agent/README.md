@@ -49,6 +49,10 @@ sidestr-agent --key-file alice.key send-asset DREAM npub1… 50 --memo tip:nostr
 # a faucet: answer kind-23501 requests with 2,000 sats and 100 DREAM, once a day per script
 sidestr-agent --key-file faucet.key faucet --sats 2000 --asset DREAM --units 100 --state faucet.json
 
+# deposit into the chain's EVM (a chain naming the `evm` rule): the sats pay the
+# reserve and credit the 0x address with as many gwei (siding's `send --evm`)
+sidestr-agent --key-file alice.key send --evm 0x… 50000
+
 # peg out: burn sats the peg holders owe to a testnet4 address
 sidestr-agent --key-file alice.key burn tb1p… 20000
 
@@ -77,6 +81,12 @@ sidestr-agent --chain chain.json publish-parent <hex>
 reads the block file first. An asset on a coin a plain payment spent would
 be destroyed.
 
+`send --evm` takes its coins and tip from the producer's `/coins` and
+`/tip`, as siding does: this crate cannot replay a chain naming the `evm`
+rule (the rule is `sidestr-evm`'s, and unpublished). It still reads the
+block file, without validating it (`read_assets`), and leaves every coin
+that carries an asset alone.
+
 ## As a library
 
 ```toml
@@ -85,9 +95,9 @@ sidestr-agent = { version = "0.3", default-features = false }
 
 Without the `cli` feature the crate is pure: no runtime, no network, and it
 builds for `wasm32-unknown-unknown`. `ChainView::replay` validates a
-mirror's `blocks.dat` you fetched yourself; `prepare`, `prepare_transfer`
-and `prepare_issue` return the signed transaction and the signed kind-23500
-event for you to deliver.
+mirror's `blocks.dat` you fetched yourself; `prepare`, `prepare_transfer`,
+`prepare_issue` and `prepare_evm_deposit` return the signed transaction and
+the signed kind-23500 event for you to deliver.
 
 Every command prints one JSON object.
 
