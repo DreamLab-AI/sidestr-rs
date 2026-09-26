@@ -45,6 +45,40 @@ let evm = rules.evm.as_ref().unwrap().state();        // balances, code, storage
 A producer uses `Rules::produce`. It sequences the mempool through the EVM,
 pays the withdrawals, and writes the `evmroot:` record.
 
+## JSON-RPC for wallets
+
+`rpc::EvmRpc` is siding's `lib/evmrpc.mjs`: the Ethereum JSON-RPC that
+MetaMask, ethers and viem speak, over the rule's state. It is
+transport-agnostic. The host implements `rpc::ChainView`: the height, block
+hashes and header times, the mempool, and `carry`. `carry` wraps a raw
+transaction's carrier record in a sidechain transaction paid from the
+producer's coins, runs the mempool's EVM check, and submits it.
+
+```rust,ignore
+let rpc = EvmRpc::new(rules.evm.clone().unwrap(), doc.id.clone());
+let answer = rpc.handle(&mut host, &request);            // a request or a batch, as JSON
+let reply = rpc.handle_body(&mut host, body);             // a POST /evm body: status and text
+```
+
+`handle_body` gives exactly what `bin/siding.mjs` sends for `POST /evm`,
+including the parse error (400) and the 1 MiB limit (413). Send it with
+`application/json` and `rpc::CORS_HEADERS`. The crate pulls in no HTTP
+server.
+
+| methods | answer |
+|---|---|
+| `web3_clientVersion`, `net_version`, `eth_chainId`, `eth_syncing`, `eth_mining`, `eth_accounts`, `eth_blockNumber` | the chain |
+| `eth_gasPrice`, `eth_maxPriorityFeePerGas`, `eth_feeHistory` | a flat 1 gwei base fee, no tips |
+| `eth_getBalance`, `eth_getTransactionCount` (`pending` counts mempool carriers), `eth_getCode`, `eth_getStorageAt` | the applied state |
+| `eth_call`, `eth_estimateGas` | a read-only run in the next block (height + 1, now); a failure is error 3 with its data |
+| `eth_sendRawTransaction` | read, signature checked, carried |
+| `eth_getTransactionReceipt`, `eth_getTransactionByHash`, `eth_getLogs` | receipts, transactions and logs of applied blocks |
+| `eth_getBlockByNumber`, `eth_getBlockByHash`, `eth_getBlockTransactionCountByNumber` | the sidechain block as an Ethereum block |
+
+The estimate is the reference's formula: 21,000, plus 32,000 for a
+creation, plus the calldata (4 per zero byte, 16 per other), plus half as
+much again as the execution used and 10,000 when it used any.
+
 ## Against the reference
 
 `tests/oracle/oracle.mjs` drives ethereumjs exactly as `evm.mjs` does. With a
@@ -71,14 +105,34 @@ marker (written through `sidestr-core`, so the wallet links no revm) is
 deposit it builds is mined and credits the address. CI regenerates the
 fixtures below against the pinned `evm.mjs` and fails on any drift.
 
+`tests/oracle/rpc-oracle.mjs` runs siding's own `evmrpc.mjs` over its own
+`evm.mjs`, both pinned by SHA-256, with a scripted host and a frozen clock.
+It writes `tests/fixtures/rpc.json`, and `tests/rpc_oracle.rs` replays it:
+
+- **6 blocks.** Each state root comes out the same.
+- **223 requests.** They cover every method, batches, odd ids and
+  malformed params. 215 answers match byte for byte, as `JSON.stringify`
+  writes them. In the other 8, the error message is compared up to a fixed
+  prefix, because what follows is ethereumjs's own text (why a raw
+  transaction does not read, or why its VM refused a carrier).
+- **10 `POST /evm` bodies**, matched in status and text.
+
+Nothing is normalised for time, because the clock is frozen on both sides.
+`tests/rpc.rs` is `siding/test/evmrpc-test.mjs` step by step through
+`sidestr-core`.
+
 To regenerate the fixtures:
 
 ```sh
 FIXTURES=$PWD/tests/fixtures
-mkdir -p $SCRATCH && cp tests/oracle/{oracle.mjs,package.json,package-lock.json} $SCRATCH
+mkdir -p $SCRATCH/lib/overlays && cp tests/oracle/{oracle.mjs,rpc-oracle.mjs,package.json,package-lock.json} $SCRATCH
 cp $SIDESTR_SIDING/lib/overlays/evm.mjs $SCRATCH/evm.reference.mjs
-(cd $SCRATCH && npm ci && node oracle.mjs $FIXTURES)
+cp $SIDESTR_SIDING/lib/evmrpc.mjs $SCRATCH/lib/ && cp $SIDESTR_SIDING/lib/overlays/evm.mjs $SCRATCH/lib/overlays/
+(cd $SCRATCH && npm ci && node oracle.mjs $FIXTURES && node rpc-oracle.mjs $FIXTURES)
 ```
+
+The RPC fixtures were written on Node 22. Error texts that come from
+JavaScript itself, such as `BigInt` and property reads, are V8's.
 
 ## Where it departs
 
@@ -89,7 +143,20 @@ give the detail.
 - The state is kept for the tip only.
 - A producer drops a failing transaction whole.
 - A record over 65,535 bytes is not written.
-- The JSON-RPC endpoint (`evmrpc.mjs`) is not ported.
+- JSON-RPC read-only calls start afresh, as a transaction would. They
+  start with the sender, target, precompiles and coinbase warm, and keep
+  nothing from earlier calls. ethereumjs starts cold and carries warm
+  slots over, so its estimate for a repeated call drifts.
+- Two faults in the reference are not reproduced. One is a creation call
+  whose value exceeds the sender's balance, which makes the reference
+  answer with no message and leave a checkpoint open. The other is a call
+  touching the empty WITHDRAW account, which makes the reference's next
+  block commit a root it then refuses.
+- The reason text after `not a transaction: ` is this crate's own. The code
+  (-32602 or -32000) is the reference's.
+- Some limits are added. A call's negative value or gas is refused.
+  `eth_feeHistory` answers at most 1,024 blocks. A raw transaction over
+  65,535 bytes is refused. A batch is answered in order, not all at once.
 
 ## Licence
 

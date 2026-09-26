@@ -25,9 +25,9 @@ thiserror = { workspace = true }
 # The EVM, Cancun rules. No C: secp256k1 recovery in the ECRECOVER precompile is k256's, and
 # neither c-kzg nor blst is built — the KZG point-evaluation precompile is replaced (see
 # `exec`), and the BLS12-381 ones are Prague's. `optional_block_gas_limit` is the reference's
-# `skipBlockGasLimitValidation`; the balance and base-fee switches are for read-only calls
-# (`EvmState::call`, ethereumjs's `evm.runCall`), never for a carried transaction.
-revm = { version = "43", default-features = false, features = ["std", "optional_block_gas_limit", "optional_balance_check", "optional_no_base_fee"] }
+# `skipBlockGasLimitValidation`; the balance, base-fee and EIP-3607 switches are for read-only calls
+# (`EvmState::call` and `simulate`, ethereumjs's `evm.runCall`), never for a carried transaction.
+revm = { version = "43", default-features = false, features = ["std", "optional_block_gas_limit", "optional_balance_check", "optional_no_base_fee", "optional_eip3607"] }
 # Ethereum's types: addresses, U256, keccak; the signed transaction envelope, its RLP and
 # EIP-2718 decoding and the signer's recovery (k256, low s enforced); the Merkle-Patricia
 # state root. Never hand-rolled.
@@ -35,6 +35,8 @@ alloy-primitives = { version = "1.7", default-features = false, features = ["std
 alloy-consensus = { version = "2.5", default-features = false, features = ["std", "k256"] }
 alloy-eips = { version = "2.5", default-features = false, features = ["std"] }
 alloy-trie = { version = "0.9", default-features = false, features = ["std", "ethereum"] }
+# RLP headers and fields, for reading a raw transaction the way ethereumjs sorts it (`rpc`).
+alloy-rlp = { version = "0.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 serde = { workspace = true }

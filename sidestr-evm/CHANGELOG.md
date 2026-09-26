@@ -42,3 +42,33 @@ decision 5. Not published.
   in the wasm32 build: it needs no C beyond secp256k1's, but getrandom 0.2
   (through k256) refuses `wasm32-unknown-unknown` until the application
   selects its `js` backend.
+- `rpc`: the Ethereum JSON-RPC of `lib/evmrpc.mjs` (at `fa86dac`) for
+  wallets. `EvmRpc::handle` takes a request or batch as JSON, and
+  `EvmRpc::handle_body` takes a `POST /evm` body (parse error 400, 1 MiB
+  limit 413), writing it byte for byte as `JSON.stringify` does. The host
+  supplies a `ChainView`: height, block hashes, header times, mempool,
+  `carry` for `eth_sendRawTransaction`, and the clock. It covers every
+  method the reference serves, with its error codes (-32601, -32602,
+  -32000, and 3 with the revert data) and texts, V8's included.
+  The estimate formula is the reference's. No HTTP server is pulled in.
+- `EvmState::simulate`: a read-only execution as ethereumjs's `runCall`
+  makes one, used by `eth_call` and `eth_estimateGas`. It runs in a given
+  block, optionally as a creation, carries value, and reports the
+  execution's gas without the intrinsic cost. It also adds
+  `EvmState::receipts` (chain order), `Receipt::index`,
+  `Receipt::envelope`, `Receipt::effective_gas_price` and
+  `Receipt::logs_bloom`.
+- `tests/oracle/rpc-oracle.mjs` runs siding's `evmrpc.mjs` and `evm.mjs`
+  themselves on ethereumjs 10.1.3 and writes `tests/fixtures/rpc.json`:
+  6 blocks, 223 requests and 10 HTTP bodies. `tests/rpc_oracle.rs`
+  reproduces every state root and every answer. 215 match byte for byte;
+  8 match up to a prefix, because the rest is ethereumjs's own reason text.
+  `tests/rpc.rs` is `siding/test/evmrpc-test.mjs` through `sidestr-core`.
+
+### Changed
+
+- revm's `optional_eip3607` feature is on, so a read-only call may come
+  from an account with code, as ethereumjs's `runCall` allows. Carried
+  transactions still refuse such senders.
+- The "No JSON-RPC" departure is gone. The RPC's own departures are listed
+  in the crate docs.

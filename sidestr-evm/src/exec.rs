@@ -18,9 +18,10 @@
 use alloy_consensus::{Transaction as _, TxEnvelope};
 use alloy_eips::eip2718::Typed2718;
 use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
-use revm::context::result::{EVMError, ExecutionResult};
+use revm::context::result::{EVMError, ExecutionResult, InvalidTransaction, ResultGas};
 use revm::context::{BlockEnv, Cfg, CfgEnv, Context, ContextTr, TxEnv};
 use revm::context_interface::block::BlobExcessGasAndPrice;
+use revm::context_interface::cfg::gas::calculate_initial_tx_gas;
 use revm::handler::{EthPrecompiles, MainnetContext, PrecompileProvider};
 use revm::interpreter::{CallInputs, InterpreterResult};
 use revm::primitives::eip4844::BLOB_BASE_FEE_UPDATE_FRACTION_CANCUN;
@@ -230,6 +231,110 @@ pub(crate) fn call(
         ExecutionResult::Success { output, .. } => (true, output.into_data()),
         ExecutionResult::Revert { output, .. } => (false, output),
         ExecutionResult::Halt { .. } => (false, Bytes::new()),
+    })
+}
+
+/// A read-only execution's result ([`crate::EvmState::simulate`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Simulation {
+    /// Whether it succeeded; a revert, an exceptional halt and too little
+    /// balance for the value are failures.
+    pub success: bool,
+    /// What it returned: the return data, a revert's data, a creation's
+    /// runtime code; empty after a halt.
+    pub output: Bytes,
+    /// Gas the execution used, before any refund and without the
+    /// transaction's intrinsic cost (ethereumjs's `executionGasUsed`): 0 for
+    /// a call to an account without code.
+    pub execution_gas: u64,
+}
+
+/// A read-only execution as ethereumjs's `evm.runCall` makes one, which is
+/// what `evmrpc.mjs` asks of it for `eth_call` and `eth_estimateGas`: `data`
+/// from `from`, to `to` or, without one, as a creation, carrying `value`,
+/// with `gas` for the execution itself (no intrinsic cost is charged: revm is
+/// given `gas` plus the intrinsic cost and it is taken off again), no fee,
+/// no nonce check, a sender with code allowed, against `world`, which does
+/// not change. The sender's nonce is bumped first, as there, so a creation
+/// deploys where the sender's next transaction would.
+///
+/// Value beyond the sender's balance is a failed call with nothing
+/// returned, as `runCall` reports it; for a creation ethereumjs throws out
+/// of `runCall` instead, and so does this (`Err("insufficient balance")`).
+/// `Err` is also the KZG precompile reached ([`NoKzg`]).
+pub(crate) fn simulate(
+    world: &World,
+    env: &BlockEnvironment,
+    from: Address,
+    to: Option<Address>,
+    value: U256,
+    data: Bytes,
+    gas: u64,
+) -> Result<Simulation, String> {
+    let balance = world.account(&from).map(|a| a.balance).unwrap_or_default();
+    if value > balance {
+        return match to {
+            Some(_) => Ok(Simulation {
+                success: false,
+                output: Bytes::new(),
+                execution_gas: 0,
+            }),
+            None => Err("insufficient balance".into()),
+        };
+    }
+    let intrinsic = calculate_initial_tx_gas(SpecId::CANCUN, &data, to.is_none(), 0, 0, 0, None)
+        .initial_total_gas();
+    let mut cfg = CfgEnv::new_with_spec(SpecId::CANCUN);
+    cfg.chain_id = env.chain_id;
+    cfg.disable_block_gas_limit = true;
+    cfg.disable_base_fee = true;
+    cfg.disable_nonce_check = true;
+    cfg.disable_eip3607 = true;
+    let ctx: MainnetContext<Db<'_>> = Context::new(Db(world), SpecId::CANCUN);
+    let mut evm = ctx
+        .with_cfg(cfg)
+        .with_block(block_env(env))
+        .build_mainnet()
+        .with_precompiles(NoKzg::new());
+    let tx = TxEnv {
+        caller: from,
+        gas_limit: gas.saturating_add(intrinsic),
+        kind: to.map_or(TxKind::Create, TxKind::Call),
+        value,
+        data,
+        chain_id: Some(env.chain_id),
+        ..TxEnv::default()
+    };
+    let out = match evm.transact(tx) {
+        Ok(out) => out,
+        // ethereumjs's runCall: initcode over the EIP-3860 limit is an exceptional halt that uses all the gas
+        Err(EVMError::Transaction(InvalidTransaction::CreateInitCodeSizeLimit)) => {
+            return Ok(Simulation {
+                success: false,
+                output: Bytes::new(),
+                execution_gas: gas,
+            })
+        }
+        Err(EVMError::Custom(s)) => return Err(s),
+        Err(e) => return Err(e.to_string()),
+    };
+    let spent = |g: &ResultGas| g.total_gas_spent().saturating_sub(intrinsic);
+    Ok(match out.result {
+        ExecutionResult::Success { gas, output, .. } => Simulation {
+            success: true,
+            execution_gas: spent(&gas),
+            output: output.into_data(),
+        },
+        ExecutionResult::Revert { gas, output, .. } => Simulation {
+            success: false,
+            execution_gas: spent(&gas),
+            output,
+        },
+        ExecutionResult::Halt { gas, .. } => Simulation {
+            success: false,
+            execution_gas: spent(&gas),
+            output: Bytes::new(),
+        },
     })
 }
 

@@ -11,12 +11,13 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use alloy_primitives::{Address, Bytes, Log, B256, U256};
+use alloy_consensus::TxEnvelope;
+use alloy_primitives::{logs_bloom, Address, Bloom, Bytes, Log, B256, U256};
 use bitcoin::{BlockHash, ScriptBuf, Transaction, Txid};
 use sidestr_core::block::{HeaderFamily, SidestrBlock};
 
 use crate::config::EvmConfig;
-use crate::exec::{call, created_address, run, BlockEnvironment};
+use crate::exec::{call, created_address, run, simulate, BlockEnvironment, Simulation};
 use crate::records::{parse_carrier, parse_deposit, parse_root, GWEI, WITHDRAW};
 use crate::tx::decode_carrier;
 use crate::world::World;
@@ -96,6 +97,25 @@ pub struct Receipt {
     pub from: Address,
     /// The recipient; `None` for a creation.
     pub to: Option<Address>,
+    /// Its place among the block's Ethereum transactions, from 0.
+    pub index: u32,
+    /// The signed transaction itself (`evm.mjs` keeps it beside the receipt
+    /// in `txs`, for `eth_getTransactionByHash`).
+    pub envelope: TxEnvelope,
+}
+
+impl Receipt {
+    /// The price per gas it paid (ethereumjs's `amountSpent / totalGasSpent`):
+    /// a legacy or EIP-2930 transaction's gas price; an EIP-1559 one's tip,
+    /// capped by its fee cap, over the 1 gwei base fee.
+    pub fn effective_gas_price(&self) -> u128 {
+        self.envelope.effective_gas_price(Some(GWEI))
+    }
+
+    /// The bloom filter of its logs (all zero for none).
+    pub fn logs_bloom(&self) -> Bloom {
+        logs_bloom(self.logs.iter())
+    }
 }
 
 /// What one sidechain transaction did (`evm.mjs applyTx`'s result).
@@ -227,6 +247,13 @@ impl EvmState {
     pub fn block(&self, height: u32) -> Option<&BlockRecord> {
         self.blocks.get(&height)
     }
+    /// Every receipt kept, in chain order: by height, then by place in the
+    /// block (the order `evm.mjs`'s `receipts` map was filled in).
+    pub fn receipts(&self) -> impl Iterator<Item = &Receipt> {
+        self.blocks
+            .values()
+            .flat_map(|b| b.hashes.iter().filter_map(|h| self.receipts.get(h)))
+    }
     /// The verdict [`EvmState::prepare`] gave a block, by its hash.
     pub fn verdict(&self, hash: &BlockHash) -> Option<&Verdict> {
         self.verdicts.get(hash)
@@ -285,6 +312,7 @@ impl EvmState {
             out.gas_used = out.gas_used.saturating_add(ran.gas_used);
             out.hashes.push(carried.hash);
             let e = &carried.envelope;
+            let index = u32::try_from(receipts.len()).unwrap_or(u32::MAX);
             receipts.push(Receipt {
                 transaction_hash: carried.hash,
                 status: ran.success,
@@ -295,6 +323,8 @@ impl EvmState {
                 sidechain_txid: txid,
                 from: carried.sender,
                 to: e.to(),
+                index,
+                envelope: e.clone(),
             });
             // a withdrawal: value sent to WITHDRAW with a 34-byte script as data, and it succeeded
             if e.to() == Some(WITHDRAW)
@@ -477,6 +507,48 @@ impl EvmState {
             to,
             data,
             gas_limit,
+        )
+    }
+
+    /// A read-only execution against the state after the last applied
+    /// block, in the block that would come next (`height`, `time`), as
+    /// ethereumjs's `evm.runCall` makes it for `eth_call` and
+    /// `eth_estimateGas`: `data` from `from` to `to` (a creation without
+    /// one), carrying `value`, with `gas` for the execution itself. The
+    /// state does not change. See [`crate::exec`] for what counts as a
+    /// failure and what is an `Err`.
+    ///
+    /// ```
+    /// use alloy_primitives::{Address, Bytes, U256};
+    /// use sidestr_evm::{EvmConfig, EvmState};
+    ///
+    /// let state = EvmState::new(EvmConfig { chain_id: 21474, gas_limit: 30_000_000, reserve: Default::default() });
+    /// // the identity precompile: 15 + 3 per word of gas, and its input back
+    /// let s = state.simulate(1, 1_790_000_000, Address::ZERO, Some(Address::with_last_byte(4)), U256::ZERO, Bytes::from_static(b"hi"), 100_000).unwrap();
+    /// assert!(s.success && s.output.as_ref() == b"hi" && s.execution_gas == 18);
+    /// // a creation returns the runtime it would deploy
+    /// let init = Bytes::from_static(&[0x60, 0x2a, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xf3]);
+    /// assert_eq!(state.simulate(1, 0, Address::ZERO, None, U256::ZERO, init, 100_000).unwrap().output.as_ref(), &[0x2a]);
+    /// ```
+    #[allow(clippy::too_many_arguments)]
+    pub fn simulate(
+        &self,
+        height: u32,
+        time: u32,
+        from: Address,
+        to: Option<Address>,
+        value: U256,
+        data: Bytes,
+        gas: u64,
+    ) -> Result<Simulation, String> {
+        simulate(
+            &self.world,
+            &self.env(height, time),
+            from,
+            to,
+            value,
+            data,
+            gas,
         )
     }
 

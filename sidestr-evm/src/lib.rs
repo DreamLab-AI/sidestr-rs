@@ -6,8 +6,9 @@
 //!
 //! This crate is a port of the `evm` rule of **siding**, the reference
 //! implementation by Melvin Carvalho (<https://github.com/sidestr/spec>,
-//! AGPL-3.0): `siding/lib/overlays/evm.mjs` and the parts of
-//! `lib/overlays/index.mjs` and `lib/chain.mjs` that run it, at
+//! AGPL-3.0): `siding/lib/overlays/evm.mjs`, the parts of
+//! `lib/overlays/index.mjs` and `lib/chain.mjs` that run it, and the
+//! Ethereum JSON-RPC over it, `lib/evmrpc.mjs` ([`rpc`]), at
 //! `fa86dac83d47b8f70195132e91e9dc083e1d9228` (`@sidestr/spec` 0.0.6), with
 //! the design in `proposals/evm.md`. It carries the same licence,
 //! AGPL-3.0-only. The reference executes on ethereumjs 10.1.3; this crate on
@@ -38,7 +39,8 @@
 //! [`sidestr_core::StateOf::from_genesis_with_rules`] carries them from the
 //! genesis on. Then [`sidestr_core::StateOf::add_block`] is the whole of
 //! validating a block; a clone of the [`EvmRule`] reads balances, code,
-//! storage and receipts.
+//! storage and receipts, and [`rpc::EvmRpc`] answers a wallet's JSON-RPC
+//! over it.
 //!
 //! ```
 //! use bitcoin::Amount;
@@ -76,7 +78,7 @@
 //!
 //! None of these changes which blocks are valid; `tests/oracle.rs` replays
 //! the reference's verdicts on a scripted chain, and every root, byte for
-//! byte.
+//! byte; `tests/rpc_oracle.rs` replays the reference's JSON-RPC answers.
 //!
 //! - **The state moves when a block is applied.** The reference's `prepare`
 //!   commits the EVM's state as soon as the rule passes, before the kernel's
@@ -102,8 +104,51 @@
 //!   being valid.
 //! - **A record longer than 65,535 bytes is not written**
 //!   ([`records::push_data`]); the reference writes a wrapped length byte.
-//! - **No JSON-RPC.** `lib/evmrpc.mjs` (the `POST /evm` endpoint for
-//!   wallets) is not ported; [`EvmState`] answers the questions it asks.
+//!
+//! The JSON-RPC ([`rpc`]) answers as the reference does, byte for byte,
+//! with these exceptions:
+//!
+//! - **Read-only calls start afresh.** ethereumjs's `runCall` starts with
+//!   no address warm — not the sender, the target, the precompiles or the
+//!   coinbase — and keeps what one call warms (addresses and storage slots)
+//!   until the node next runs a transaction, so the reference estimates the
+//!   same call differently the second time (a first storage write: 64,303,
+//!   then 61,153). revm runs a call as a transaction would run: those four
+//!   warm, nothing carried over. `eth_call` answers the same; for code that
+//!   reads the sender, itself, a precompile or the coinbase, the execution
+//!   `eth_estimateGas` measures is 2,500 gas a first touch cheaper (the
+//!   estimate adds half again), which is what the transaction will pay, and
+//!   the same every time.
+//! - **Two reference faults are not reproduced.** A read-only creation
+//!   whose value exceeds the sender's balance makes ethereumjs throw a
+//!   non-`Error` out of `runCall`: the reference answers `{"code":-32000}`
+//!   with no message and leaves a state checkpoint open (as it does when a
+//!   call reaches the KZG precompile, whose answer here is the same
+//!   `kzg not initialized`). Here the answer is `insufficient balance` and
+//!   nothing is left open. And a call that touches an existing empty account
+//!   (the WITHDRAW account after a withdrawal) leaves it in ethereumjs's
+//!   touched set, so the next block the reference's producer sequences
+//!   deletes it and commits a root its own validation then refuses; here
+//!   a call touches nothing.
+//! - **Why a raw transaction does not read** (the text after
+//!   `not a transaction: `) is in this crate's words, as in [`tx`]; the code,
+//!   -32602 or -32000 (`unsigned or bad signature`), is the reference's for
+//!   every case its tests hold. A raw transaction over 65,535 bytes is
+//!   refused ([`records::push_data`]); a fee field of 2^128 wei or more does
+//!   not read (-32602), where ethereumjs reads it and the mempool refuses it.
+//! - **Limits the reference does not have.** A call object's negative
+//!   `value` or `gas` is refused (-32000), where ethereumjs runs with it; an
+//!   `eth_feeHistory` of more than 1,024 blocks is refused, where the
+//!   reference builds arrays as long as asked.
+//! - **A batch is answered in order**, one request after another; the
+//!   reference starts them all at once (`Promise.all`), so a batch that
+//!   sends and reads the same account can interleave there.
+//! - **JavaScript's own artefacts.** A method named after a property of
+//!   `Object.prototype` (`constructor`, `toString`, …) is -32601, where the
+//!   reference calls it; a JSON number beyond the double range or nesting
+//!   deeper than 128 levels is a parse error, where `JSON.parse` takes it; a
+//!   malformed hex string whose complaint would quote half a UTF-16
+//!   surrogate pair quotes U+FFFD.
 
 #![forbid(unsafe_code)]
 #![deny(
@@ -116,6 +161,7 @@ pub mod config;
 pub mod error;
 pub mod exec;
 pub mod records;
+pub mod rpc;
 pub mod rule;
 pub mod state;
 pub mod tx;
@@ -123,6 +169,7 @@ pub mod world;
 
 pub use config::EvmConfig;
 pub use error::{Error, Result};
+pub use exec::Simulation;
 pub use rule::{rules_for, Built, EvmRule, Produced, Rules, KNOWN, RULE};
 pub use state::{BlockRecord, EvmState, Receipt, Sequenced, TxOutcome, Verdict, Withdrawal};
 pub use world::World;
