@@ -36,6 +36,7 @@ its identity already has, and sign the event that carries each payment.
 | [`sidestr-nostr`](sidestr-nostr) | the Nostr plane: NIP-01 events, a sealed signer port, tips (33333, with the peg script), transactions (23500/23501/23503), rule and genesis documents, the round envelopes, estate kinds 38420–38425 | [![](https://img.shields.io/crates/v/sidestr-nostr.svg)](https://crates.io/crates/sidestr-nostr) | [docs.rs](https://docs.rs/sidestr-nostr) |
 | [`sidestr-wallet`](sidestr-wallet) | coins, the reference coin selection, key-path spends, burns and EVM deposits signed by the parent's family, spends with records, issued assets (issue, transfer), the peg-in shape, delivery | [![](https://img.shields.io/crates/v/sidestr-wallet.svg)](https://crates.io/crates/sidestr-wallet) | [docs.rs](https://docs.rs/sidestr-wallet) |
 | [`sidestr-round`](sidestr-round) | the level-2 co-signing round and the peg-out PSBT round as pure state machines on the reference's wire, a vote journal, the `cosign` signer | [![](https://img.shields.io/crates/v/sidestr-round.svg)](https://crates.io/crates/sidestr-round) | [docs.rs](https://docs.rs/sidestr-round) |
+| [`sidestr-hitch`](sidestr-hitch) | Hitch's Lightning-shaped channel kernel: 2-of-2 funding, revocable commitments, HTLCs and claims, peer finality/recovery, durable snapshots, invoices and one-hop routing | [![](https://img.shields.io/crates/v/sidestr-hitch.svg)](https://crates.io/crates/sidestr-hitch) | [docs.rs](https://docs.rs/sidestr-hitch) |
 | [`sidestr-agent`](sidestr-agent) | an agent wallet where the did:nostr key is the wallet: balance, npub → address, spends, burns, EVM deposits and asset transfers as kind-23500 events, a peg-in plan, a faucet; the library builds for wasm32 | [![](https://img.shields.io/crates/v/sidestr-agent.svg)](https://crates.io/crates/sidestr-agent) | [docs.rs](https://docs.rs/sidestr-agent) |
 | [`sidestr-evm`](sidestr-evm) | the `evm` rule: Ethereum transactions carried in sidechain transactions, run through revm (Cancun) beside the UTXO set, deposits and withdrawals at 1 sat = 1 gwei, the state root in the coinbase; every root checked against the reference on ethereumjs | not published | — |
 
@@ -53,9 +54,10 @@ of account (ADR-2117):
 Neither depends on the published crates. Another reserve network would be a
 sibling adapter.
 
-The dependencies run one way: `core` ← `header`, `nostr`, `wallet` ← `round`
-← `agent`, and `core` ← `evm`. `sidestr-core` never depends on
-`sidestr-header`, nor on the EVM: revm and alloy stay in `sidestr-evm`.
+The dependencies remain acyclic. `sidestr-hitch` depends on `sidestr-core`;
+the channel crate does not enter the consensus core. `sidestr-core` never
+depends on `sidestr-header`, nor on the EVM: revm and alloy stay in
+`sidestr-evm`.
 
 ## Status
 
@@ -84,7 +86,15 @@ Ported since 0.0.2:
   validates an evm chain end to end, with the assets rule as consensus
   beside it, as the reference installs it on every chain naming a rule. Every
   state root of a scripted chain matches siding on ethereumjs byte for byte.
-  The JSON-RPC endpoint (`evmrpc.mjs`) is not ported.
+  The JSON-RPC endpoint (`evmrpc.mjs`) is ported as `sidestr_evm::rpc`.
+- **Hitch channels: pure channel kernel ported.** The funding output,
+  asymmetric commitments, revocable delayed outputs, HTLC success/timeout/
+  penalty paths, cooperative and unilateral close produce the reference's
+  exact scripts. The Rust peer machine covers opening, update/ack/revoke
+  finality, collision handling, recovery, buffered updates and checked
+  snapshots. Invoices and one-hop hub routing preserve Hitch's fee and
+  timeout rules. A host still supplies wallet funding, Nostr relay I/O,
+  chain watches, storage and broadcasting.
 - Out of scope: the pool rule and a trust-minimised peg-out. Assets are read
   as a holders' view on any chain (`sidestr-core`'s `assets`), and are
   consensus on a chain that names a rule.
@@ -113,6 +123,12 @@ The reference engine is the oracle. What is tested:
   ethereumjs 10.1.3, is replayed by `sidestr-evm`: every accepted block's
   state root, withdrawals and receipts match byte for byte, and every refused
   block is refused (`sidestr-evm/tests/oracle.rs`).
+- **Hitch:** every Rust-built commitment, close, delayed sweep, penalty,
+  HTLC success/timeout/revocation claim and direct key-path claim is checked
+  by Hitch's JavaScript module and the schema kernel interpreter
+  (`sidestr-hitch/tests/oracle.rs`). Every opening, update, acknowledgement,
+  revocation, close and sync message also passes Hitch's exact JavaScript
+  wire validator (`sidestr-hitch/tests/wire_oracle.rs`).
 - **Audit regressions:** independent audits' counter-examples are kept as
   `tests/audit_regressions*.rs`. The 0.0.3 release was verified by GPT-6
   Astra before publishing. It re-ran every gate and confirmed each change at
@@ -121,19 +137,20 @@ The reference engine is the oracle. What is tested:
   them equal. It raised four findings, all fixed and pinned as
   `tests/audit_regressions_0_0_3.rs`.
 
-To run the oracle suites, check out the three reference repositories at the
+To run the oracle suites, check out the four reference repositories at the
 pinned commits and name them:
 
 ```sh
 git clone https://github.com/sidestr/spec && git -C spec checkout fa86dac83d47b8f70195132e91e9dc083e1d9228
 git clone https://github.com/bitcoin-desktop/schema && git -C schema checkout b8cbf6337c7450fe14ddc5bce00c7280059aab5d
 git clone https://github.com/bitcoin-blake/blaketestnode && git -C blaketestnode checkout d2764d21fe1f8c29b1979e49eb8287a72dd2347e
+git clone https://github.com/bitcoin-blake/hitch && git -C hitch checkout 6752e24041f98dd9260d6be6f3710b29e9664a7f
 
-SIDESTR_SIDING=$PWD/spec/siding SCHEMA=$PWD/schema BLAKETESTNODE=$PWD/blaketestnode \
+SIDESTR_SIDING=$PWD/spec/siding SCHEMA=$PWD/schema BLAKETESTNODE=$PWD/blaketestnode HITCH=$PWD/hitch \
   cargo test --workspace --all-features
 ```
 
-Without these three variables the oracle halves say they are skipped, and
+Without these four variables the oracle halves say they are skipped, and
 the Rust halves still run. You need Node.js 20 or later, and no `npm
 install`. CI runs both ways ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 

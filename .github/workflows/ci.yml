@@ -17,6 +17,9 @@ env:
   SIDESTR_SPEC_REF: fa86dac83d47b8f70195132e91e9dc083e1d9228
   SCHEMA_REF: b8cbf6337c7450fe14ddc5bce00c7280059aab5d
   BLAKETESTNODE_REF: d2764d21fe1f8c29b1979e49eb8287a72dd2347e
+  # Hitch's channel transaction oracle is independent of siding's release
+  # pin. Its script and wire format first landed as one reviewed unit here.
+  HITCH_REF: 6752e24041f98dd9260d6be6f3710b29e9664a7f
 
 jobs:
   gate:
@@ -83,7 +86,7 @@ jobs:
       # backend, and a library must leave that choice to the application
       # that links it.
       - name: wasm32 (the libraries without the agent's CLI)
-        run: cargo build --target wasm32-unknown-unknown -p sidestr-core -p sidestr-wallet -p sidestr-nostr -p sidestr-agent --no-default-features
+        run: cargo build --target wasm32-unknown-unknown -p sidestr-core -p sidestr-wallet -p sidestr-nostr -p sidestr-hitch -p sidestr-agent --no-default-features
 
   oracle:
     name: against the reference (siding at fa86dac)
@@ -111,6 +114,13 @@ jobs:
           repository: bitcoin-blake/blaketestnode
           ref: ${{ env.BLAKETESTNODE_REF }}
           path: reference/blaketestnode
+
+      - name: Check out bitcoin-blake/hitch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: bitcoin-blake/hitch
+          ref: ${{ env.HITCH_REF }}
+          path: reference/hitch
 
       # siding wants Node 22 or later (WebSocket built in); so does the
       # sidestr-evm fixture generator's ethereumjs.
@@ -163,10 +173,12 @@ jobs:
       # Genesis and blocks both ways, the records, the wallet's spends and
       # burns through Siding.submit(), its EVM deposits byte for byte with
       # siding's buildSpend, the txsign parity (byte-identical witnesses on
-      # both families), and the mixed Rust/JS signing rounds.
+      # both families), Hitch channel spends through its kernel interpreter,
+      # and the mixed Rust/JS signing rounds.
       - name: Oracle and interop suites
         run: cargo test --workspace --all-features
         env:
           SIDESTR_SIDING: ${{ github.workspace }}/reference/spec/siding
           SCHEMA: ${{ github.workspace }}/reference/schema
           BLAKETESTNODE: ${{ github.workspace }}/reference/blaketestnode
+          HITCH: ${{ github.workspace }}/reference/hitch

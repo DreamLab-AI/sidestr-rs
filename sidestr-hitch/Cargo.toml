@@ -1,0 +1,26 @@
+[package]
+name = "sidestr-hitch"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+license = "AGPL-3.0-only"
+description = "Hitch-compatible payment-channel kernel for Bitcoin BLAKE2b testnet4"
+readme = "README.md"
+documentation = "https://docs.rs/sidestr-hitch"
+keywords = ["bitcoin", "lightning", "payment-channel", "taproot", "sidestr"]
+categories = ["cryptography::cryptocurrencies"]
+publish = true
+include = ["src/**", "tests/**", "README.md", "CHANGELOG.md", "LICENSE", "Cargo.toml"]
+
+[dependencies]
+sidestr-core = { path = "../sidestr-core", version = "0.3.3" }
+bitcoin = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+hex = { workspace = true }

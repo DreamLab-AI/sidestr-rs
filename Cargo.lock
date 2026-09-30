@@ -4893,6 +4893,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sidestr-hitch"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "hex",
+ "serde",
+ "serde_json",
+ "sidestr-core",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "sidestr-nostr"
 version = "0.3.1"
 dependencies = [

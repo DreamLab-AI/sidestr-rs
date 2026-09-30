@@ -18,6 +18,10 @@ members = [
     # The level-2 co-signing round as a pure state machine on upstream's wire (23510-23514),
     # the peg-out PSBT round, a durable vote journal and the `cosign` signer (ADR-2101).
     "sidestr-round",
+    # Hitch's Lightning-shaped payment channels: funding, revocable
+    # commitments, HTLCs and claims, the peer/recovery protocol and one-hop
+    # routing as pure state machines.
+    "sidestr-hitch",
     # An agent wallet where a did:nostr key is the wallet: balance, npub → address,
     # spends and burns as kind-23500 events signed by the agent's key, a peg-in plan.
     "sidestr-agent",
