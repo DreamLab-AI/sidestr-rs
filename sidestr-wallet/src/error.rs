@@ -105,6 +105,10 @@ pub enum Error {
     /// address"), or the chain does not name the `evm` rule.
     #[error("evm deposit: {0}")]
     Evm(String),
+    /// A BIP 21 payment request refused as written, or one that could not
+    /// be built ([`crate::bip21`]).
+    #[error(transparent)]
+    PaymentRequest(#[from] crate::bip21::RequestError),
     /// A producer answered `{"error": …}` to a `POST /tx`.
     #[error("producer refused: {0}")]
     Refused(String),

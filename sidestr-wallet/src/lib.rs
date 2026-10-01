@@ -43,6 +43,7 @@
 //! | [`pegin`] | the parent side: peg output + `pegin:<chain id>:<script>` marker; the peg-out payment and checkpoint shapes; scanning | 6, 7, 11 | `parent.mjs`, `checkpoint.mjs` |
 //! | [`deliver`] | `POST /tx`, `/coins`, `/tip`, `/chain.json` as data; kind 23500 / 23501 templates; HTTP behind feature `client` | 11 | `spend.mjs deliver`, `bin/siding.mjs` routes |
 //! | [`key`] | the [`SpendSigner`] port, a plain key, pubkey → `5120` script → bech32m, ADR-2101 spend-key derivation | 3 | `sign.mjs`, `address.mjs` |
+//! | [`bip21`] | `bitcoin:` payment requests read and written as Reef reads them; the address judged as any destination | BIP 21 | Reef `lib/wallet.mjs parsePaymentUri` |
 //! | [`policy`] | the [`SpendPolicy`] hook every builder consults; [`Permissive`] | none | ADR-2100 |
 //!
 //! # A payment, end to end
@@ -150,6 +151,7 @@
 )]
 
 pub mod asset;
+pub mod bip21;
 pub mod burn;
 pub mod coins;
 pub mod compose;
@@ -163,6 +165,7 @@ pub mod policy;
 pub mod select;
 pub mod spend;
 
+pub use bip21::PaymentRequest;
 pub use burn::{build_burn, BurnRequest};
 pub use coins::Coin;
 pub use deposit::{build_evm_deposit, DepositRequest};

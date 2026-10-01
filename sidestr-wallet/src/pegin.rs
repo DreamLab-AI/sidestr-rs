@@ -75,6 +75,26 @@ pub fn parent_network(parent: &Parent) -> Option<Network> {
     }
 }
 
+/// `text` as an address on `parent`'s network: [`Error::BadDestination`]
+/// when it is no address, [`Error::WrongNetwork`] when it is another
+/// network's, [`Error::Core`] for a reserved parent. Shared by
+/// [`build_pegin`] and [`crate::bip21::PaymentRequest::parent_address`].
+pub(crate) fn parent_address(parent: &Parent, text: &str) -> Result<Address> {
+    let network =
+        parent_network(parent).ok_or(Error::Core(sidestr_core::Error::ReservedParent {
+            alias: parent.alias,
+            label: parent.label,
+        }))?;
+    Address::from_str(text.trim())
+        .map_err(|_| Error::BadDestination(text.to_string()))?
+        .require_network(network)
+        .map_err(|_| Error::WrongNetwork {
+            address: text.to_string(),
+            network: network.to_string(),
+            parent: parent.alias.to_string(),
+        })
+}
+
 /// The most a marker's push carries: the shared grammar
 /// ([`sidestr_core::marker::op_return_data`]) reads a direct push or
 /// `OP_PUSHDATA1`, one length byte, so 255 bytes; `PushBytesBuf` itself would
@@ -123,20 +143,7 @@ pub fn build_pegin(
     side_script_or_address: &str,
 ) -> Result<PegIn> {
     let parent = chain.parent()?;
-    let network =
-        parent_network(parent).ok_or(Error::Core(sidestr_core::Error::ReservedParent {
-            alias: parent.alias,
-            label: parent.label,
-        }))?;
-    let wrong = |a: &str| Error::WrongNetwork {
-        address: a.to_string(),
-        network: network.to_string(),
-        parent: parent.alias.to_string(),
-    };
-    let address = Address::from_str(peg_address.trim())
-        .map_err(|_| Error::BadDestination(peg_address.to_string()))?
-        .require_network(network)
-        .map_err(|_| wrong(peg_address))?;
+    let address = parent_address(parent, peg_address)?;
     let peg_script = address.script_pubkey();
     if !peg_script.is_p2tr() {
         return Err(Error::BadDestination(format!(

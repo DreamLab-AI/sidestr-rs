@@ -2,6 +2,42 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
+## 0.5.1 (2026-10-01)
+
+BIP 21 payment requests, read as Reef reads them (bitcoin-blake/reef
+`lib/wallet.mjs parsePaymentUri`, commits `91d6eb2` and `648487a`). Additive.
+
+### Added
+
+- `bip21::PaymentRequest` (re-exported at the root): `parse` takes a
+  `bitcoin:` URI to the address, the amount in sats and the requester's
+  label and message, with Reef's acceptance and refusal rules exactly: not a
+  request is `Ok(None)`; the scheme in any case, an all-capitals address in
+  lower case; the amount in coins read into sats without floating point (no
+  comma, grouping, sign, unit or exponent, at most 8 decimals, not zero, not
+  over 21 million coins, not twice); `req-…` refused, other unknown
+  parameters ignored; words percent-decoded with `+` as a space and capped
+  at 200 UTF-16 code units; a broken `%` escape refused. Refusals are
+  `bip21::RequestError`, in Reef's words.
+- `PaymentRequest::new`, `with_amount`, `with_label`, `with_message`,
+  `to_uri` (and `Display`): a builder that refuses what a reader would refuse
+  or cut (not a segwit address, zero or over 21 million coins, words over
+  200 code units), so its URI reads back unchanged.
+- `PaymentRequest::resolve(hrp)`: the address as a sidechain destination,
+  as `spend::resolve_to` judges one (any prefix, with a note).
+  `PaymentRequest::parent_address(parent)`: the address on the parent's
+  network, as `build_pegin` judges the peg address (`tb1…` beside tbtc4 and
+  txbt4). `FromStr` folds "not a request" into `Error::BadDestination`.
+- `Error::PaymentRequest` (the enum is `#[non_exhaustive]`).
+- `tests/bip21.rs` and `tests/xcheck-bip21.mjs`: with `REEF` naming a Reef
+  checkout, Reef's own parser reads every string in a 118-string corpus as
+  this crate does, and reads every URI built here back unchanged.
+
+### Changed
+
+- `build_pegin`'s parent-network check and `resolve_to`'s address half are
+  each one internal function now, shared with `bip21`; behaviour unchanged.
+
 ## 0.5.0 (2026-10-01)
 
 The `--evm` deposit branch of `siding send` (`lib/spend.mjs buildSpend`,
