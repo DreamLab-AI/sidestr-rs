@@ -20,6 +20,8 @@ env:
   # Hitch's channel transaction oracle is independent of siding's release
   # pin. Its script and wire format first landed as one reviewed unit here.
   HITCH_REF: 62f8e390b8acbbf1e534ee48cf2d519e0b859586
+  # Reef's BIP 21 parser is the oracle for sidestr-wallet's payment requests.
+  REEF_REF: 648487ac8bd98d854ec705e9d2e47f54435a4cc6
 
 jobs:
   gate:
@@ -122,6 +124,13 @@ jobs:
           ref: ${{ env.HITCH_REF }}
           path: reference/hitch
 
+      - name: Check out bitcoin-blake/reef
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: bitcoin-blake/reef
+          ref: ${{ env.REEF_REF }}
+          path: reference/reef
+
       # siding wants Node 22 or later (WebSocket built in); so does the
       # sidestr-evm fixture generator's ethereumjs.
       - name: Set up Node
@@ -187,3 +196,4 @@ jobs:
           SCHEMA: ${{ github.workspace }}/reference/schema
           BLAKETESTNODE: ${{ github.workspace }}/reference/blaketestnode
           HITCH: ${{ github.workspace }}/reference/hitch
+          REEF: ${{ github.workspace }}/reference/reef
