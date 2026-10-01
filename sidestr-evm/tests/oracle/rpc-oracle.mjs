@@ -1,4 +1,4 @@
-// The fixture generator for sidestr-evm's JSON-RPC: siding's Ethereum JSON-RPC (sidestr/spec at fa86dac,
+// The fixture generator for sidestr-evm's JSON-RPC: siding's Ethereum JSON-RPC (sidestr/spec at fe689e9,
 // siding/lib/evmrpc.mjs, AGPL-3.0, Melvin Carvalho) over the `evm` rule (siding/lib/overlays/evm.mjs), both
 // the reference modules themselves, on ethereumjs 10.1.3, driven by a scripted host. Every request and the
 // exact text `JSON.stringify` makes of its answer are written to `rpc.json` for the Rust port to reproduce
@@ -20,11 +20,11 @@ import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node
 import * as T from '@ethereumjs/tx'; import * as com from '@ethereumjs/common'; import * as util from '@ethereumjs/util'; import { RLP } from '@ethereumjs/rlp';
 import { secp256k1 } from '@noble/curves/secp256k1.js'; import { keccak_256 } from '@noble/hashes/sha3.js';
 
-const PINNED = { 'lib/evmrpc.mjs': '40440d6a56fa552f9ca0d0b5dae4f0917bdde23220ec99cbc0c7e6c567c90d32', 'lib/overlays/evm.mjs': '8903eab6c67244ded02edf8122112efb015ee1e3e5d4ca913372e542cc1820cc' };
+const PINNED = { 'lib/evmrpc.mjs': '40440d6a56fa552f9ca0d0b5dae4f0917bdde23220ec99cbc0c7e6c567c90d32', 'lib/overlays/evm.mjs': 'd526495d008a2f94b2d7060585ce6f7c89810d52b46d14883719fee5161aa58d' };
 const out = process.argv[2]; if (!out) { console.error('usage: node rpc-oracle.mjs <fixtures dir>'); process.exit(2); }
 const here = path.dirname(new URL(import.meta.url).pathname);
 for (const [f, want] of Object.entries(PINNED)) {
-  const p = path.join(here, f); if (!fs.existsSync(p)) { console.error(`${f} is missing: copy it from siding at fa86dac`); process.exit(2); }
+  const p = path.join(here, f); if (!fs.existsSync(p)) { console.error(`${f} is missing: copy it from siding at fe689e9`); process.exit(2); }
   const sum = crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); if (sum !== want) { console.error(`${f} is not the pinned file (sha256 ${sum})`); process.exit(2); }
 }
 const { evmOverlay, carrierScript, depositScript, rootScript, GWEI, WITHDRAW } = await import(path.join(here, 'lib/overlays/evm.mjs'));
@@ -365,7 +365,7 @@ await httpCase('whitespace around the body', ' \n\t{"id":1,"method":"eth_chainId
 await refused('eth_call to the KZG precompile, which ethereumjs lacks', 'eth_call', [{ to: '0x000000000000000000000000000000000000000a', data: '0x' + '00'.repeat(192) }]);
 
 fs.mkdirSync(out, { recursive: true });
-const meta = { reference: `sidestr/spec fa86dac83d47b8f70195132e91e9dc083e1d9228 siding/lib/evmrpc.mjs (sha256 ${PINNED['lib/evmrpc.mjs']}) over siding/lib/overlays/evm.mjs (sha256 ${PINNED['lib/overlays/evm.mjs']})`, ethereumjs: '10.1.3', node: process.version };
+const meta = { reference: `sidestr/spec fe689e9c723f9bf43393d2dd5b6f924a701c8a18 siding/lib/evmrpc.mjs (sha256 ${PINNED['lib/evmrpc.mjs']}) over siding/lib/overlays/evm.mjs (sha256 ${PINNED['lib/overlays/evm.mjs']})`, ethereumjs: '10.1.3' };
 fs.writeFileSync(path.join(out, 'rpc.json'), JSON.stringify({ ...meta, chain, genesis: { hash: s.node.chain[0], time: GENESIS_TIME }, now: NOW, steps }, null, 1) + '\n');
 const count = (k) => steps.filter((x) => x[k]).length;
 console.error(`${count('rpc')} requests, ${count('http')} bodies, ${count('block')} blocks, ${count('submit')} submissions`);

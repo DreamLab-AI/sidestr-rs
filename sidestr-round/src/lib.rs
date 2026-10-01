@@ -113,6 +113,8 @@
 //! connector for a private root. Proven by a handshake and a
 //! REQ/EVENT/EOSE exchange against the in-process relay behind a
 //! certificate generated in the test (`tests/audit_regressions_node.rs`).
+//! `relay::RelayPool` shares one reconnecting socket per URL among
+//! subscriptions, fetches and publishes and closes it after two idle seconds.
 //!
 //! # Honest limits
 //!
@@ -163,7 +165,7 @@
 //! The key is a file, never an argument. The block directory must already
 //! hold the chain's `blocks.dat` and `blocks.json` (copied from a mirror);
 //! a joining signer does not make a genesis. `cosign` serves
-//! `/status.json`, `/chain.json`, `/tip`, `/blocks.json`, `/blocks.dat`
+//! `/status.json`, `/chain.json`, `/tip`, `/blocks.json` (with `ETag`), `/blocks.dat`
 //! (with `Range`), `/coins/<script hex>`, `/pegouts.json` and `POST /tx`
 //! on 127.0.0.1, announces kind 33333 naming `--announce-mirror` after
 //! every block, and with a parent node claims peg-ins and pays peg-outs

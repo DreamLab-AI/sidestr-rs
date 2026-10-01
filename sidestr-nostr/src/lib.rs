@@ -16,7 +16,8 @@
 //! Melvin Carvalho (<https://github.com/sidestr/spec>, AGPL-3.0), ported
 //! from commit `2de40bdac4cba01be0864156a553d8287c22e279` (the tip
 //! announcement and transaction events follow `announce.mjs` and
-//! `relay.mjs` at `fa86dac`, SPEC 0.0.4: the `peg` tag and kind 23503), with
+//! `relay.mjs` through `fe689e9`: the `peg` tag, kind 23503 and federated
+//! announcement authors), with
 //! the event
 //! id and signature rule from the schema kernel it loads
 //! (`bitcoin-desktop/schema`, `codec/nostr.js`), and carries the same
@@ -45,8 +46,8 @@
 //! In Melvin Carvalho's words, adapted from `announce.mjs` and SPEC 11: a
 //! client that knows only a chain id asks a relay for the chain's kind-33333
 //! announcement, takes a mirror from it, reads that mirror's `chain.json`,
-//! and accepts the mirror when the document's signer is the announcement's
-//! author. A mirror is then held to the announcement: the header at its tip
+//! and accepts the mirror when the document's signer, or one of its level-2
+//! signers, is the announcement's author. A mirror is then held to the announcement: the header at its tip
 //! must be the announced one, and it may be behind but never ahead of the
 //! signer. **A chain id is a name, not a proof**, so with only the id the
 //! newest announcement wins and a client shows the signer it settled on; a
@@ -78,7 +79,7 @@
 //! let t = parse_tip_as(&announcement, Family::Stock).unwrap();
 //! let chosen = choose_mirror(&t, "sidestr:example", |url| {
 //!     assert_eq!(url, "https://mirror.example/example/chain.json");
-//!     Ok(MirrorChain { id: "sidestr:example".into(), signer: Some(me.clone()) })
+//!     Ok(MirrorChain { id: "sidestr:example".into(), signer: Some(me.clone()), signers: vec![] })
 //! }).unwrap();
 //! assert_eq!(chosen.mirror, "https://mirror.example/example");
 //! // …and hold the mirror to the announcement

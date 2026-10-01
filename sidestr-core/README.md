@@ -15,23 +15,23 @@ order of blocks; they do not decide the rules.
 
 ```toml
 [dependencies]
-sidestr-core = "0.3"
+sidestr-core = "0.4"
 # and, for a chain beside a BLAKE2b parent (xbt, txbt4):
 sidestr-header = "0.3"
 ```
 
-The rules, state and chain are generic over the header family
+Rules, state and chain are generic over the header family
 (`sidestr_core::block::HeaderFamily`): `State` / `Chain` are the stock
 instantiation (`btc`, `tbtc4`), and `StateOf<Blake2bV2>` / `ChainOf<Blake2bV2>`
 with `sidestr_header::Blake2bV2` validate a chain beside Knots' BLAKE2b fork.
-The dependency edge runs from `sidestr-header` to this crate, never back.
+Dependency flow runs from `sidestr-header` to this crate, never back.
 
 ## Attribution
 
 This crate is a port of **siding**, the reference implementation of sidestr by
-Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
-AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279` and
-brought to SPEC 0.0.4 (`@sidestr/spec` 0.0.6) at `fa86dac83d47b8f70195132e91e9dc083e1d9228`
+Melvin Carvalho ([github.com/sidestr/spec](https://github.com/sidestr/spec),
+AGPL-3.0), ported from commit `2de40bdac4cba01be0864156a553d8287c22e279` and
+brought through `fe689e9c723f9bf43393d2dd5b6f924a701c8a18`
 (`siding/lib/{parents,block,chain,overlay,marker,records,address,checkpoint}.mjs`,
 `bin/siding.mjs`, and the tests in `siding/test/`). Two parts come from the
 engine siding loads, by the same author and under the same licence:
@@ -67,9 +67,8 @@ cites its sections, and every ported function names its original.
   randomness is zero for every block, as siding sets it for the genesis.
 - A document naming a rule is refused unless the state carries a rule of that
   name (`ChainDocument::validate_with`, `StateOf::from_genesis_with_rules`):
-  the assets rule is here (`assets::AssetsRule`), the EVM rule is
-  `sidestr-evm`, and `pool` is carried nowhere. Plain `validate()` and
-  `State::with_key` still refuse every named rule.
+  assets, pools and markets are here; the EVM rule is `sidestr-evm`. Plain
+  `validate()` and `State::with_key` still refuse every named rule.
 - Level 2 carries the pure parts of `federation.mjs` and not the round (that
   is [`sidestr-round`](https://crates.io/crates/sidestr-round)): the script
   path is verified for exactly the `multi_a(k, …)` leaf, an unknown leaf
@@ -83,23 +82,23 @@ cites its sections, and every ported function names its original.
   before the hash is held to the document's `genesisHash`; siding applies
   block 0 on the hash alone. There is no trusted import.
 - A stock header with version bit 31 set is refused at decode and, on the
-  typed path, by `btc:rule-header-version` — the rule the kernel names, which
+  typed path, by `btc:rule-header-version`, the rule the kernel names, which
   reads a stock version as `i32le`.
 - A mirror's `blocks.dat` record framing (`[u32 height][u32 size]`) is held to
   `blocks.json` and to the file's length on every read (`Error::BlockFile`).
 - Markers are written with a canonical push (`OP_PUSHDATA1` above 75 bytes)
-  and read exactly as siding's `opReturnData` reads them — a bare length byte
-  or an `OP_PUSHDATA1` prefix, minimal or not — because that is the burn
+  and read exactly as siding's `opReturnData` reads them: a bare length byte
+  or an `OP_PUSHDATA1` prefix, minimal or not, because that is the burn
   rule's grammar and a burn a reference wallet wrote must be paid. Their
   text is decoded as siding's `TextDecoder` decodes it, one leading UTF-8
   byte-order mark dropped, at exactly the readers that text-decode there
   (burns, claims, the peg-in remainder's hex-form decision, records) and
-  not at the two compared as bytes (the parent peg-out record, the
-  checkpoint) — so a BOM-led burn is recorded, or refused, alike.
+  not at the two compared as bytes (the parent peg-out record and the
+  checkpoint), so a BOM-led burn is recorded, or refused, alike.
   `tests/audit_regressions_records.rs` holds every marker case and every
   block of an audit corpus to identical derived lists in both engines.
 
-## Status — 0.3.0
+## Status: 0.4.0
 
 Level 1 (one signer), both header families, end to end: genesis from the
 document, block production, validation, the mempool policy, the block file.
@@ -142,18 +141,25 @@ family's own rules, tightened the witness decoder, and added level 2's pure
 parts (`federation`: NUMS key, leaf, partial signatures, witness assembly,
 sealing, the `multi_a` verifier, `template_id`, `Chain::open_sealed`).
 `State`, `Chain` and every 0.1 name keep their meaning as the stock
-instantiation. The parent view (`parent`) is behind two traits — the chain
-read-only, the peg wallet — with every decision pure (peg-ins found in
+instantiation. The parent view (`parent`) is behind two traits: the read-only
+chain and the peg wallet, with every decision pure (peg-ins found in
 decoded blocks, what to claim and lock, the burn payment and the checkpoint
 as `send` outputs, reconciliation) and Bitcoin Core's JSON-RPC as the one
 implementation behind the `rpc` feature; `tests/parent_live.rs` (ignored,
 `SIDESTR_PARENT_RPC`) finds the estate's peg-wallet funding on a testnet4
 node without sending anything.
 
+The SPEC 12 rules now include assets, constant-product pools and binary
+prediction markets, with activation heights and replay tests against the
+reference. Producer fallback evicts a transaction that passes admission but
+fails in a block. Peg scans exclude wallet change and self-funded deposits
+unless the announced peg script identifies the output, and retain one claim
+candidate per parent transaction.
+
 Elsewhere in the stack: the level-2 co-signing round is `sidestr-round`,
 tips and transactions over Nostr are `sidestr-nostr`, spending is
-`sidestr-wallet`, the EVM rule is `sidestr-evm`. Not yet: the pool rule, a full script
-interpreter, and the Byzantine-tolerant consensus protocol above the
+`sidestr-wallet`, and the EVM rule is `sidestr-evm`. Not yet: a full script
+interpreter and the Byzantine-tolerant consensus protocol above the
 signature (ADR-2101 review), which is a later crate.
 
 ## Running the checks

@@ -253,6 +253,30 @@ pub fn verify_taproot_key_path(
     }
 }
 
+/// Verify one input under the script templates this crate carries.
+///
+/// Besides taproot key-path spends, the pool and markets rules deliberately
+/// use a bare `OP_TRUE` collateral coin. The reference-generated spend of
+/// that coin has an empty `scriptSig` and witness; that exact form succeeds
+/// here. Other script templates remain unsupported and fail closed.
+pub fn verify_supported_input(
+    tx: &Transaction,
+    index: usize,
+    prevouts: &[TxOut],
+    rules: SighashRules,
+) -> Result<(), String> {
+    let prevout = prevouts.get(index).ok_or("no prevout for the input")?;
+    if prevout.script_pubkey.as_bytes() == [0x51] {
+        let input = tx.input.get(index).ok_or("no input at that index")?;
+        return if input.script_sig.is_empty() && input.witness.is_empty() {
+            Ok(())
+        } else {
+            Err("an OP_TRUE collateral spend has empty scriptSig and witness".into())
+        };
+    }
+    verify_taproot_key_path(tx, index, prevouts, rules).map_err(str::to_owned)
+}
+
 /// The signature-hash rules a chain inherits from its parent's family (SPEC
 /// 3, 0.0.3): Knots' unified sighash beside a BLAKE2b parent, BIP 341
 /// beside stock Bitcoin. The same answer [`HeaderFamily::sighash_rules`]

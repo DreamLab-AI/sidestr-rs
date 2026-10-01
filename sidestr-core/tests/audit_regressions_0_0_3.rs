@@ -1,7 +1,7 @@
 //! The SPEC 0.0.3 verification pass (GPT-6 Astra, 2026-09-23), finding 1,
-//! pinned as fixed. The reference's `scanPegins` asks the peg wallet about
-//! an output only by the address the node reported
-//! (`o.scriptPubKey.address && await ownedByPegWallet(…)`). The Rust
+//! pinned as fixed. The reference's `scanPegins` asks whether the peg wallet
+//! funded a marker transaction, then asks about an output only by the address
+//! the node reported (`o.scriptPubKey.address && await pegWalletView(…)`). The Rust
 //! parent view used to decode each transaction from its hex and derive the
 //! address from the script. So an output the node gave no address was still
 //! asked about, and could be claimed, where the reference found no peg-in.
@@ -10,9 +10,9 @@
 //! The same verbosity-2 block is served to `CoreRpc` over HTTP by a
 //! stand-in, and handed to the reference's `scanPegins` in Node, twice:
 //! - with the peg output's `address` omitted, neither engine finds a peg-in,
-//!   and neither asks the wallet;
+//!   after only the transaction-funding query;
 //! - with it present, both find the peg at the same output, amount and
-//!   address, each after one `getaddressinfo`.
+//!   address, each after the funding query and one `getaddressinfo`.
 //!
 //! Needs `SIDESTR_SIDING`; reports itself skipped without it.
 #![cfg(feature = "rpc")]
@@ -31,7 +31,7 @@ use bitcoin::{
 };
 use serde_json::{json, Value};
 use sidestr_core::marker::peg_marker_data;
-use sidestr_core::parent::{owned_by_peg_wallet, rpc::CoreRpc, scan_pegins, FoundPegin};
+use sidestr_core::parent::{rpc::CoreRpc, scan_pegins_with_wallet, FoundPegin};
 
 /// A Core stand-in serving `block` until it has been idle for two seconds.
 /// Returns the URL and a handle yielding the methods it was asked.
@@ -73,6 +73,7 @@ fn serve(block: Value) -> (String, std::thread::JoinHandle<Vec<String>>) {
                 "getblockhash" => json!("00".repeat(32)),
                 "getblock" => block.clone(),
                 "getaddressinfo" => json!({ "iswatchonly": true }),
+                "gettransaction" => json!({ "details": [] }),
                 other => panic!("unexpected method {other}"),
             };
             methods.push(method);
@@ -125,14 +126,14 @@ fn rust(block: &Value) -> (Vec<FoundPegin>, Vec<String>) {
     let cookie = dir.0.join("cookie");
     std::fs::write(&cookie, "test:test").unwrap();
     let rpc = CoreRpc::new(&url, cookie, Some("peg"));
-    let owner = owned_by_peg_wallet(&rpc);
-    let found = scan_pegins(
+    let found = scan_pegins_with_wallet(
         &rpc,
         "sidestr:verify",
         1,
         1,
         Some(Network::Testnet4),
-        Some(&owner),
+        None,
+        Some(&rpc),
         |_| {},
     )
     .unwrap();
@@ -180,20 +181,24 @@ fn an_output_the_node_gives_no_address_is_not_owned_on_either_engine() {
         }]})
     };
 
-    // the node omitted the peg output's address: no peg-in, no wallet call, on both engines
+    // Without an address both engines stop after the wallet-funding query.
     let quiet = block(false);
     let (found, methods) = rust(&quiet);
     let js = reference(&siding, &quiet);
     assert_eq!(js["found"], json!([]), "{js}");
-    assert_eq!(js["calls"], 0, "{js}");
+    assert_eq!(js["calls"], 1, "{js}");
     assert!(found.is_empty(), "{found:?}");
-    assert_eq!(methods, ["getblockhash", "getblock"], "{methods:?}");
+    assert_eq!(
+        methods,
+        ["getblockhash", "getblock", "gettransaction"],
+        "{methods:?}"
+    );
 
-    // the node gave the address: the same peg-in on both engines, one wallet call each
+    // With an address both engines then make one ownership query and find the same peg-in.
     let told = block(true);
     let (found, methods) = rust(&told);
     let js = reference(&siding, &told);
-    assert_eq!(js["calls"], 1, "{js}");
+    assert_eq!(js["calls"], 2, "{js}");
     assert_eq!(found.len(), 1);
     let (r, j) = (&found[0], &js["found"][0]);
     assert_eq!(r.txid, j["txid"].as_str().unwrap());
@@ -201,5 +206,13 @@ fn an_output_the_node_gives_no_address_is_not_owned_on_either_engine() {
     assert_eq!(r.amount, j["amount"].as_u64().unwrap());
     assert_eq!(r.script.to_hex_string(), j["script"].as_str().unwrap());
     assert_eq!(r.parent_address.as_deref(), j["parentAddress"].as_str());
-    assert_eq!(methods, ["getblockhash", "getblock", "getaddressinfo"]);
+    assert_eq!(
+        methods,
+        [
+            "getblockhash",
+            "getblock",
+            "gettransaction",
+            "getaddressinfo"
+        ]
+    );
 }

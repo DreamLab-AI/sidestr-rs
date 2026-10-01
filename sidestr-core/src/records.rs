@@ -1,13 +1,17 @@
 //! Records (SPEC 12.1): `OP_RETURN` outputs whose data is UTF-8 text of at
-//! most 255 bytes in a single minimal push. `issue:`, `tally:` and `pool:`
-//! are parsed here; the `assets` view ([`crate::assets`]) decides what they
-//! mean. A port of `siding/lib/records.mjs` (AGPL-3.0, Melvin Carvalho).
+//! most 255 bytes in a single minimal push. Asset, pool and prediction-market
+//! records are parsed here; their rules decide what they mean. A port of
+//! `siding/lib/records.mjs` (AGPL-3.0, Melvin Carvalho).
 //!
 //! | record | meaning |
 //! |---|---|
 //! | `issue:<TICKER>:<decimals>` | this transaction issues an asset whose id is its txid |
 //! | `tally:<asset>:<vout>=<amount>[,…]` | those outputs carry those amounts of the asset (`self` in the issuing transaction) |
 //! | `pool:<pool>:<vout>` | the named output is that pool's coin |
+//! | `market:self:<vout>:<resolver>:<expiry>:<grace>` | open a binary market |
+//! | `split\|merge\|redeem:<market>:<vout>` | move the market collateral |
+//! | `resolve:<market>:yes\|no` | the resolver answers |
+//! | `question:<text>` | the market's question (at most 200 UTF-8 bytes) |
 //!
 //! Any other text in an `OP_RETURN` is a record too; it is simply not one of
 //! these three, and [`classify`] leaves it alone, so an application may carry
@@ -123,6 +127,91 @@ pub struct Pool {
     pub vout: u32,
 }
 
+/// The answer recorded by a market resolver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarketOutcome {
+    /// The YES asset wins.
+    Yes,
+    /// The NO asset wins.
+    No,
+}
+
+/// A `market:`, `split:`, `merge:`, `redeem:` or `resolve:` record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MarketRecord {
+    /// `market:self:<vout>:<resolver>:<expiry>:<grace>`.
+    Open {
+        /// The new market coin's output.
+        vout: u32,
+        /// The resolver's lower-case x-only public key.
+        resolver: String,
+        /// Last height at which the market remains open before its grace
+        /// interval.
+        expiry: u32,
+        /// Blocks after expiry during which the resolver may still answer.
+        grace: u32,
+    },
+    /// `split:<market>:<vout>`: add collateral and mint a YES/NO pair.
+    Split {
+        /// The market id (its opening transaction id).
+        market: Txid,
+        /// The replacement market coin's output.
+        vout: u32,
+    },
+    /// `merge:<market>:<vout>`: burn a pair and release collateral.
+    Merge {
+        /// The market id.
+        market: Txid,
+        /// The replacement market coin's output.
+        vout: u32,
+    },
+    /// `redeem:<market>:<vout>`: redeem the winner or refund after grace.
+    Redeem {
+        /// The market id.
+        market: Txid,
+        /// The replacement market coin's output.
+        vout: u32,
+    },
+    /// `resolve:<market>:yes|no`.
+    Resolve {
+        /// The market id.
+        market: Txid,
+        /// The resolver's answer.
+        outcome: MarketOutcome,
+    },
+}
+
+impl MarketRecord {
+    /// The action name used by the reference's diagnostics.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Open { .. } => "open",
+            Self::Split { .. } => "split",
+            Self::Merge { .. } => "merge",
+            Self::Redeem { .. } => "redeem",
+            Self::Resolve { .. } => "resolve",
+        }
+    }
+
+    /// The existing market named by an action, or `None` for an opening.
+    pub fn market(&self) -> Option<Txid> {
+        match self {
+            Self::Open { .. } => None,
+            Self::Split { market, .. }
+            | Self::Merge { market, .. }
+            | Self::Redeem { market, .. }
+            | Self::Resolve { market, .. } => Some(*market),
+        }
+    }
+}
+
+/// A `question:<text>` record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Question {
+    /// The non-empty question, at most 200 UTF-8 bytes.
+    pub text: String,
+}
+
 fn amount(s: &str) -> Option<u64> {
     // `^[1-9]\d{0,15}$`, at most MAX_AMOUNT
     let b = s.as_bytes();
@@ -149,6 +238,20 @@ fn vout(s: &str) -> Option<u32> {
         return None;
     }
     s.parse().ok()
+}
+
+fn height(s: &str) -> Option<u32> {
+    if !(1..=9).contains(&s.len()) || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
+}
+
+fn txid(s: &str) -> Option<Txid> {
+    match asset_ref(s)? {
+        AssetRef::Id(id) => Some(id),
+        AssetRef::SelfTx => None,
+    }
 }
 
 /// `issue:<TICKER>:<decimals>` (`parseIssue`).
@@ -196,9 +299,61 @@ pub fn parse_pool(text: &str) -> Option<Pool> {
     })
 }
 
+/// Parse a binary-market record (`parseMarket`).
+pub fn parse_market(text: &str) -> Option<MarketRecord> {
+    let fields: Vec<&str> = text.split(':').collect();
+    match fields.as_slice() {
+        ["market", "self", output, resolver, expiry, grace]
+            if resolver.len() == 64
+                && resolver
+                    .bytes()
+                    .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) =>
+        {
+            Some(MarketRecord::Open {
+                vout: vout(output)?,
+                resolver: (*resolver).to_owned(),
+                expiry: height(expiry)?,
+                grace: height(grace)?,
+            })
+        }
+        ["split", market, output] => Some(MarketRecord::Split {
+            market: txid(market)?,
+            vout: vout(output)?,
+        }),
+        ["merge", market, output] => Some(MarketRecord::Merge {
+            market: txid(market)?,
+            vout: vout(output)?,
+        }),
+        ["redeem", market, output] => Some(MarketRecord::Redeem {
+            market: txid(market)?,
+            vout: vout(output)?,
+        }),
+        ["resolve", market, "yes"] => Some(MarketRecord::Resolve {
+            market: txid(market)?,
+            outcome: MarketOutcome::Yes,
+        }),
+        ["resolve", market, "no"] => Some(MarketRecord::Resolve {
+            market: txid(market)?,
+            outcome: MarketOutcome::No,
+        }),
+        _ => None,
+    }
+}
+
+/// Parse `question:<text>` (`parseQuestion`).
+pub fn parse_question(text: &str) -> Option<Question> {
+    let question = text.strip_prefix("question:")?;
+    if question.is_empty() || question.len() > 200 {
+        return None;
+    }
+    Some(Question {
+        text: question.to_owned(),
+    })
+}
+
 /// A transaction's records, classified (`classify`): each list keeps the
-/// record's `vout`. `bad` holds text that starts like one of the three but
-/// does not parse, which the assets rule refuses.
+/// record's `vout`. `bad` holds text that starts like one of the recognised
+/// forms but does not parse, which the assets rule refuses.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Classified {
     /// `issue:` records.
@@ -207,7 +362,11 @@ pub struct Classified {
     pub tallies: Vec<(u32, Tally)>,
     /// `pool:` records.
     pub pools: Vec<(u32, Pool)>,
-    /// Malformed `issue:`, `tally:` or `pool:` text.
+    /// Market action records.
+    pub markets: Vec<(u32, MarketRecord)>,
+    /// `question:` records.
+    pub questions: Vec<(u32, Question)>,
+    /// Malformed recognised text.
     pub bad: Vec<String>,
 }
 
@@ -228,6 +387,19 @@ pub fn classify(tx: &Transaction) -> Classified {
         } else if text.starts_with("pool:") {
             match parse_pool(&text) {
                 Some(r) => out.pools.push((v, r)),
+                None => out.bad.push(text),
+            }
+        } else if ["market:", "split:", "merge:", "redeem:", "resolve:"]
+            .iter()
+            .any(|prefix| text.starts_with(prefix))
+        {
+            match parse_market(&text) {
+                Some(r) => out.markets.push((v, r)),
+                None => out.bad.push(text),
+            }
+        } else if text.starts_with("question:") {
+            match parse_question(&text) {
+                Some(r) => out.questions.push((v, r)),
                 None => out.bad.push(text),
             }
         }
@@ -312,5 +484,42 @@ mod tests {
         assert_eq!(parse_tally(&t).unwrap().asset, AssetRef::Id(id));
         assert_eq!(tally_text(None, &[(0, 1)]).unwrap(), "tally:self:0=1");
         assert!(tally_text(None, &[(0, 0)]).is_err());
+    }
+
+    #[test]
+    fn market_and_question_grammar() {
+        let id = "ab".repeat(32);
+        let resolver = "cd".repeat(32);
+        assert_eq!(
+            parse_market(&format!("market:self:12:{resolver}:150000:20")),
+            Some(MarketRecord::Open {
+                vout: 12,
+                resolver,
+                expiry: 150_000,
+                grace: 20,
+            })
+        );
+        assert!(matches!(
+            parse_market(&format!("split:{id}:0")),
+            Some(MarketRecord::Split { vout: 0, .. })
+        ));
+        assert!(matches!(
+            parse_market(&format!("resolve:{id}:no")),
+            Some(MarketRecord::Resolve {
+                outcome: MarketOutcome::No,
+                ..
+            })
+        ));
+        assert!(parse_market(&format!("market:self:0:{}:1:1", "CD".repeat(32))).is_none());
+        assert!(parse_market(&format!("split:{}:0", "AB".repeat(32))).is_none());
+        assert!(parse_market(&format!("resolve:{id}:maybe")).is_none());
+        assert_eq!(
+            parse_question("question:Will it rain?"),
+            Some(Question {
+                text: "Will it rain?".into()
+            })
+        );
+        assert!(parse_question("question:").is_none());
+        assert!(parse_question(&format!("question:{}", "é".repeat(101))).is_none());
     }
 }

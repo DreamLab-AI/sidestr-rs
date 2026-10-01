@@ -438,7 +438,8 @@ pub fn newest_event<'a>(
 }
 
 /// The part of a mirror's `chain.json` the trust rule reads: its id and its
-/// signer. Everything else is `sidestr_core::document::ChainDocument`'s.
+/// level-1 signer or level-2 federation. Everything else is
+/// `sidestr_core::document::ChainDocument`'s.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MirrorChain {
     /// The chain id the document claims.
@@ -446,6 +447,16 @@ pub struct MirrorChain {
     /// The signer the document names (level 1).
     #[serde(default)]
     pub signer: Option<String>,
+    /// The signers the document names (level 2).
+    #[serde(default)]
+    pub signers: Vec<String>,
+}
+
+/// Whether `pubkey` is authorised to announce this chain document: the
+/// level-1 signer or any member of its level-2 federation
+/// (`announce.mjs announcedBy`).
+pub fn announced_by(chain: &MirrorChain, pubkey: &str) -> bool {
+    chain.signer.as_deref() == Some(pubkey) || chain.signers.iter().any(|s| s == pubkey)
 }
 
 /// A mirror the announcer vouches for.
@@ -466,7 +477,9 @@ pub fn chain_json_url(mirror: &str) -> String {
 /// announcement names whose `chain.json` has this chain id **and** names the
 /// announcer as its signer. `fetch` is asked for [`chain_json_url`] of each
 /// mirror in turn and answers with the document or a message; the messages
-/// end up in [`Error::NoMirror`] when none checks out.
+/// end up in [`Error::NoMirror`] when none checks out. A level-2 federation
+/// authorises any key in `signers`, just as a level-1 document authorises
+/// its single `signer` ([`announced_by`]).
 pub fn choose_mirror(
     tip: &Tip,
     chain_id: &str,
@@ -475,19 +488,30 @@ pub fn choose_mirror(
     let mut tried = Vec::new();
     for m in &tip.mirrors {
         match fetch(&chain_json_url(m)) {
-            Ok(chain)
-                if chain.id == chain_id && chain.signer.as_deref() == Some(tip.pubkey.as_str()) =>
-            {
+            Ok(chain) if chain.id == chain_id && announced_by(&chain, &tip.pubkey) => {
                 return Ok(ChosenMirror {
                     mirror: m.clone(),
                     chain,
                 })
             }
-            Ok(chain) => tried.push(format!(
-                "{m}: signer {}… is not the announcer {}…",
-                short(chain.signer.as_deref().unwrap_or("undefined")),
-                short(&tip.pubkey)
-            )),
+            Ok(chain) => {
+                let authorised = chain
+                    .signer
+                    .iter()
+                    .chain(chain.signers.iter())
+                    .map(|s| format!("{}…", short(s)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                tried.push(format!(
+                    "{m}: signer(s) {} do not include announcer {}…",
+                    if authorised.is_empty() {
+                        "undefined".into()
+                    } else {
+                        authorised
+                    },
+                    short(&tip.pubkey)
+                ));
+            }
             Err(e) => tried.push(format!("{m}: {e}")),
         }
     }
@@ -865,17 +889,20 @@ mod tests {
                 "https://a.example/siding/chain.json" => Ok(MirrorChain {
                     id: "sidestr:t".into(),
                     signer: Some("ff".repeat(32)),
+                    signers: vec![],
                 }),
                 "https://b.example/siding/chain.json" => Ok(MirrorChain {
                     id: "sidestr:t".into(),
-                    signer: Some(pub_.clone()),
+                    signer: None,
+                    signers: vec![pub_.clone()],
                 }),
                 _ => Err("404".into()),
             }
         };
         let found = choose_mirror(&p, "sidestr:t", docs).unwrap();
         assert_eq!(found.mirror, "https://b.example/siding");
-        assert_eq!(found.chain.signer.as_deref(), Some(pub_.as_str()));
+        assert!(announced_by(&found.chain, &pub_));
+        assert_eq!(found.chain.signers, vec![pub_]);
     }
 
     #[test]
@@ -885,6 +912,7 @@ mod tests {
             Ok(MirrorChain {
                 id: "sidestr:t".into(),
                 signer: Some("ee".repeat(32)),
+                signers: vec![],
             })
         })
         .unwrap_err();
@@ -894,7 +922,7 @@ mod tests {
         );
         assert!(
             e.to_string()
-                .contains("signer eeeeeeee… is not the announcer"),
+                .contains("signer(s) eeeeeeee… do not include announcer"),
             "{e}"
         );
         let e = choose_mirror(&p, "sidestr:t", |_| Err("404".into())).unwrap_err();
@@ -908,6 +936,7 @@ mod tests {
             Ok(MirrorChain {
                 id: "sidestr:other".into(),
                 signer: Some(signer().pubkey_hex_ok()),
+                signers: vec![],
             })
         })
         .unwrap_err();

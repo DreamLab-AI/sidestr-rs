@@ -7,17 +7,17 @@ the `k`-of-`n` co-signing round as a pure state machine that interoperates on
 the wire with the reference signer as it runs today, the peg-out PSBT round
 over rust-bitcoin, a durable vote journal, and `cosign`, a runnable signer.
 
-The proposer for a height is signer `height mod n`; after `proposeAfter`
+Signer `height mod n` proposes for a height; after `proposeAfter`
 seconds the next in the ring may propose too. A proposal is a kind-23510
 event, a partial signature a 23511, the sealed block a 23514; a peg-out is a
 PSBT round on 23512/23513. All of it as `round.mjs` and `pegoutround.mjs` put
-it on the wire, so a Rust signer co-signs with JS signers and the reverse —
+it on the wire, so a Rust signer co-signs with JS signers and the reverse,
 proven by the tests, three signers on one box, in both mixes and both
 directions.
 
 ```toml
 [dependencies]
-sidestr-round = "0.2"
+sidestr-round = "0.3"
 ```
 
 ```rust
@@ -79,12 +79,14 @@ that replaces `Round`, not the codecs, the federation or the journal.
   is append-only and `fsync`ed, validated on open, a torn tail cut back to the
   last record; on restart the one-signature rule applies against every entry.
 - `resign_after`: `Some(propose_after)` is upstream's relaxation; `None`
-  never re-signs a height, nor a burn — co-signing, proposing, or moving from
+  never re-signs a height or burn; co-signing, proposing, or moving from
   the one to the other are one durable guard per burn.
 - The round's clock is milliseconds, as `Date.now()`: the reference's
   timing holds at the millisecond (re-signing relaxes at 30 001 ms, a
   proposal of mine is dropped at 90 001 ms); only `created_at` is seconds.
 - `wss://` is rustls with the Mozilla root store (feature `relay`).
+- `RelayPool` keeps one reconnecting websocket per relay for subscriptions,
+  fetches and publishes, then closes it after two idle seconds.
 - A sealed block from another signer is a candidate for the validator, never
   final.
 - A proposal is judged by the chain's deterministic rules before its
@@ -102,7 +104,7 @@ cosign --chain chain.json --dir ~/.sidestr/fed --key-file ~/.sidestr/fed.key \
        --announce-mirror https://mirror.example/fed
 ```
 
-The key is a file, never an argument. The block directory must already hold
+Pass the key by file. The block directory must already hold
 the chain's `blocks.dat` and `blocks.json` from a mirror. With
 `--parent-rpc`, `--parent-cookie` and `--parent-wallet` (the federation's
 descriptor imported with this key private, as `siding peg-wallet` does),
@@ -110,8 +112,8 @@ peg-ins are claimed and peg-outs paid through the PSBT round.
 
 ## Status
 
-0.2.1: interoperates with siding at commit
-`fa86dac83d47b8f70195132e91e9dc083e1d9228` (SPEC 0.0.4, `@sidestr/spec` 0.0.6). Tested against the reference
+0.3.0: interoperates with siding at commit
+`fe689e9c723f9bf43393d2dd5b6f924a701c8a18`. Tested against the reference
 engine as an oracle: three signers on one box in {Rust, JS, JS} and
 {Rust, Rust, JS}, both header families, peg-outs proposed by either engine.
 Not yet: a signer on another machine, changing the signer set. Audited
@@ -125,8 +127,8 @@ limits section.
 ## Attribution
 
 This crate is a port of **siding**, the reference implementation of sidestr by
-Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
-AGPL-3.0 — `siding/lib/round.mjs`, `lib/pegoutround.mjs`, the level-2 parts of
+Melvin Carvalho ([github.com/sidestr/spec](https://github.com/sidestr/spec),
+AGPL-3.0): `siding/lib/round.mjs`, `lib/pegoutround.mjs`, the level-2 parts of
 `bin/siding.mjs produce`, `test/round-test.sh`, and `proposals/level-2.md`,
 whose description of the round the crate documentation adapts. It carries
 the same licence, AGPL-3.0-only. Every ported function names its original.

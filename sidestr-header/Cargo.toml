@@ -1,6 +1,6 @@
 [package]
 name = "sidestr-header"
-version = "0.3.0"
+version = "0.3.1"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
@@ -36,7 +36,7 @@ sha2 = { version = "0.10", default-features = false }
 blake2 = { version = "0.10", default-features = false }
 # The consensus core this crate's families plug into (feature `core`). The
 # edge points this way only: sidestr-core never depends on sidestr-header.
-sidestr-core = { path = "../sidestr-core", version = "0.3", optional = true }
+sidestr-core = { path = "../sidestr-core", version = "0.4", optional = true }
 bitcoin = { workspace = true, optional = true }
 
 [dev-dependencies]

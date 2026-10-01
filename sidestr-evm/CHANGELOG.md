@@ -2,10 +2,10 @@
 
 All notable changes to `sidestr-evm`. The crate follows semantic versioning.
 
-## Unreleased — 0.1.0
+## 0.1.0 (unreleased)
 
-The `evm` rule of siding (`lib/overlays/evm.mjs` at `fa86dac`,
-`@sidestr/spec` 0.0.6; `proposals/evm.md`), after the owner lifted ADR-2096
+The `evm` rule of siding (`lib/overlays/evm.mjs` through `fe689e9`;
+`proposals/evm.md`), after the owner lifted ADR-2096
 decision 5. Not published.
 
 ### Added
@@ -20,6 +20,13 @@ decision 5. Not published.
   `sequence` (a producer's), `call` (read-only), receipts and per-block
   records; revm at Cancun with the reference's block environment and its
   KZG-less point-evaluation precompile; the state root on alloy-trie.
+- `EvmSnapshot`, `snapshot`, `restore` and `from_snapshot`: versioned serde
+  snapshots retain every committed world, block time, block record and
+  receipt, validate configuration and roots on restore, and clear transient
+  candidates.
+- `Rules` composes the assets, pool, markets and EVM rules with activation
+  heights. The end-to-end test opens and trades a pool, opens, splits,
+  resolves and redeems a market, then replays from the activation height.
 - `EvmRule`, a `sidestr-core` `BlockRule` (`sidestr:rule-evm`) with the
   withdrawals as its coinbase allowance; `rules_for` (the rules a document
   names, the assets rule included, as `overlays/index.mjs rulesFor` installs
@@ -42,7 +49,7 @@ decision 5. Not published.
   in the wasm32 build: it needs no C beyond secp256k1's, but getrandom 0.2
   (through k256) refuses `wasm32-unknown-unknown` until the application
   selects its `js` backend.
-- `rpc`: the Ethereum JSON-RPC of `lib/evmrpc.mjs` (at `fa86dac`) for
+- `rpc`: the Ethereum JSON-RPC of `lib/evmrpc.mjs` (at `fe689e9`) for
   wallets. `EvmRpc::handle` takes a request or batch as JSON, and
   `EvmRpc::handle_body` takes a `POST /evm` body (parse error 400, 1 MiB
   limit 413), writing it byte for byte as `JSON.stringify` does. The host
@@ -50,7 +57,7 @@ decision 5. Not published.
   `carry` for `eth_sendRawTransaction`, and the clock. It covers every
   method the reference serves, with its error codes (-32601, -32602,
   -32000, and 3 with the revert data) and texts, V8's included.
-  The estimate formula is the reference's. No HTTP server is pulled in.
+  Gas estimation follows the reference formula. No HTTP server is pulled in.
 - `EvmState::simulate`: a read-only execution as ethereumjs's `runCall`
   makes one, used by `eth_call` and `eth_estimateGas`. It runs in a given
   block, optionally as a creation, carries value, and reports the

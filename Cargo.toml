@@ -49,7 +49,7 @@ authors = ["DreamLab AI"]
 [workspace.dependencies]
 # Consensus serialisation, hashes, merkle roots, the taproot sighash and, via
 # its re-export, secp256k1 with BIP-340 Schnorr. Never hand-rolled (ADR-2096 D3).
-bitcoin = { version = "0.32", features = ["std"] }
+bitcoin = { version = "0.32", features = ["std", "serde"] }
 bech32 = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

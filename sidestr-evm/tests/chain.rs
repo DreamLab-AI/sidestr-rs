@@ -294,6 +294,7 @@ fn the_reference_test_on_a_whole_chain() {
     c.submit(again).unwrap();
     let dropped: Vec<_> = c.produce().into_iter().map(|(t, _)| t).collect();
     assert!(dropped.contains(&bad.compute_txid()) && dropped.contains(&again_txid));
+    assert_eq!(c.state.mempool().count(), 0);
     let h = c.state.height();
     {
         let evm = c.follower_evm();
@@ -450,6 +451,32 @@ fn the_reference_test_on_a_whole_chain() {
     assert_eq!(evm.root(), c.evm().root());
     assert_eq!(evm.world(), c.evm().world());
     assert_eq!(evm.balance(&bob), gwei(250_000) + U256::from(1));
+
+    // A JSON round-trip resumes the full EVM state at the selected height,
+    // including receipts and their carried transaction envelopes.
+    let (config, snapshot, height, root, world, receipt_count) = {
+        let state = c.evm();
+        (
+            state.config().clone(),
+            state.snapshot(),
+            state.height(),
+            state.root(),
+            state.world().clone(),
+            state.receipts().count(),
+        )
+    };
+    let json = serde_json::to_string(&snapshot).unwrap();
+    let snapshot: sidestr_evm::EvmSnapshot = serde_json::from_str(&json).unwrap();
+    let resumed = sidestr_evm::EvmState::from_snapshot(config.clone(), &snapshot, height).unwrap();
+    assert_eq!(resumed.root(), root);
+    assert_eq!(resumed.world(), &world);
+    assert_eq!(resumed.receipts().count(), receipt_count);
+    let genesis = sidestr_evm::EvmState::from_snapshot(config, &snapshot, 0).unwrap();
+    assert_eq!(genesis.height(), 0);
+    assert_eq!(
+        genesis.root(),
+        sidestr_evm::EvmState::new(genesis.config().clone()).root()
+    );
 }
 
 #[test]
@@ -473,18 +500,25 @@ fn a_document_naming_evm_needs_the_rule() {
     assert!(e.contains("\"evm\""), "{e}");
     assert!(State::with_key_and_rules(doc.clone(), &key, rules_for(&doc).unwrap().boxed()).is_ok());
     assert!(ChainDocument::from_json_with(&serde_json::to_string(&doc).unwrap(), KNOWN).is_ok());
-    // pool and anything else this crate does not carry stay refused
-    for (rules, name) in [(r#"["evm", "pool"]"#, "pool"), (r#"["desk"]"#, "desk")] {
-        let e = rules_for(&doc_for(&key, rules)).unwrap_err().to_string();
-        assert!(
-            e.contains(&format!("\"{name}\", which this validator does not have")),
-            "{e}"
-        );
-    }
+    // Pool and markets are carried when assets provides their shared ledger.
+    let pooled = doc_for(&key, r#"["assets", "pool", "markets"]"#);
+    let r = rules_for(&pooled).unwrap();
+    assert!(r.assets.is_some() && r.pool.is_some() && r.markets.is_some());
+    let e = rules_for(&doc_for(&key, r#"["evm", "pool"]"#))
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("pool rule needs the assets rule"), "{e}");
+    let e = rules_for(&doc_for(&key, r#"["desk"]"#))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        e.contains("\"desk\", which this validator does not have"),
+        "{e}"
+    );
     // no rules named: nothing carried, and the document needs nothing
     let plain = doc_for(&key, "[]");
     let r = rules_for(&plain).unwrap();
-    assert!(r.assets.is_none() && r.evm.is_none());
+    assert!(r.assets.is_none() && r.pool.is_none() && r.markets.is_none() && r.evm.is_none());
     assert!(State::with_key(plain, &key).is_ok());
 }
 

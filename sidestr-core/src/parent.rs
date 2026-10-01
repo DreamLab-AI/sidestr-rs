@@ -43,7 +43,7 @@
 //! assert_eq!((r.paid.len(), r.outstanding.len()), (1, 1));
 //! ```
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bitcoin::{Address, BlockHash, Network, OutPoint, Script, ScriptBuf, Transaction, Txid};
 
@@ -149,6 +149,17 @@ pub struct WalletTxStatus {
     pub time: Option<u32>,
 }
 
+/// What the peg wallet says about one parent address. Ownership includes
+/// spendable, watch-only and solvable descriptors; `change` is Core's
+/// `ischange` flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PegAddressView {
+    /// The address belongs to the peg wallet or one of its descriptors.
+    pub owned: bool,
+    /// The address is wallet-generated change.
+    pub change: bool,
+}
+
 /// The peg wallet's own RPCs at `/wallet/<name>` (`parent.mjs
 /// makeParent().walletRpc`). Without a wallet the parent is read-only.
 pub trait PegWallet {
@@ -169,6 +180,21 @@ pub trait PegWallet {
     /// reads as not owned, as it does in the reference: a peg-in is never
     /// found on an error.
     fn owns_address(&self, address: &str) -> bool;
+    /// Ownership and change classification in one `getaddressinfo` view.
+    /// Existing wallet implementations that only know ownership retain the
+    /// pre-issue-15 behaviour.
+    fn address_view(&self, address: &str) -> PegAddressView {
+        PegAddressView {
+            owned: self.owns_address(address),
+            change: false,
+        }
+    }
+    /// Whether this wallet funded `txid` (`gettransaction.details` contains
+    /// a `send`). Such a transaction is not a deposit unless an announced
+    /// peg script identifies its output.
+    fn funded_transaction(&self, _txid: &Txid) -> bool {
+        false
+    }
 }
 
 // --- peg-ins (SPEC 6) --------------------------------------------------------------
@@ -352,6 +378,63 @@ fn pegin_at(
     })
 }
 
+/// [`pegin_at`] with issue-15 wallet semantics: an announced peg script
+/// wins wherever it occurs. Otherwise a wallet-funded transaction is not a
+/// deposit, and the peg is the first owned taproot output that is not the
+/// wallet's own change. Without a wallet, the first taproot output remains
+/// the peg.
+fn pegin_at_wallet(
+    tx: &Transaction,
+    chain_id: &str,
+    height: u32,
+    addresses: &[Option<String>],
+    announced: Option<&Script>,
+    wallet: Option<&dyn PegWallet>,
+) -> Option<FoundPegin> {
+    let script = tx
+        .output
+        .iter()
+        .find_map(|o| parse_peg_marker(&o.script_pubkey, chain_id))?;
+    let address = |n: usize| addresses.get(n).and_then(Option::as_deref);
+    let paying = announced.and_then(|a| {
+        tx.output
+            .iter()
+            .enumerate()
+            .find(|(_, o)| o.script_pubkey.is_p2tr() && o.script_pubkey.as_script() == a)
+    });
+    let (vout, peg) = match (paying, wallet) {
+        (Some(p), _) => p,
+        (None, Some(w)) => {
+            let txid = tx.compute_txid();
+            if w.funded_transaction(&txid) {
+                return None;
+            }
+            tx.output.iter().enumerate().find(|(n, o)| {
+                if !o.script_pubkey.is_p2tr() {
+                    return false;
+                }
+                address(*n).is_some_and(|a| {
+                    let view = w.address_view(a);
+                    view.owned && !view.change
+                })
+            })?
+        }
+        (None, None) => tx
+            .output
+            .iter()
+            .enumerate()
+            .find(|(_, o)| o.script_pubkey.is_p2tr())?,
+    };
+    Some(FoundPegin {
+        txid: tx.compute_txid().to_string(),
+        vout: vout as u32,
+        amount: peg.value.to_sat(),
+        script,
+        height,
+        parent_address: address(vout).map(str::to_string),
+    })
+}
+
 /// The level-1 owner: the peg wallet, asked about each taproot output's
 /// parent address (`parent.mjs ownedByPegWallet`: `getaddressinfo` says
 /// `ismine`, `iswatchonly` or `solvable`). An output with no address is not
@@ -432,6 +515,67 @@ pub fn scan_pegins_announced<R: ParentRpc + ?Sized>(
     Ok(found)
 }
 
+/// Scan with the reference implementation's complete wallet view
+/// (`parent.mjs scanPegins`, issue 15). This is the producer path: use the
+/// announced peg script first, then exclude wallet-funded transactions and
+/// wallet change while choosing an owned output. [`scan_pegins_announced`]
+/// remains available to callers with a pure ownership predicate.
+#[allow(clippy::too_many_arguments)]
+pub fn scan_pegins_with_wallet<R: ParentRpc + ?Sized>(
+    rpc: &R,
+    chain_id: &str,
+    from: u32,
+    to: u32,
+    network: Option<Network>,
+    announced: Option<&Script>,
+    wallet: Option<&dyn PegWallet>,
+    mut on_block: impl FnMut(&ParentBlock),
+) -> Result<Vec<FoundPegin>> {
+    let mut found = Vec::new();
+    for h in from..=to {
+        let block = rpc.block_at(h)?;
+        on_block(&block);
+        for (i, tx) in block.txs.iter().enumerate() {
+            let reported = block
+                .addresses
+                .get(i)
+                .filter(|a| a.len() == tx.output.len());
+            let derived;
+            let addresses = match reported {
+                Some(addresses) => addresses,
+                None => {
+                    derived = derived_addresses(tx, network);
+                    &derived
+                }
+            };
+            if let Some(pegin) = pegin_at_wallet(tx, chain_id, h, addresses, announced, wallet) {
+                found.push(pegin);
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Keep only newly discovered peg-ins, at most one per parent transaction.
+/// A known transaction or one for which the sidechain has claimed any
+/// output is never re-added (`parent.mjs newPegins`, issue 15).
+pub fn new_pegins(
+    found: &[FoundPegin],
+    known: &[FoundPegin],
+    claimed_tx: impl Fn(&str) -> bool,
+) -> Vec<FoundPegin> {
+    let mut seen: BTreeSet<&str> = known.iter().map(|p| p.txid.as_str()).collect();
+    let mut out = Vec::new();
+    for pegin in found {
+        if seen.contains(pegin.txid.as_str()) || claimed_tx(&pegin.txid) {
+            continue;
+        }
+        seen.insert(&pegin.txid);
+        out.push(pegin.clone());
+    }
+    out
+}
+
 /// Still unspent on the parent, and how many confirmations
 /// (`parent.mjs pegStatus`): `None` confirmations when spent or unknown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -471,6 +615,30 @@ pub fn claimable(
         .iter()
         .filter(|p| u64::from(parent_tip) + 1 >= u64::from(p.height) + u64::from(peg_confirmations))
         .filter(|p| !claimed(&p.txid, p.vout))
+        .map(|p| ClaimRequest {
+            txid: p.txid.clone(),
+            vout: p.vout,
+            amount: p.amount,
+            script: p.script.clone(),
+        })
+        .collect()
+}
+
+/// [`claimable`] with issue-15 transaction-level uniqueness. Only the first
+/// recorded output of each parent transaction can become a claim, and none
+/// can if any output of that transaction is already claimed.
+pub fn claimable_by_transaction(
+    found: &[FoundPegin],
+    parent_tip: u32,
+    peg_confirmations: u32,
+    claimed_tx: impl Fn(&str) -> bool,
+) -> Vec<ClaimRequest> {
+    let mut seen = BTreeSet::new();
+    found
+        .iter()
+        .filter(|p| seen.insert(p.txid.as_str()))
+        .filter(|p| u64::from(parent_tip) + 1 >= u64::from(p.height) + u64::from(peg_confirmations))
+        .filter(|p| !claimed_tx(&p.txid))
         .map(|p| ClaimRequest {
             txid: p.txid.clone(),
             vout: p.vout,
@@ -612,7 +780,9 @@ pub mod rpc {
     use bitcoin::{BlockHash, OutPoint, ScriptBuf, Transaction, Txid};
     use serde_json::{json, Value};
 
-    use super::{ParentBlock, ParentRpc, PegWallet, SendOutput, TxOutStatus, WalletTxStatus};
+    use super::{
+        ParentBlock, ParentRpc, PegAddressView, PegWallet, SendOutput, TxOutStatus, WalletTxStatus,
+    };
     use crate::error::{Error, Result};
 
     /// A node's JSON-RPC endpoint with its cookie file (`parent.mjs
@@ -913,6 +1083,26 @@ pub mod rpc {
                 })
                 .unwrap_or(false)
         }
+        fn address_view(&self, address: &str) -> PegAddressView {
+            self.wallet_call("getaddressinfo", json!([address]))
+                .map(|i| PegAddressView {
+                    owned: ["ismine", "iswatchonly", "solvable"]
+                        .iter()
+                        .any(|k| i.get(*k).and_then(Value::as_bool) == Some(true)),
+                    change: i.get("ischange").and_then(Value::as_bool) == Some(true),
+                })
+                .unwrap_or_default()
+        }
+        fn funded_transaction(&self, txid: &Txid) -> bool {
+            self.wallet_call("gettransaction", json!([txid.to_string()]))
+                .ok()
+                .and_then(|t| t.get("details").and_then(Value::as_array).cloned())
+                .is_some_and(|details| {
+                    details
+                        .iter()
+                        .any(|d| d.get("category").and_then(Value::as_str) == Some("send"))
+                })
+        }
         fn transaction_status(&self, txid: &Txid) -> Result<WalletTxStatus> {
             let g = self.wallet_call("gettransaction", json!([txid.to_string()]))?;
             Ok(WalletTxStatus {
@@ -1117,6 +1307,148 @@ mod tests {
         fn owns_address(&self, address: &str) -> bool {
             address == self.0
         }
+    }
+
+    struct WalletView {
+        addresses: BTreeMap<String, PegAddressView>,
+        funded: BTreeSet<Txid>,
+    }
+
+    impl PegWallet for WalletView {
+        fn lock_outputs(&self, _: &[OutPoint], _: bool) -> Result<usize> {
+            Ok(0)
+        }
+        fn send(&self, _: &[SendOutput]) -> Result<Txid> {
+            Err(Error::Parent("read-only".into()))
+        }
+        fn sent_transactions(&self) -> Result<Vec<(Txid, Transaction)>> {
+            Ok(vec![])
+        }
+        fn transaction_status(&self, _: &Txid) -> Result<WalletTxStatus> {
+            Ok(WalletTxStatus::default())
+        }
+        fn owns_address(&self, address: &str) -> bool {
+            self.address_view(address).owned
+        }
+        fn address_view(&self, address: &str) -> PegAddressView {
+            self.addresses.get(address).copied().unwrap_or_default()
+        }
+        fn funded_transaction(&self, txid: &Txid) -> bool {
+            self.funded.contains(txid)
+        }
+    }
+
+    /// `siding/test/pegin-scan-test.mjs` at fe689e9 (issue 15): wallet
+    /// change and self-funded transactions are excluded unless the announced
+    /// script identifies the peg, and one marker transaction is recorded once.
+    #[test]
+    fn peg_scan_excludes_wallet_change_and_self_funding() {
+        let named = p2tr(0x11);
+        let marker = || out(0, data(&peg_marker_data("sidestr:scan", &named)));
+        let funded = tx(vec![
+            out(50_000, p2tr(0xaa)),
+            marker(),
+            out(49_000, p2tr(0xcc)),
+        ]);
+        let pegger = tx(vec![
+            out(30_000, p2tr(0xdd)),
+            marker(),
+            out(70_000, p2tr(0xbb)),
+        ]);
+        let self_paid = tx(vec![
+            out(20_000, p2tr(0xbb)),
+            marker(),
+            out(10_000, p2tr(0xcc)),
+        ]);
+        let block = ParentBlock {
+            height: 1,
+            hash: BlockHash::from_byte_array([1; 32]),
+            time: 0,
+            txs: vec![funded.clone(), pegger.clone(), self_paid.clone()],
+            addresses: vec![
+                vec![Some("A".into()), None, Some("C".into())],
+                vec![Some("P".into()), None, Some("M".into())],
+                vec![Some("M".into()), None, Some("C".into())],
+            ],
+        };
+        let mock = Mock {
+            blocks: vec![block],
+            unspent: BTreeMap::new(),
+        };
+        let wallet = WalletView {
+            addresses: [
+                (
+                    "C".into(),
+                    PegAddressView {
+                        owned: true,
+                        change: true,
+                    },
+                ),
+                (
+                    "M".into(),
+                    PegAddressView {
+                        owned: true,
+                        change: false,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            funded: [funded.compute_txid(), self_paid.compute_txid()]
+                .into_iter()
+                .collect(),
+        };
+
+        let found = scan_pegins_with_wallet(
+            &mock,
+            "sidestr:scan",
+            1,
+            1,
+            None,
+            None,
+            Some(&wallet),
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].txid, pegger.compute_txid().to_string());
+        assert_eq!(found[0].vout, 2);
+
+        let announced_a = p2tr(0xaa);
+        let found = scan_pegins_with_wallet(
+            &mock,
+            "sidestr:scan",
+            1,
+            1,
+            None,
+            Some(&announced_a),
+            Some(&wallet),
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(found.len(), 2);
+        assert!(found
+            .iter()
+            .any(|p| p.txid == funded.compute_txid().to_string() && p.vout == 0));
+
+        let duplicate = FoundPegin {
+            vout: 0,
+            ..found[1].clone()
+        };
+        let additions = new_pegins(
+            &[found[0].clone(), found[0].clone(), duplicate],
+            &[],
+            |txid| txid == funded.compute_txid().to_string(),
+        );
+        assert_eq!(additions.len(), 1);
+        assert_eq!(additions[0].txid, pegger.compute_txid().to_string());
+        assert_eq!(
+            claimable_by_transaction(&[additions[0].clone(), additions[0].clone()], 6, 6, |_| {
+                false
+            })
+            .len(),
+            1
+        );
     }
 
     /// `parent.mjs scanPegins` at spec fa86dac (0.0.4, `pegScript`): the

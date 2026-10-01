@@ -2,14 +2,19 @@
 
 All notable changes to `sidestr-header`. The crate follows semantic versioning.
 
-## 0.3.0 — 2026-09-23
+## 0.3.1 (2026-10-01)
+
+- The optional `core` feature follows `sidestr-core` 0.4. Header codecs and
+  consensus hashes are unchanged.
+
+## 0.3.0 (2026-09-23)
 
 - Follows `sidestr-core` 0.3; `family` implements its `HeaderFamily` (feature
   `core`). No change to the header codecs. `Blake2bV2`'s sighash rules agree
   with `sidestr_core::sighash::rules_for(Family::Blake2b)` (pinned in
   `sidestr-wallet/tests/txsign.rs`).
 
-## 0.2.1 — 2026-09-22
+## 0.2.1 (2026-09-22)
 
 Documentation only; no code change.
 
@@ -19,7 +24,7 @@ Documentation only; no code change.
   when `core` is off.
 - `missing_docs` is denied, not warned.
 
-## 0.2.0 — 2026-09-22
+## 0.2.0 (2026-09-22)
 
 - Feature `core` (default): `sidestr_core::HeaderFamily` for both header
   types (`Blake2bV2`, `family::Stock`), so `StateOf<Blake2bV2>` validates a
@@ -29,7 +34,7 @@ Documentation only; no code change.
   Knots overlay's rules, version bit 31 refused on every stock path, a
   mirror's record framing held to its index (`tests/audit_regressions.rs`).
 
-## 0.1.0 — 2026-09-22
+## 0.1.0 (2026-09-22)
 
 - First release: the stock 80-byte and Knots 164-byte v2 headers, their
   proof-of-work hashes, compact targets, the `powLimit` check, the BIP-325

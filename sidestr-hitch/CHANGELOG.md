@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - 2026-10-01
+
+- Follow `sidestr-core` 0.4. Hitch's scripts, transactions, state machine and
+  wire protocol are unchanged.
+
 ## 0.1.0 - 2026-09-30
 
 - Port Hitch's consensus-critical channel transaction layer at upstream

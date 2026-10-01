@@ -2,11 +2,11 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
-## Unreleased — 0.4.3
+## 0.5.0 (2026-10-01)
 
 The `--evm` deposit branch of `siding send` (`lib/spend.mjs buildSpend`,
-`evmDeposit: true`). Additive: a patch release. Depends on `sidestr-core`
-0.3.4 (`evm_deposit_marker`, `ChainDocument::evm_reserve`).
+`evmDeposit: true`). Depends on `sidestr-core` 0.4
+(`evm_deposit_marker`, `ChainDocument::evm_reserve`, activated rule entries).
 
 ### Added
 
@@ -33,13 +33,13 @@ The `--evm` deposit branch of `siding send` (`lib/spend.mjs buildSpend`,
   `sidestr-evm`), and the stale "assets reserved" is gone, since issue and
   transfer have been here since 0.4.0.
 
-## 0.4.2 — 2026-09-25
+## 0.4.2 (2026-09-25)
 
 Documentation only: the crate now names SPEC 0.0.4 (`@sidestr/spec` 0.0.6,
 reference `fa86dac`) as the one it tracks; nothing in the wallet changes
 with it.
 
-## 0.4.1 — 2026-09-24
+## 0.4.1 (2026-09-24)
 
 ### Added
 
@@ -58,7 +58,7 @@ with it.
 - `build_spend`, `build_outputs` and the builders on them sign through one
   internal step, so the sign-then-verify path is written once.
 
-## 0.4.0 — 2026-09-24
+## 0.4.0 (2026-09-24)
 
 Breaking only in that `Error` gains a variant; `Error` is now
 `#[non_exhaustive]`, so later variants will not break.
@@ -79,7 +79,7 @@ Breaking only in that `Error` gains a variant; `Error` is now
   block file to the same balances.
 - `Error::Asset`.
 
-## 0.3.0 — 2026-09-23
+## 0.3.0 (2026-09-23)
 
 SPEC 0.0.3 (`lib/txsign.mjs`, reference `722ad42`). Breaking.
 
@@ -105,7 +105,7 @@ SPEC 0.0.3 (`lib/txsign.mjs`, reference `722ad42`). Breaking.
   wallet and both families' mempools, and byte-identical witnesses with the
   reference's own signer.
 
-## 0.2.2 — 2026-09-22
+## 0.2.2 (2026-09-22)
 
 Documentation only; no code change.
 
@@ -115,20 +115,20 @@ Documentation only; no code change.
 - The README's dependency lines are 0.2's; the relay client and the peg-out
   round are named as `sidestr-round`'s.
 
-## 0.2.1 — 2026-09-22
+## 0.2.1 (2026-09-22)
 
 - Parent records are bounded before they are built (audit F4):
   `pegin::pegout_payment_outputs` returns `Error::MarkerTooLong` past the
   parent's 80-byte `OP_RETURN` policy or the marker grammar's one length
   byte, rather than an output no parser reads back.
 
-## 0.2.0 — 2026-09-22
+## 0.2.0 (2026-09-22)
 
 - Follows `sidestr-core` 0.2: the coin fold and the spend builders over the
   generic state; the parent-side peg-in, peg-out payment and checkpoint
   shapes (`pegin`); `SpendPolicy` consulted by every builder.
 
-## 0.1.0 — 2026-09-22
+## 0.1.0 (2026-09-22)
 
 - First release: coins, largest-first selection, taproot key-path spends and
   peg-out burns behind `SpendSigner`, delivery as a `POST /tx` body or a

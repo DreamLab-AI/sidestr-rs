@@ -3,6 +3,7 @@
 //! with the reference's default (`evm.mjs evmOverlay`).
 
 use bitcoin::ScriptBuf;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sidestr_core::ChainDocument;
 
@@ -14,7 +15,7 @@ pub const DEFAULT_CHAIN_ID: u64 = 21_474;
 pub const DEFAULT_GAS_LIMIT: u64 = 30_000_000;
 
 /// The rule's parameters for one chain.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EvmConfig {
     /// The EIP-155 chain id: `CHAINID`, and what every carried transaction
     /// must be signed for.

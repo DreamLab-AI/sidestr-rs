@@ -17,9 +17,10 @@ publish = false
 include = ["src/**", "tests/**", "README.md", "CHANGELOG.md", "LICENSE", "Cargo.toml"]
 
 [dependencies]
-sidestr-core = { path = "../sidestr-core", version = "0.3.4" }
+sidestr-core = { path = "../sidestr-core", version = "0.4.0" }
 bitcoin = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
 # The EVM, Cancun rules. No C: secp256k1 recovery in the ECRECOVER precompile is k256's, and
@@ -31,18 +32,16 @@ revm = { version = "43", default-features = false, features = ["std", "optional_
 # Ethereum's types: addresses, U256, keccak; the signed transaction envelope, its RLP and
 # EIP-2718 decoding and the signer's recovery (k256, low s enforced); the Merkle-Patricia
 # state root. Never hand-rolled.
-alloy-primitives = { version = "1.7", default-features = false, features = ["std", "k256"] }
-alloy-consensus = { version = "2.5", default-features = false, features = ["std", "k256"] }
+alloy-primitives = { version = "1.7", default-features = false, features = ["std", "k256", "serde"] }
+alloy-consensus = { version = "2.5", default-features = false, features = ["std", "k256", "serde"] }
 alloy-eips = { version = "2.5", default-features = false, features = ["std"] }
 alloy-trie = { version = "0.9", default-features = false, features = ["std", "ethereum"] }
 # RLP headers and fields, for reading a raw transaction the way ethereumjs sorts it (`rpc`).
 alloy-rlp = { version = "0.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
-serde = { workspace = true }
 # The wallet's EVM deposit, built and mined through this rule (`tests/wallet_deposit.rs`).
-sidestr-wallet = { path = "../sidestr-wallet", version = "0.4.3" }
+sidestr-wallet = { path = "../sidestr-wallet", version = "0.5.0" }
 # Signing the Ethereum transactions the tests carry.
 alloy-signer = "2.5"
 alloy-signer-local = "2.5"
-

@@ -39,6 +39,75 @@ use crate::error::{Error, Result};
 use crate::federation::Federation;
 use crate::parents::{resolve_parent, Family, Parent};
 
+/// One optional consensus rule named by a chain document.
+///
+/// The wire form is either the original string (`"assets"`) or an object
+/// (`{"name":"markets","from":120}`) when a running chain adopts a rule
+/// from a particular height.  The object form is preserved when the document
+/// is serialised again, including when `from` is zero.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RuleEntry {
+    /// A rule active from genesis.
+    Name(String),
+    /// A rule adopted from `from` (inclusive).
+    Activated {
+        /// The rule's registered name.
+        name: String,
+        /// The first height at which the rule applies.
+        #[serde(default)]
+        from: u32,
+    },
+}
+
+impl RuleEntry {
+    /// The registered rule name.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Name(name) | Self::Activated { name, .. } => name,
+        }
+    }
+
+    /// The first height at which the rule applies; string entries start at
+    /// genesis.
+    pub fn from(&self) -> u32 {
+        match self {
+            Self::Name(_) => 0,
+            Self::Activated { from, .. } => *from,
+        }
+    }
+}
+
+impl From<&str> for RuleEntry {
+    fn from(value: &str) -> Self {
+        Self::Name(value.to_owned())
+    }
+}
+
+impl From<String> for RuleEntry {
+    fn from(value: String) -> Self {
+        Self::Name(value)
+    }
+}
+
+impl PartialEq<str> for RuleEntry {
+    fn eq(&self, other: &str) -> bool {
+        self.name() == other
+    }
+}
+
+impl PartialEq<&str> for RuleEntry {
+    fn eq(&self, other: &&str) -> bool {
+        self.name() == *other
+    }
+}
+
+impl core::fmt::Display for RuleEntry {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// A peg output the chain starts from (SPEC 5): the genesis coinbase pays
 /// `script` exactly `amount`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,10 +170,11 @@ pub struct ChainDocument {
     /// The genesis hash, set once the genesis is sealed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub genesis_hash: Option<String>,
-    /// Rules the chain names beyond the core (`assets`, `pool`, `evm`); a
-    /// validator must carry every one ([`ChainDocument::validate_with`]).
+    /// Rules the chain names beyond the core (`assets`, `pool`, `markets`,
+    /// `evm`), optionally with an activation height; a validator must carry
+    /// every one ([`ChainDocument::validate_with`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rules: Option<Vec<String>>,
+    pub rules: Option<Vec<RuleEntry>>,
     /// Level 2: the signers' x-only public keys, in leaf order. With
     /// `threshold`, they derive the challenge ([`Federation::for_document`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -257,7 +327,7 @@ impl ChainDocument {
         if let Some(rules) = &self.rules {
             if let Some(r) = rules
                 .iter()
-                .find(|r| !r.is_empty() && !carried.contains(&r.as_str()))
+                .find(|r| !r.name().is_empty() && !carried.contains(&r.name()))
             {
                 return bad(if carried.is_empty() {
                     format!("chain {} names rule \"{r}\", which this validator does not have (sidestr-core carries the core rules only)", self.id)
@@ -271,6 +341,9 @@ impl ChainDocument {
             }
             if rules.iter().any(|r| r == "pool") && !rules.iter().any(|r| r == "assets") {
                 return bad("the pool rule needs the assets rule".into());
+            }
+            if rules.iter().any(|r| r == "markets") && !rules.iter().any(|r| r == "assets") {
+                return bad("the markets rule needs the assets rule".into());
             }
         }
         // level 2: the challenge is named only through signers and threshold (overlay.mjs checkFederation)

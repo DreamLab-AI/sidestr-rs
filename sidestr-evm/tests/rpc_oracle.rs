@@ -1,6 +1,6 @@
 //! The reference's JSON-RPC answers, replayed. `tests/fixtures/rpc.json` was
 //! written by `tests/oracle/rpc-oracle.mjs`: siding's `evmrpc.mjs` itself
-//! (fa86dac) over its `evm.mjs`, on ethereumjs 10.1.3, driven by a scripted
+//! (fe689e9) over its `evm.mjs`, on ethereumjs 10.1.3, driven by a scripted
 //! host with a frozen clock. The same chain is built here through
 //! [`EvmState::prepare`] (every block's state root must come out the same),
 //! the same host is played through [`ChainView`], and every request must

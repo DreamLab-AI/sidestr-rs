@@ -65,7 +65,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use bitcoin::{BlockHash, OutPoint, Transaction, Txid};
 
 use crate::block::{HeaderFamily, SidestrBlock};
-use crate::records::{classify, AssetRef};
+use crate::records::{classify, AssetRef, Classified};
 use crate::rules::{BlockContext, BlockRule};
 
 /// The id the assets rule reports in a verdict (`siding/lib/overlays/assets.mjs RULE`).
@@ -85,6 +85,20 @@ pub struct Issued {
     pub height: u32,
     /// The supply created: what `tally:self:` assigned.
     pub supply: u64,
+    /// The binary market this asset is an outcome of, when it is a market's
+    /// synthetic YES or NO asset.
+    pub market: Option<Txid>,
+}
+
+/// A narrowly scoped exception to asset conservation.
+///
+/// The pool rule accounts for share minting and the markets rule accounts
+/// for paired YES/NO minting.  [`AssetsRule`] consults this policy before it
+/// accepts an assignment larger than the transaction's inputs carry; the
+/// corresponding rule then validates the mint against its own collateral.
+pub trait AssetMintPolicy: core::fmt::Debug + Send + Sync {
+    /// Whether `asset` may be created by this classified transaction.
+    fn allows(&self, asset: &Txid, txid: &Txid, classified: &Classified) -> bool;
 }
 
 /// How the view read one transaction.
@@ -152,6 +166,26 @@ impl AssetView {
         tx: &Transaction,
         carried_in: &mut Carry,
     ) -> Result<BTreeMap<u32, Carry>, String> {
+        self.check_inner(tx, carried_in, None)
+    }
+
+    /// [`AssetView::check`] with a collateral rule allowed to account for
+    /// selected minting (pool shares or market outcome pairs).
+    pub fn check_with_mint_policy(
+        &self,
+        tx: &Transaction,
+        carried_in: &mut Carry,
+        policy: &dyn AssetMintPolicy,
+    ) -> Result<BTreeMap<u32, Carry>, String> {
+        self.check_inner(tx, carried_in, Some(policy))
+    }
+
+    fn check_inner(
+        &self,
+        tx: &Transaction,
+        carried_in: &mut Carry,
+        policy: Option<&dyn AssetMintPolicy>,
+    ) -> Result<BTreeMap<u32, Carry>, String> {
         let txid = tx.compute_txid();
         let cls = classify(tx);
         if let Some(b) = cls.bad.first() {
@@ -211,6 +245,9 @@ impl AssetView {
             if *asset == txid && !cls.issues.is_empty() {
                 continue; // issuance: created from nothing
             }
+            if policy.is_some_and(|p| p.allows(asset, &txid, &cls)) {
+                continue; // a collateral rule accounts for this mint
+            }
             let have = carried_in.get(asset).copied().unwrap_or(0);
             if *n > have {
                 return Err(format!(
@@ -227,6 +264,26 @@ impl AssetView {
     /// carries nothing: records in it are ignored here, where a chain that
     /// names the rule would refuse the block.
     pub fn apply_transactions(&mut self, txs: &[Transaction], height: u32) -> Vec<Outcome> {
+        self.apply_transactions_inner(txs, height, None)
+    }
+
+    /// [`AssetView::apply_transactions`] with a collateral rule accounting
+    /// for selected mints.
+    pub fn apply_transactions_with_mint_policy(
+        &mut self,
+        txs: &[Transaction],
+        height: u32,
+        policy: &dyn AssetMintPolicy,
+    ) -> Vec<Outcome> {
+        self.apply_transactions_inner(txs, height, Some(policy))
+    }
+
+    fn apply_transactions_inner(
+        &mut self,
+        txs: &[Transaction],
+        height: u32,
+        policy: Option<&dyn AssetMintPolicy>,
+    ) -> Vec<Outcome> {
         let mut outcomes = Vec::new();
         for (i, tx) in txs.iter().enumerate() {
             let txid = tx.compute_txid();
@@ -234,7 +291,7 @@ impl AssetView {
                 continue;
             }
             let mut carried_in = Carry::new();
-            let result = self.check(tx, &mut carried_in);
+            let result = self.check_inner(tx, &mut carried_in, policy);
             for inp in &tx.input {
                 self.carried.remove(&inp.previous_output);
             }
@@ -254,6 +311,7 @@ impl AssetView {
                                 decimals: issue.decimals,
                                 height,
                                 supply,
+                                market: None,
                             },
                         );
                     }
@@ -305,16 +363,32 @@ impl AssetView {
 /// assert_eq!(BlockRule::<Stock>::name(&rule), Some("assets"));
 /// assert!(rule.view().issued().is_empty());
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AssetsRule {
     held: Arc<Mutex<Held>>,
+    mint_policy: Option<Arc<dyn AssetMintPolicy>>,
 }
 
 #[derive(Debug, Default)]
 struct Held {
     view: AssetView,
     // the views candidate blocks would leave, by block hash, until one is applied
-    pending: Vec<(BlockHash, AssetView)>,
+    pending: Vec<(BlockHash, AssetView, Vec<AssetTrace>)>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct AssetTrace {
+    pub(crate) inputs: HashMap<OutPoint, Carry>,
+    pub(crate) outputs: BTreeMap<u32, Carry>,
+}
+
+impl Default for AssetsRule {
+    fn default() -> Self {
+        Self {
+            held: Arc::new(Mutex::new(Held::default())),
+            mint_policy: None,
+        }
+    }
 }
 
 impl AssetsRule {
@@ -323,9 +397,35 @@ impl AssetsRule {
         Self::default()
     }
 
+    /// The rule with a collateral rule accounting for selected asset mints.
+    pub fn with_mint_policy(policy: Arc<dyn AssetMintPolicy>) -> Self {
+        Self {
+            held: Arc::new(Mutex::new(Held::default())),
+            mint_policy: Some(policy),
+        }
+    }
+
     /// The view as the applied blocks leave it.
     pub fn view(&self) -> AssetView {
         self.lock().view.clone()
+    }
+
+    /// Check one transaction against an independent candidate view using
+    /// this rule's configured mint policy. Producers use this while ordering
+    /// their mempool before a block exists.
+    pub fn check_transaction(
+        &self,
+        view: &AssetView,
+        tx: &Transaction,
+        carried_in: &mut Carry,
+    ) -> Result<BTreeMap<u32, Carry>, String> {
+        view.check_inner(tx, carried_in, self.mint_policy.as_deref())
+    }
+
+    /// Apply transactions to an independent candidate view using this
+    /// rule's configured mint policy.
+    pub fn apply_to_view(&self, view: &mut AssetView, txs: &[Transaction], height: u32) {
+        view.apply_transactions_inner(txs, height, self.mint_policy.as_deref());
     }
 
     fn lock(&self) -> MutexGuard<'_, Held> {
@@ -341,6 +441,15 @@ impl AssetsRule {
         txdata: &[Transaction],
         height: u32,
     ) -> Result<AssetView, String> {
+        Self::candidate(view, txdata, height, None).map(|(view, _)| view)
+    }
+
+    fn candidate(
+        view: &AssetView,
+        txdata: &[Transaction],
+        height: u32,
+        policy: Option<&dyn AssetMintPolicy>,
+    ) -> Result<(AssetView, Vec<AssetTrace>), String> {
         if let Some(cb) = txdata.first() {
             let cls = classify(cb);
             if !cls.issues.is_empty() || !cls.tallies.is_empty() || !cls.bad.is_empty() {
@@ -348,12 +457,59 @@ impl AssetsRule {
             }
         }
         let mut next = view.clone();
-        for o in next.apply_transactions(txdata, height) {
+        let mut traces = Vec::with_capacity(txdata.len());
+        for (index, tx) in txdata.iter().enumerate() {
+            let inputs = tx
+                .input
+                .iter()
+                .filter_map(|input| {
+                    next.carried(&input.previous_output)
+                        .cloned()
+                        .map(|carry| (input.previous_output, carry))
+                })
+                .collect();
+            if index == 0 && tx.is_coinbase() {
+                traces.push(AssetTrace {
+                    inputs,
+                    outputs: BTreeMap::new(),
+                });
+                continue;
+            }
+            let outcomes = next.apply_transactions_inner(std::slice::from_ref(tx), height, policy);
+            let o = outcomes
+                .into_iter()
+                .next()
+                .expect("a non-coinbase transaction has one asset outcome");
             if let Some(e) = o.error {
                 return Err(format!("{}: {e}", o.txid));
             }
+            traces.push(AssetTrace {
+                inputs,
+                outputs: o.carried_out,
+            });
         }
-        Ok(next)
+        Ok((next, traces))
+    }
+
+    pub(crate) fn trace(&self, hash: &BlockHash) -> Option<Vec<AssetTrace>> {
+        self.lock()
+            .pending
+            .iter()
+            .find(|(candidate, _, _)| candidate == hash)
+            .map(|(_, _, trace)| trace.clone())
+    }
+
+    pub(crate) fn register_market_assets(&self, market: Txid, no: Txid, height: u32) {
+        let mut held = self.lock();
+        for (id, ticker) in [(market, "YES"), (no, "NO")] {
+            held.view.issued.entry(id).or_insert_with(|| Issued {
+                ticker: ticker.into(),
+                decimals: 0,
+                height,
+                supply: 0,
+                market: Some(market),
+            });
+        }
     }
 }
 
@@ -369,10 +525,15 @@ impl<F: HeaderFamily> BlockRule<F> for AssetsRule {
     fn check(&self, ctx: &BlockContext<F>) -> Option<bool> {
         let hash = F::default().block_hash(ctx.block.header());
         let mut held = self.lock();
-        match Self::judge(&held.view, ctx.block.txdata(), ctx.height) {
-            Ok(next) => {
-                held.pending.retain(|(h, _)| *h != hash);
-                held.pending.push((hash, next));
+        match Self::candidate(
+            &held.view,
+            ctx.block.txdata(),
+            ctx.height,
+            self.mint_policy.as_deref(),
+        ) {
+            Ok((next, trace)) => {
+                held.pending.retain(|(h, _, _)| *h != hash);
+                held.pending.push((hash, next, trace));
                 Some(true)
             }
             Err(_) => Some(false),
@@ -383,12 +544,17 @@ impl<F: HeaderFamily> BlockRule<F> for AssetsRule {
         let hash = F::default().block_hash(block.header());
         let mut held = self.lock();
         let pending = std::mem::take(&mut held.pending);
-        match pending.into_iter().find(|(h, _)| *h == hash) {
-            Some((_, v)) => held.view = v,
+        match pending.into_iter().find(|(h, _, _)| *h == hash) {
+            Some((_, v, _)) => held.view = v,
             // a block applied without this rule's check (the rule was added to the state later): read
             // as the view reads any block, a broken transaction carrying nothing onward
             None => {
-                held.view.apply_transactions(block.txdata(), height);
+                if let Some(policy) = self.mint_policy.as_deref() {
+                    held.view
+                        .apply_transactions_with_mint_policy(block.txdata(), height, policy);
+                } else {
+                    held.view.apply_transactions(block.txdata(), height);
+                }
             }
         }
     }

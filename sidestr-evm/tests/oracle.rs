@@ -1,5 +1,5 @@
 //! The reference's verdicts, replayed. `tests/fixtures/*.json` were written
-//! by `tests/oracle/oracle.mjs`: siding's `evm` rule (`evm.mjs` at fa86dac,
+//! by `tests/oracle/oracle.mjs`: siding's `evm` rule (`evm.mjs` at fe689e9,
 //! cross-checked against the module itself) on ethereumjs 10.1.3, over a
 //! scripted chain. Every accepted block's state root, withdrawal list,
 //! Ethereum transaction hashes and receipts must come out the same here,

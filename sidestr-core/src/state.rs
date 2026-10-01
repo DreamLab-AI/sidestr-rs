@@ -21,8 +21,9 @@
 //! The reference trusts block 0 by its hash alone; this crate does not (see
 //! the crate docs, "Where this port departs").
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
+use bitcoin::consensus::serialize;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{
@@ -59,7 +60,7 @@ fn checked_output_sum(tx: &Transaction) -> Option<u64> {
 /// `powLimit` in compact form (SPEC 5; the difficulty rule has no previous
 /// header to hold it to at height 0).
 pub const RULE_GENESIS_DOCUMENT: &str = "sidestr:rule-genesis-document";
-use crate::sighash::verify_taproot_key_path;
+use crate::sighash::verify_supported_input;
 
 /// The tip: height, hash and header time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +99,18 @@ pub struct Submitted {
     pub vsize: u64,
     /// It was already in the mempool; nothing changed.
     pub dup: bool,
+}
+
+/// A mempool transaction which block validation refused during this process.
+///
+/// The transaction's consensus bytes are retained so an exact relay replay is
+/// refused cheaply, while a corrected signature (which has the same txid for
+/// segwit transactions) is judged afresh.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rejected {
+    /// Why the candidate block refused the transaction.
+    pub why: String,
+    bytes: Vec<u8>,
 }
 
 /// A coin as [`StateOf::coins`] lists it.
@@ -150,6 +163,7 @@ pub struct StateOf<F: HeaderFamily> {
     records: Records,
     mempool: Vec<(Txid, Transaction)>,
     mempool_spent: HashSet<OutPoint>,
+    rejected: HashMap<Txid, Rejected>,
     extra_rules: Vec<Box<dyn BlockRule<F>>>,
 }
 
@@ -188,6 +202,7 @@ impl<F: HeaderFamily> StateOf<F> {
             records: Records::default(),
             mempool: Vec::new(),
             mempool_spent: HashSet::new(),
+            rejected: HashMap::new(),
             extra_rules: rules,
         })
     }
@@ -396,9 +411,18 @@ impl<F: HeaderFamily> StateOf<F> {
     pub fn mempool(&self) -> impl Iterator<Item = &Transaction> {
         self.mempool.iter().map(|(_, tx)| tx)
     }
+    /// Transactions block validation rejected during this process.
+    pub fn rejected(&self) -> &HashMap<Txid, Rejected> {
+        &self.rejected
+    }
     /// Whether a parent outpoint is claimed on this chain (SPEC 6).
     pub fn claimed(&self, txid: &str, vout: u32) -> bool {
         self.records.claimed(txid, vout)
+    }
+    /// Whether any output of a parent transaction is claimed (SPEC 6,
+    /// issue 15's one-claim-per-marker-transaction rule).
+    pub fn claimed_tx(&self, txid: &str) -> bool {
+        self.records.claimed_tx(txid)
     }
     /// Every burn the chain has validated, oldest first (SPEC 7).
     pub fn pegouts(&self) -> Vec<Burn> {
@@ -427,6 +451,12 @@ impl<F: HeaderFamily> StateOf<F> {
             .collect();
         out.sort_by_key(|c| (c.height, c.outpoint.txid, c.outpoint.vout));
         out
+    }
+
+    /// The unspent output at `outpoint`, for a producer ordering rules that
+    /// need the previous output's script (the markets resolver check).
+    pub fn output(&self, outpoint: &OutPoint) -> Option<&TxOut> {
+        self.utxo.get(outpoint).map(|coin| &coin.output)
     }
     /// Whether a coin may be spent in the next block: not a coinbase, or a mature one.
     pub fn spendable(&self, coin: &Coin) -> bool {
@@ -604,6 +634,14 @@ impl<F: HeaderFamily> StateOf<F> {
                 dup: true,
             });
         }
+        if let Some(rejected) = self.rejected.get(&txid) {
+            if rejected.bytes == serialize(&tx) {
+                return Err(Error::Transaction(format!(
+                    "rejected this session: {}",
+                    rejected.why
+                )));
+            }
+        }
         let refuse = |m: String| Err(Error::Transaction(m));
         let v = validate_transaction(&self.params, &tx, false);
         if !v.ok() {
@@ -661,7 +699,7 @@ impl<F: HeaderFamily> StateOf<F> {
         }
         let sighash = self.family.sighash_rules(self.height().saturating_add(1));
         for i in 0..tx.input.len() {
-            if let Err(e) = verify_taproot_key_path(&tx, i, &prevouts, sighash) {
+            if let Err(e) = verify_supported_input(&tx, i, &prevouts, sighash) {
                 return refuse(format!("input {i}: {e}"));
             }
         }
@@ -677,17 +715,68 @@ impl<F: HeaderFamily> StateOf<F> {
         })
     }
 
+    /// Remove a transaction from the mempool and release its reserved inputs.
+    ///
+    /// Sequencing uses this for a transaction that conflicts with earlier
+    /// mempool state. It may be submitted again because a different ordering
+    /// can make it valid.
+    pub fn discard(&mut self, txid: Txid) -> bool {
+        let before = self.mempool.len();
+        self.mempool.retain(|(id, _)| *id != txid);
+        if self.mempool.len() == before {
+            return false;
+        }
+        self.rebuild_mempool_spent();
+        true
+    }
+
+    /// Evict a transaction which makes a candidate block fail and remember
+    /// its exact bytes for this process (`chain.mjs evict`).
+    ///
+    /// A segwit transaction repaired only by changing its witness keeps its
+    /// txid. Since the stored bytes differ, [`StateOf::submit`] judges that
+    /// corrected transaction afresh.
+    pub fn evict(&mut self, txid: Txid, why: impl Into<String>) -> bool {
+        let Some((_, tx)) = self.mempool.iter().find(|(id, _)| *id == txid) else {
+            return false;
+        };
+        self.rejected.insert(
+            txid,
+            Rejected {
+                why: why.into(),
+                bytes: serialize(tx),
+            },
+        );
+        self.discard(txid)
+    }
+
+    fn rebuild_mempool_spent(&mut self) {
+        self.mempool_spent = self
+            .mempool
+            .iter()
+            .flat_map(|(_, tx)| tx.input.iter().map(|i| i.previous_output))
+            .collect();
+    }
+
     /// The next block, unsigned: the mempool in order, fees to the challenge,
     /// the claims (SPEC 4, 6) (`siding/lib/chain.mjs buildNext`). A claim pays
     /// the peg's amount to the script the peg-in named, followed by its marker.
     pub fn build_next(&self, next: &NextBlock) -> Result<(F::Block, u64, usize)> {
+        let txs: Vec<Transaction> = self.mempool.iter().map(|(_, tx)| tx.clone()).collect();
+        self.build_next_with(next, txs)
+    }
+
+    fn build_next_with(
+        &self,
+        next: &NextBlock,
+        txs: Vec<Transaction>,
+    ) -> Result<(F::Block, u64, usize)> {
         let tip = self.tip();
         let height = tip
             .height
             .checked_add(1)
             .ok_or_else(|| Error::Chain("the chain is at the last height".into()))?;
         let time = next.time.max(tip.time.saturating_add(1));
-        let txs: Vec<Transaction> = self.mempool.iter().map(|(_, tx)| tx.clone()).collect();
         let fees = txs
             .iter()
             .try_fold(0u64, |s, tx| s.checked_add(self.fees(tx).unwrap_or(0)))
@@ -745,6 +834,47 @@ impl<F: HeaderFamily> StateOf<F> {
                 "a federated chain makes blocks through the round (proposals/level-2.md), not produce()".into(),
             ));
         }
+        let (block, fees, claims) = self.build_next(next)?;
+        let signed = sign_block(&self.family, &block, &self.challenge, key, &[0u8; 32])?;
+        let first_error = match self.add_block(&signed, None, now) {
+            Ok(mut applied) => {
+                applied.fees = fees;
+                applied.claims = claims;
+                return Ok((applied, signed));
+            }
+            Err(error) => error,
+        };
+        if self.mempool.is_empty() {
+            return Err(first_error);
+        }
+
+        // Issue 13: if admission and block validation ever disagree, walk
+        // the mempool in order and keep only transactions whose addition to
+        // the candidate still makes a valid block. Remember an evicted
+        // transaction's exact consensus bytes so relay replays do not stall
+        // every production tick, while a witness-only repair is judged again.
+        let pending: Vec<Transaction> = self.mempool().cloned().collect();
+        let mut kept = Vec::new();
+        let mut evicted = 0usize;
+        for tx in pending {
+            let mut candidate = kept.clone();
+            candidate.push(tx.clone());
+            let (block, _, _) = self.build_next_with(next, candidate)?;
+            let signed = sign_block(&self.family, &block, &self.challenge, key, &[0u8; 32])?;
+            let (verdict, _) = self.judge(self.height() + 1, &signed, now);
+            if verdict.ok() {
+                kept.push(tx);
+            } else {
+                let why = verdict.failed().join(", ");
+                if self.evict(tx.compute_txid(), why) {
+                    evicted += 1;
+                }
+            }
+        }
+        if evicted == 0 {
+            return Err(first_error);
+        }
+
         let (block, fees, claims) = self.build_next(next)?;
         let signed = sign_block(&self.family, &block, &self.challenge, key, &[0u8; 32])?;
         let mut r = self.add_block(&signed, None, now)?;

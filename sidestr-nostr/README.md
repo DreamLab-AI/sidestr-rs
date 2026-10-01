@@ -14,12 +14,13 @@ A sidestr chain has no peer-to-peer network: blocks are served as a file from
 any mirror, and everything else travels as signed events on public relays. The
 one rule that makes a relay's answer worth acting on is the announcement's: a
 client accepts a mirror when the mirror's `chain.json` names the announcer as
-the chain's signer, and then holds the mirror to the announced tip — it may be
-behind, never ahead. A chain id is a name, not a proof.
+the level-1 signer or one of its level-2 signers, and then holds the mirror to
+the announced tip: it may be behind, never ahead. A chain id is a name, not a
+proof.
 
 ```toml
 [dependencies]
-sidestr-nostr = "0.3"
+sidestr-nostr = "0.4"
 ```
 
 ```rust
@@ -37,11 +38,11 @@ assert_eq!(parse_tip(&ev).unwrap().mirrors, ["https://mirror.example/x"]);
 ## Attribution
 
 This crate is a port of **siding**, the reference implementation of sidestr by
-Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
-AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279`
+Melvin Carvalho ([github.com/sidestr/spec](https://github.com/sidestr/spec),
+AGPL-3.0), ported from commit `2de40bdac4cba01be0864156a553d8287c22e279`
 (the tip announcement and transaction events follow `announce.mjs` and
-`relay.mjs` at `fa86dac`, SPEC 0.0.4, `@sidestr/spec` 0.0.6: the `peg` tag and
-kind 23503)
+`relay.mjs` through `fe689e9`: the `peg` tag, kind 23503 and federated
+announcement authors)
 (`siding/lib/{announce,relay,pledge,round,pegoutround,spend}.mjs`,
 `bin/siding.mjs`, `test/announce-test.mjs`). The event id and signature rule
 comes from the schema kernel siding loads, by the same author and under the
@@ -51,7 +52,7 @@ the design; the crate documentation cites its sections, and every ported
 function names its original. The announcement and mirror rule in the crate
 docs is Melvin Carvalho's wording from `announce.mjs` and SPEC 11, adapted.
 
-The agentbox kinds 38420–38425 are this estate's own (ADR-2098, DDD-022),
+Agentbox kinds 38420–38425 are this estate's own (ADR-2098, DDD-022),
 not upstream's.
 
 ## What changed in the port
@@ -70,11 +71,11 @@ not upstream's.
   sidestr/spec PR #7, siding's `parseTip` accepted only content whose length
   divides by 328 (the 164-byte Knots v2 header) and therefore returned `null`
   for every announcement of a chain beside a stock Bitcoin parent (80-byte
-  headers, 160 hex characters) — including the live `sidestr:dreamlab`
+  headers, 160 hex characters), including the live `sidestr:dreamlab`
   announcement carried in `fixtures/live-33333.json`. Since 0.0.3
   `headerWidth` reads the width from the content, bounded to `TIP_HEADERS`
   headers and hex-checked before slicing; this crate applies the same bound.
-  The kernel's own NIP-333 reader (`schema/codec/nostr.js`) uses 160. Here the
+  Its kernel NIP-333 reader (`schema/codec/nostr.js`) uses 160. Here the
   family is inferred from the length, or taken from the chain's parent; a
   length that fits both is refused rather than guessed.
 - Refusals are typed errors with the reason, not `null`.
@@ -86,13 +87,13 @@ not upstream's.
   the two subscriptions and the on-receipt checks are pure, and I/O is a
   `RelayClient` port the caller implements.
 
-## Status — 0.3.0
+## Status: 0.4.0
 
 Every codec has encode → decode round-trip tests and rejecting tests. Proven
 against the reference:
 
 - events built and signed here for the disposable `sidestr:trial` key are
-  byte-identical — tags, content, id and signature — to siding's `tipEvent`
+  byte-identical in tags, content, id and signature to siding's `tipEvent`
   and `makeEvents` output over the kernel's hash and curve
   (`tests/oracle.rs`, `fixtures/oracle-vectors.json`; the key is
   `sidestr-core`'s `fixtures/trial/trial.key`, read from the sibling crate when
@@ -106,9 +107,9 @@ against the reference:
   directions (`sidestr-round`'s `tests/interop_round.rs` and
   `tests/interop_pegout.rs`).
 
-Elsewhere in the stack: relay I/O (a tokio websocket client behind
-`sidestr-round`'s `relay` feature) and the round logic itself — entitlement,
-one signature per height, the seal — are `sidestr-round`'s. Not yet: pledge
+Elsewhere in the stack, relay I/O (a tokio websocket client behind
+`sidestr-round`'s `relay` feature) and the round logic itself (entitlement,
+one signature per height and the seal) are `sidestr-round`'s. Not yet: pledge
 verification against a parent view, NIP-333's bulk `u`-tag channels, the
 assets and pool records.
 

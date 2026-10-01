@@ -2,10 +2,11 @@
 
 All notable changes to `sidestr-agent`. The crate follows semantic versioning.
 
-## Unreleased — 0.3.2
+## 0.4.0 (2026-10-01)
 
-EVM deposits (the `evm` rule, proposals/evm.md). Additive: a patch release.
-Depends on `sidestr-wallet` 0.4.3 and `sidestr-core` 0.3.4.
+EVM deposits (the `evm` rule, proposals/evm.md). Depends on
+`sidestr-wallet` 0.5, `sidestr-core` and `sidestr-nostr` 0.4, and
+`sidestr-round` 0.3.
 
 ### Added
 
@@ -22,7 +23,7 @@ Depends on `sidestr-wallet` 0.4.3 and `sidestr-core` 0.3.4.
   validating the blocks, for a chain `ChainView::replay` cannot replay;
   either header family). Both pure, so the wasm32 build has them.
 
-## 0.3.1 — 2026-09-25
+## 0.3.1 (2026-09-25)
 
 SPEC 0.0.4 (`@sidestr/spec` 0.0.6). Additive.
 
@@ -41,7 +42,7 @@ SPEC 0.0.4 (`@sidestr/spec` 0.0.6). Additive.
   wallet's `publishParent`). `--no-explorer`, `--explorer`, `--dry-run`.
   Library: `parent_explorer_api`.
 
-## 0.3.0 — 2026-09-24
+## 0.3.0 (2026-09-24)
 
 ### Changed
 
@@ -67,7 +68,7 @@ SPEC 0.0.4 (`@sidestr/spec` 0.0.6). Additive.
   which answers kind-23501 requests with plain sats and, optionally, units
   of an asset, one grant per script per window.
 
-## 0.2.0 — 2026-09-23
+## 0.2.0 (2026-09-23)
 
 ### Changed
 
@@ -86,7 +87,7 @@ SPEC 0.0.4 (`@sidestr/spec` 0.0.6). Additive.
   unrelated error came first. None echoed the secret. The pass's probes are
   kept in `tests/audit_regressions_0_2_0.rs`.
 
-## 0.1.0 — 2026-09-23
+## 0.1.0 (2026-09-23)
 
 First release, generalised from the tool that ran the first live loop on
 `sidestr:dreamlab`: a peg-in, three trades between two agents as kind-23500

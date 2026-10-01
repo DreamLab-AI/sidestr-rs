@@ -15,7 +15,7 @@
 //!   `stateManager.putAccount` does outside any transaction, until a later
 //!   transaction touches it.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 
 use alloy_primitives::{Address, Bytes, B256, U256};
@@ -23,10 +23,11 @@ use alloy_trie::{root, TrieAccount, EMPTY_ROOT_HASH, KECCAK_EMPTY};
 use revm::bytecode::Bytecode;
 use revm::state::{AccountInfo, EvmState};
 use revm::Database;
+use serde::{Deserialize, Serialize};
 
 /// One account. The default is a new, empty account: no nonce, no
 /// balance, the empty code's hash, no storage.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Account {
     /// The nonce.
     pub nonce: u64,
@@ -65,10 +66,10 @@ impl Account {
 }
 
 /// The accounts and the code they hold.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct World {
     accounts: BTreeMap<Address, Account>,
-    code: HashMap<B256, Bytes>,
+    code: BTreeMap<B256, Bytes>,
 }
 
 impl World {

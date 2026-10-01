@@ -9,16 +9,16 @@ parent-side peg-in transaction shape, and delivery as a `POST /tx` body or a
 kind-23500 event.
 
 A wallet needs a chain id and a relay, and nothing of the producer's (SPEC 11).
-It reads `chain.json` from a mirror, asks a producer `/coins/<script hex>` — or
+It reads `chain.json` from a mirror and asks a producer `/coins/<script hex>`, or
 folds the block file with [`sidestr-core`](https://crates.io/crates/sidestr-core)
-and gets the same list — builds a transaction Bitcoin's rules accept with the
+to get the same list. It builds a transaction Bitcoin's rules accept with the
 fee at the document's `minFeeRate`, and hands it over. The transaction
 authorises itself; a producer includes what validates.
 
 ```toml
 [dependencies]
-sidestr-wallet = "0.3"
-sidestr-core = "0.3"
+sidestr-wallet = "0.5"
+sidestr-core = "0.4"
 ```
 
 ```rust
@@ -34,15 +34,15 @@ let post = sidestr_wallet::deliver::tx_post(producer_url, &paid.hex);   // POST 
 ## Attribution
 
 This crate is a port of **siding**, the reference implementation of sidestr by
-Melvin Carvalho — [github.com/sidestr/spec](https://github.com/sidestr/spec),
-AGPL-3.0 — ported from commit `2de40bdac4cba01be0864156a553d8287c22e279` and
-brought to SPEC 0.0.4 (`@sidestr/spec` 0.0.6) at `fa86dac83d47b8f70195132e91e9dc083e1d9228` (`lib/txsign.mjs`):
+Melvin Carvalho ([github.com/sidestr/spec](https://github.com/sidestr/spec),
+AGPL-3.0), ported from commit `2de40bdac4cba01be0864156a553d8287c22e279` and
+brought through `fe689e9c723f9bf43393d2dd5b6f924a701c8a18` (`lib/txsign.mjs`):
 `siding/lib/spend.mjs` (`buildSpend`, `resolveTo`, `deliver`),
 `lib/address.mjs`, the transaction and marker construction of
 `lib/parent.mjs` (`scanPegins`, `payPegout`) and `lib/checkpoint.mjs`
 (`sendCheckpoint`), and the `send` and `faucet` commands of `bin/siding.mjs`.
-The mempool policy it builds to — maturity, `pegoutMin`, `minFeeRate`, the
-key-path signature check — is `siding/lib/chain.mjs Siding.submit()`, which
+Its target mempool policy covers maturity, `pegoutMin`, `minFeeRate` and the
+key-path signature check in `siding/lib/chain.mjs Siding.submit()`, which
 `sidestr-core` carries as `State::submit`. `SPEC.md` in the sidestr repository
 is the design; the crate documentation cites its sections, and every ported
 function names its original. Consensus types, markers, addresses and the chain
@@ -87,7 +87,7 @@ document come from `sidestr-core` and are not duplicated.
   `checkpoint_data`). The reference does not check; its `send` fails at the
   node.
 - **An EVM deposit needs a chain naming the `evm` rule** (`deposit`, since
-  0.4.3; siding's `send --evm`). siding pays the reserve on any chain; where
+  0.5.0; siding's `send --evm`). siding pays the reserve on any chain; where
   the rule is not named nothing is credited, so this crate refuses. The
   transaction is otherwise siding's, byte for byte: the reserve
   (`evm.reserve`, else the challenge) paid, then the value-0
@@ -97,7 +97,7 @@ document come from `sidestr-core` and are not duplicated.
 - **Not carried:** the faucet's relay loop and rate state (its payment is
   `build_spend`; the request template is `deliver::faucet_request`).
 
-## Status — 0.3.0
+## Status: 0.5.0
 
 Spend, burn, peg-in shape, delivery data, coin listing and selection, the
 signer and policy ports. Signatures follow the parent's family (SPEC 0.0.3):

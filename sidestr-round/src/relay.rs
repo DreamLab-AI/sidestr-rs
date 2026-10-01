@@ -15,8 +15,9 @@
 //! [`Connector`] (a private root, a test certificate); [`follow`] and
 //! [`publish_one`] use the default. No `native-tls`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -25,7 +26,7 @@ use sidestr_nostr::event::Event;
 use sidestr_nostr::relay::{ClientMessage, Filter, PublishOutcome, RelayMessage};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 pub use tokio_tungstenite::Connector;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -45,8 +46,8 @@ pub fn unix_now_ms() -> u64 {
 
 /// The TLS client configuration `wss://` uses: rustls, the `ring`
 /// provider, TLS 1.2 and 1.3, the Mozilla root store, no client
-/// certificate. Built once per process: the root store is some hundred
-/// certificates, and a signer publishes on a fresh connection every time.
+/// certificate. Built once per process and used by the default connection
+/// pool.
 pub fn default_tls_config() -> Arc<rustls::ClientConfig> {
     static CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
     CONFIG
@@ -85,6 +86,500 @@ async fn connect(
         .map_err(Box::new)
 }
 
+type RelaySocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+#[derive(Clone)]
+struct Session {
+    commands: mpsc::UnboundedSender<PoolCommand>,
+}
+
+struct PoolInner {
+    connector: Connector,
+    sessions: tokio::sync::Mutex<HashMap<String, Session>>,
+    sequence: AtomicU64,
+}
+
+/// A process-local relay connection pool. One reconnecting websocket is
+/// kept per URL and shared by long-lived subscriptions, one-shot fetches and
+/// publishes. It closes two seconds after the last user leaves, so a CLI
+/// command does not leave a runtime alive (`relay.mjs socket`, issue 14).
+#[derive(Clone)]
+pub struct RelayPool {
+    inner: Arc<PoolInner>,
+}
+
+impl std::fmt::Debug for RelayPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RelayPool").finish_non_exhaustive()
+    }
+}
+
+enum PoolCommand {
+    Subscribe {
+        id: String,
+        filters: Vec<Filter>,
+        one_shot: bool,
+        events: mpsc::UnboundedSender<PoolItem>,
+    },
+    Unsubscribe(String),
+    Publish {
+        event: Event,
+        reply: oneshot::Sender<PublishOutcome>,
+    },
+}
+
+enum PoolItem {
+    Event(Event),
+    Eose,
+    Closed,
+}
+
+struct Subscription {
+    filters: Vec<Filter>,
+    one_shot: bool,
+    events: mpsc::UnboundedSender<PoolItem>,
+}
+
+struct PendingPublish {
+    event: Event,
+    replies: Vec<oneshot::Sender<PublishOutcome>>,
+    sent: bool,
+}
+
+struct SubscriptionGuard {
+    id: String,
+    commands: mpsc::UnboundedSender<PoolCommand>,
+}
+
+impl Drop for SubscriptionGuard {
+    fn drop(&mut self) {
+        let _ = self
+            .commands
+            .send(PoolCommand::Unsubscribe(self.id.clone()));
+    }
+}
+
+impl RelayPool {
+    /// An empty pool using `connector` for every URL it opens.
+    pub fn new(connector: Connector) -> Self {
+        Self {
+            inner: Arc::new(PoolInner {
+                connector,
+                sessions: tokio::sync::Mutex::new(HashMap::new()),
+                sequence: AtomicU64::new(1),
+            }),
+        }
+    }
+
+    async fn session(&self, url: &str) -> Session {
+        let mut sessions = self.inner.sessions.lock().await;
+        if let Some(session) = sessions.get(url).filter(|s| !s.commands.is_closed()) {
+            return session.clone();
+        }
+        let (commands, rx) = mpsc::unbounded_channel();
+        let session = Session {
+            commands: commands.clone(),
+        };
+        sessions.insert(url.to_string(), session.clone());
+        tokio::spawn(run_session(
+            url.to_string(),
+            self.inner.connector.clone(),
+            rx,
+        ));
+        session
+    }
+
+    async fn subscribe(
+        &self,
+        url: &str,
+        filters: Vec<Filter>,
+        one_shot: bool,
+    ) -> (mpsc::UnboundedReceiver<PoolItem>, SubscriptionGuard) {
+        let session = self.session(url).await;
+        let sequence = self.inner.sequence.fetch_add(1, Ordering::Relaxed);
+        let id = format!("sidestr-{sequence:020}");
+        let (events, rx) = mpsc::unbounded_channel();
+        let _ = session.commands.send(PoolCommand::Subscribe {
+            id: id.clone(),
+            filters,
+            one_shot,
+            events,
+        });
+        (
+            rx,
+            SubscriptionGuard {
+                id,
+                commands: session.commands,
+            },
+        )
+    }
+
+    /// Follow all `kinds` on each relay over this pool. Every reconnect
+    /// re-sends the subscription before events resume.
+    pub fn follow(
+        &self,
+        relays: Vec<String>,
+        kinds: Vec<u32>,
+        since_secs: u64,
+        log: impl Fn(String) + Send + Sync + 'static,
+    ) -> mpsc::Receiver<(String, Event)> {
+        let (tx, rx) = mpsc::channel(1024);
+        let log = Arc::new(log);
+        for url in relays {
+            let pool = self.clone();
+            let tx = tx.clone();
+            let kinds = kinds.clone();
+            let log = log.clone();
+            tokio::spawn(async move {
+                let mut feeds = Vec::with_capacity(kinds.len());
+                for kind in kinds {
+                    let filter = sidestr_nostr::relay::follow_filter(kind, since_secs, unix_now());
+                    let feed = pool.subscribe(&url, vec![filter], false).await;
+                    log(format!("relay {url}: following kind {kind}"));
+                    feeds.push(feed);
+                }
+                for (mut events, guard) in feeds {
+                    let tx = tx.clone();
+                    let url = url.clone();
+                    tokio::spawn(async move {
+                        let _guard = guard;
+                        loop {
+                            tokio::select! {
+                                _ = tx.closed() => break,
+                                item = events.recv() => match item {
+                                    Some(PoolItem::Event(event)) => {
+                                        if tx.send((url.clone(), event)).await.is_err() { break; }
+                                    }
+                                    Some(PoolItem::Eose) => {}
+                                    Some(PoolItem::Closed) | None => break,
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
+        rx
+    }
+
+    async fn fetch_one(&self, url: &str, filter: Filter, timeout: Duration) -> Vec<Event> {
+        let (mut events, _guard) = self.subscribe(url, vec![filter], true).await;
+        let mut found = Vec::new();
+        let read = async {
+            while let Some(item) = events.recv().await {
+                match item {
+                    PoolItem::Event(event) => found.push(event),
+                    PoolItem::Eose | PoolItem::Closed => break,
+                }
+            }
+        };
+        let _ = tokio::time::timeout(timeout, read).await;
+        found
+    }
+
+    /// Fetch from every relay through this pool until `EOSE` or `timeout`.
+    pub async fn fetch(&self, relays: &[String], filter: Filter, timeout: Duration) -> Vec<Event> {
+        let one = |url: String| {
+            let pool = self.clone();
+            let filter = filter.clone();
+            async move { pool.fetch_one(&url, filter, timeout).await }
+        };
+        futures_util::future::join_all(relays.iter().cloned().map(one))
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    /// Publish through the URL's shared socket and wait for its `OK`.
+    pub async fn publish_one(&self, url: &str, event: &Event, timeout: Duration) -> PublishOutcome {
+        let wait = async {
+            let session = self.session(url).await;
+            let (reply, rx) = oneshot::channel();
+            if session
+                .commands
+                .send(PoolCommand::Publish {
+                    event: event.clone(),
+                    reply,
+                })
+                .is_err()
+            {
+                return PublishOutcome::Closed;
+            }
+            rx.await.unwrap_or(PublishOutcome::Closed)
+        };
+        tokio::time::timeout(timeout, wait)
+            .await
+            .unwrap_or(PublishOutcome::Timeout)
+    }
+}
+
+fn default_pool() -> &'static RelayPool {
+    static POOL: OnceLock<RelayPool> = OnceLock::new();
+    POOL.get_or_init(|| RelayPool::new(default_connector()))
+}
+
+async fn send_client(socket: &mut RelaySocket, message: ClientMessage) -> bool {
+    socket
+        .send(Message::Text(message.to_json().into()))
+        .await
+        .is_ok()
+}
+
+fn close_publishes(publishes: &mut HashMap<String, PendingPublish>) {
+    for (_, pending) in publishes.drain() {
+        for reply in pending.replies {
+            let _ = reply.send(PublishOutcome::Closed);
+        }
+    }
+}
+
+async fn apply_command(
+    command: PoolCommand,
+    subscriptions: &mut BTreeMap<String, Subscription>,
+    publishes: &mut HashMap<String, PendingPublish>,
+    socket: &mut Option<RelaySocket>,
+) -> bool {
+    match command {
+        PoolCommand::Subscribe {
+            id,
+            filters,
+            one_shot,
+            events,
+        } => {
+            let request = ClientMessage::Req {
+                subscription_id: id.clone(),
+                filters: filters.clone(),
+            };
+            subscriptions.insert(
+                id,
+                Subscription {
+                    filters,
+                    one_shot,
+                    events,
+                },
+            );
+            match socket.as_mut() {
+                Some(socket) => send_client(socket, request).await,
+                None => true,
+            }
+        }
+        PoolCommand::Unsubscribe(id) => {
+            let existed = subscriptions.remove(&id).is_some();
+            match (existed, socket.as_mut()) {
+                (true, Some(socket)) => send_client(socket, ClientMessage::Close(id)).await,
+                _ => true,
+            }
+        }
+        PoolCommand::Publish { event, reply } => {
+            let id = event.id.clone();
+            if let Some(pending) = publishes.get_mut(&id) {
+                pending.replies.push(reply);
+                return true;
+            }
+            publishes.insert(
+                id.clone(),
+                PendingPublish {
+                    event: event.clone(),
+                    replies: vec![reply],
+                    sent: false,
+                },
+            );
+            if let Some(socket) = socket.as_mut() {
+                if send_client(socket, ClientMessage::Event(event)).await {
+                    if let Some(pending) = publishes.get_mut(&id) {
+                        pending.sent = true;
+                    }
+                    true
+                } else {
+                    if let Some(pending) = publishes.remove(&id) {
+                        for reply in pending.replies {
+                            let _ = reply.send(PublishOutcome::Closed);
+                        }
+                    }
+                    false
+                }
+            } else {
+                true
+            }
+        }
+    }
+}
+
+async fn connected(
+    socket: &mut RelaySocket,
+    subscriptions: &BTreeMap<String, Subscription>,
+    publishes: &mut HashMap<String, PendingPublish>,
+) -> bool {
+    for (id, subscription) in subscriptions {
+        if !send_client(
+            socket,
+            ClientMessage::Req {
+                subscription_id: id.clone(),
+                filters: subscription.filters.clone(),
+            },
+        )
+        .await
+        {
+            return false;
+        }
+    }
+    for pending in publishes.values_mut() {
+        if !send_client(socket, ClientMessage::Event(pending.event.clone())).await {
+            return false;
+        }
+        pending.sent = true;
+    }
+    true
+}
+
+async fn relay_message(
+    message: Option<Result<Message, tokio_tungstenite::tungstenite::Error>>,
+    socket: &mut RelaySocket,
+    subscriptions: &mut BTreeMap<String, Subscription>,
+    publishes: &mut HashMap<String, PendingPublish>,
+) -> bool {
+    let text = match message {
+        Some(Ok(Message::Text(text))) => text.to_string(),
+        Some(Ok(Message::Ping(bytes))) => {
+            return socket.send(Message::Pong(bytes)).await.is_ok();
+        }
+        Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return false,
+        _ => return true,
+    };
+    match RelayMessage::from_json(&text) {
+        Ok(RelayMessage::Event {
+            subscription_id,
+            event,
+        }) => {
+            let failed = subscriptions
+                .get(&subscription_id)
+                .is_some_and(|s| s.events.send(PoolItem::Event(event)).is_err());
+            if failed {
+                subscriptions.remove(&subscription_id);
+            }
+        }
+        Ok(RelayMessage::Eose(id)) => {
+            let one_shot = subscriptions.get(&id).is_some_and(|s| {
+                let _ = s.events.send(PoolItem::Eose);
+                s.one_shot
+            });
+            if one_shot {
+                subscriptions.remove(&id);
+                let _ = send_client(socket, ClientMessage::Close(id)).await;
+            }
+        }
+        Ok(RelayMessage::Closed(id, _)) => {
+            if let Some(subscription) = subscriptions.remove(&id) {
+                let _ = subscription.events.send(PoolItem::Closed);
+            }
+        }
+        Ok(RelayMessage::Ok {
+            event_id,
+            accepted,
+            message,
+        }) => {
+            if let Some(pending) = publishes.remove(&event_id) {
+                let outcome = PublishOutcome::from_ok(accepted, &message);
+                for reply in pending.replies {
+                    let _ = reply.send(outcome.clone());
+                }
+            }
+        }
+        _ => {}
+    }
+    true
+}
+
+async fn run_session(
+    url: String,
+    connector: Connector,
+    mut commands: mpsc::UnboundedReceiver<PoolCommand>,
+) {
+    let mut subscriptions = BTreeMap::<String, Subscription>::new();
+    let mut publishes = HashMap::<String, PendingPublish>::new();
+    let mut socket = None;
+    let mut backoff = 1u64;
+    let mut retry_after = Duration::ZERO;
+    loop {
+        subscriptions.retain(|_, subscription| !subscription.events.is_closed());
+        for pending in publishes.values_mut() {
+            pending.replies.retain(|reply| !reply.is_closed());
+        }
+        publishes.retain(|_, pending| !pending.replies.is_empty());
+        let idle = subscriptions.is_empty() && publishes.is_empty();
+
+        if socket.is_none() {
+            if idle {
+                match tokio::time::timeout(Duration::from_secs(2), commands.recv()).await {
+                    Ok(Some(command)) => {
+                        let _ =
+                            apply_command(command, &mut subscriptions, &mut publishes, &mut socket)
+                                .await;
+                        continue;
+                    }
+                    _ => break,
+                }
+            }
+            tokio::select! {
+                command = commands.recv() => match command {
+                    Some(command) => { let _ = apply_command(command, &mut subscriptions, &mut publishes, &mut socket).await; }
+                    None => break,
+                },
+                _ = tokio::time::sleep(retry_after) => {
+                    match connect(&url, &connector).await {
+                        Ok(mut opened) => {
+                            if connected(&mut opened, &subscriptions, &mut publishes).await {
+                                socket = Some(opened);
+                                backoff = 1;
+                                retry_after = Duration::ZERO;
+                            } else {
+                                close_publishes(&mut publishes);
+                                retry_after = Duration::from_secs(backoff);
+                                backoff = (backoff * 2).min(60);
+                            }
+                        }
+                        Err(_) => {
+                            close_publishes(&mut publishes);
+                            retry_after = Duration::from_secs(backoff);
+                            backoff = (backoff * 2).min(60);
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        let sleep = tokio::time::sleep(Duration::from_secs(2));
+        tokio::pin!(sleep);
+        let alive = tokio::select! {
+            command = commands.recv() => match command {
+                Some(command) => apply_command(command, &mut subscriptions, &mut publishes, &mut socket).await,
+                None => break,
+            },
+            message = socket.as_mut().expect("checked above").next() => {
+                relay_message(
+                    message,
+                    socket.as_mut().expect("checked above"),
+                    &mut subscriptions,
+                    &mut publishes,
+                ).await
+            },
+            _ = &mut sleep, if idle => break,
+        };
+        if !alive {
+            close_publishes(&mut publishes);
+            socket = None;
+            retry_after = Duration::from_secs(backoff);
+            backoff = (backoff * 2).min(60);
+        }
+    }
+    if let Some(mut socket) = socket {
+        let _ = socket.close(None).await;
+    }
+    close_publishes(&mut publishes);
+}
+
 /// Follow `relays` for these kinds since `since_secs` ago (`relay.mjs
 /// subscribe`): one `REQ` per kind, by kind only (relays refuse `#chain`),
 /// reconnecting with backoff from 1 s to 60 s. Every `EVENT` a relay sends
@@ -97,7 +592,7 @@ pub fn follow(
     since_secs: u64,
     log: impl Fn(String) + Send + Sync + 'static,
 ) -> mpsc::Receiver<(String, Event)> {
-    follow_with(relays, kinds, since_secs, log, default_connector())
+    default_pool().follow(relays, kinds, since_secs, log)
 }
 
 /// [`follow`] with the TLS connector given.
@@ -108,60 +603,7 @@ pub fn follow_with(
     log: impl Fn(String) + Send + Sync + 'static,
     connector: Connector,
 ) -> mpsc::Receiver<(String, Event)> {
-    let (tx, rx) = mpsc::channel(1024);
-    let log = Arc::new(log);
-    for url in relays {
-        let tx = tx.clone();
-        let kinds = kinds.clone();
-        let log = log.clone();
-        let connector = connector.clone();
-        tokio::spawn(async move {
-            let mut backoff = 1u64;
-            loop {
-                match connect(&url, &connector).await {
-                    Ok(mut ws) => {
-                        backoff = 1;
-                        let now = unix_now();
-                        for k in &kinds {
-                            let req = ClientMessage::Req {
-                                subscription_id: format!("k{k}"),
-                                filters: vec![sidestr_nostr::relay::follow_filter(
-                                    *k, since_secs, now,
-                                )],
-                            };
-                            if ws.send(Message::Text(req.to_json().into())).await.is_err() {
-                                break;
-                            }
-                        }
-                        log(format!("relay {url}: following kinds {kinds:?}"));
-                        while let Some(msg) = ws.next().await {
-                            let text = match msg {
-                                Ok(Message::Text(t)) => t.to_string(),
-                                Ok(Message::Ping(p)) => {
-                                    let _ = ws.send(Message::Pong(p)).await;
-                                    continue;
-                                }
-                                Ok(Message::Close(_)) | Err(_) => break,
-                                _ => continue,
-                            };
-                            if let Ok(RelayMessage::Event { event, .. }) =
-                                RelayMessage::from_json(&text)
-                            {
-                                if tx.send((url.clone(), event)).await.is_err() {
-                                    return;
-                                }
-                            }
-                        }
-                        log(format!("relay {url}: closed, reconnecting"));
-                    }
-                    Err(e) => log(format!("relay {url}: {e}")),
-                }
-                tokio::time::sleep(Duration::from_secs(backoff)).await;
-                backoff = (backoff * 2).min(60);
-            }
-        });
-    }
-    rx
+    RelayPool::new(connector).follow(relays, kinds, since_secs, log)
 }
 
 /// Ask each relay once for the events matching `filter` and collect what they
@@ -171,7 +613,7 @@ pub fn follow_with(
 /// across relays; the caller verifies and chooses
 /// ([`sidestr_nostr::tip::newest`] does both for announcements).
 pub async fn fetch(relays: &[String], filter: Filter, timeout: Duration) -> Vec<Event> {
-    fetch_with(relays, filter, timeout, &default_connector()).await
+    default_pool().fetch(relays, filter, timeout).await
 }
 
 /// [`fetch`] with the TLS connector given.
@@ -181,53 +623,16 @@ pub async fn fetch_with(
     timeout: Duration,
     connector: &Connector,
 ) -> Vec<Event> {
-    let one = |url: String| {
-        let filter = filter.clone();
-        async move {
-            let mut got = Vec::new();
-            let read = async {
-                let Ok(mut ws) = connect(&url, connector).await else {
-                    return;
-                };
-                let req = ClientMessage::Req {
-                    subscription_id: "fetch".into(),
-                    filters: vec![filter],
-                };
-                if ws.send(Message::Text(req.to_json().into())).await.is_err() {
-                    return;
-                }
-                while let Some(msg) = ws.next().await {
-                    match msg {
-                        Ok(Message::Text(t)) => match RelayMessage::from_json(&t) {
-                            Ok(RelayMessage::Event { event, .. }) => got.push(event),
-                            Ok(RelayMessage::Eose(_)) | Ok(RelayMessage::Closed { .. }) => break,
-                            _ => {}
-                        },
-                        Ok(Message::Ping(p)) => {
-                            let _ = ws.send(Message::Pong(p)).await;
-                        }
-                        Ok(Message::Close(_)) | Err(_) => break,
-                        _ => {}
-                    }
-                }
-                let _ = ws.close(None).await;
-            };
-            let _ = tokio::time::timeout(timeout, read).await;
-            got
-        }
-    };
-    futures_util::future::join_all(relays.iter().cloned().map(one))
+    RelayPool::new(connector.clone())
+        .fetch(relays, filter, timeout)
         .await
-        .into_iter()
-        .flatten()
-        .collect()
 }
 
 /// Publish one event to one relay and report what it said (`relay.mjs
-/// publish`): a fresh connection, `["EVENT", …]`, the `OK` for this id
-/// within `timeout`.
+/// publish`): `["EVENT", …]` over the shared socket, then the `OK` for this
+/// id within `timeout`.
 pub async fn publish_one(url: &str, event: &Event, timeout: Duration) -> PublishOutcome {
-    publish_one_with(url, event, timeout, &default_connector()).await
+    default_pool().publish_one(url, event, timeout).await
 }
 
 /// [`publish_one`] with the TLS connector given.
@@ -237,48 +642,9 @@ pub async fn publish_one_with(
     timeout: Duration,
     connector: &Connector,
 ) -> PublishOutcome {
-    let attempt = async {
-        let mut ws = match connect(url, connector).await {
-            Ok(x) => x,
-            Err(_) => return PublishOutcome::Closed,
-        };
-        if ws
-            .send(Message::Text(
-                ClientMessage::Event(event.clone()).to_json().into(),
-            ))
-            .await
-            .is_err()
-        {
-            return PublishOutcome::Closed;
-        }
-        while let Some(msg) = ws.next().await {
-            match msg {
-                Ok(Message::Text(t)) => {
-                    if let Ok(RelayMessage::Ok {
-                        event_id,
-                        accepted,
-                        message,
-                    }) = RelayMessage::from_json(&t)
-                    {
-                        if event_id == event.id {
-                            let _ = ws.close(None).await;
-                            return PublishOutcome::from_ok(accepted, &message);
-                        }
-                    }
-                }
-                Ok(Message::Ping(p)) => {
-                    let _ = ws.send(Message::Pong(p)).await;
-                }
-                Ok(Message::Close(_)) | Err(_) => return PublishOutcome::Closed,
-                _ => {}
-            }
-        }
-        PublishOutcome::Closed
-    };
-    match tokio::time::timeout(timeout, attempt).await {
-        Ok(o) => o,
-        Err(_) => PublishOutcome::Timeout,
-    }
+    RelayPool::new(connector.clone())
+        .publish_one(url, event, timeout)
+        .await
 }
 
 /// Publish to every relay at once; each one's verdict, in order. Upstream's
@@ -333,6 +699,7 @@ pub struct RelayStandIn {
     addr: SocketAddr,
     tls: bool,
     events: Arc<Mutex<Vec<Event>>>,
+    connections: Arc<AtomicUsize>,
     _live: broadcast::Sender<Event>,
 }
 
@@ -357,15 +724,18 @@ impl RelayStandIn {
         let listener = TcpListener::bind(bind).await?;
         let addr = listener.local_addr()?;
         let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let connections = Arc::new(AtomicUsize::new(0));
         let (live, _) = broadcast::channel::<Event>(4096);
         let store = events.clone();
         let sender = live.clone();
+        let accepted = connections.clone();
         let acceptor = tls.clone().map(tokio_rustls::TlsAcceptor::from);
         tokio::spawn(async move {
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
                     break;
                 };
+                accepted.fetch_add(1, Ordering::Relaxed);
                 let (store, sender) = (store.clone(), sender.clone());
                 match acceptor.clone() {
                     None => {
@@ -385,6 +755,7 @@ impl RelayStandIn {
             addr,
             tls: tls.is_some(),
             events,
+            connections,
             _live: live,
         })
     }
@@ -400,6 +771,10 @@ impl RelayStandIn {
     /// Everything accepted so far, in arrival order.
     pub fn events(&self) -> Vec<Event> {
         self.events.lock().map(|e| e.clone()).unwrap_or_default()
+    }
+    /// Websocket connections accepted since the stand-in started.
+    pub fn connections(&self) -> usize {
+        self.connections.load(Ordering::Relaxed)
     }
 }
 
@@ -559,5 +934,52 @@ mod tests {
         )
         .await;
         assert_eq!(fetched, vec![tip]);
+    }
+
+    #[tokio::test]
+    async fn one_pool_shares_a_socket_then_closes_it_when_idle() {
+        let relay = RelayStandIn::start("127.0.0.1:0").await.unwrap();
+        let url = relay.url();
+        let pool = RelayPool::new(default_connector());
+        let signer = SecretKeySigner::from_bytes(&[4u8; 32]).unwrap();
+        let now = unix_now();
+        let mut followed = pool.follow(vec![url.clone()], vec![23500], 600, |_| {});
+        let first = sign_transaction_event(&signer, "sidestr:pool", "0200", now).unwrap();
+        assert_eq!(
+            pool.publish_one(&url, &first, Duration::from_secs(5)).await,
+            PublishOutcome::Ok
+        );
+        let (_, received) = tokio::time::timeout(Duration::from_secs(5), followed.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(received, first);
+
+        let fetched = pool
+            .fetch(
+                std::slice::from_ref(&url),
+                Filter {
+                    kinds: vec![23500],
+                    ..Filter::default()
+                },
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(fetched, vec![first]);
+        assert_eq!(relay.connections(), 1, "follow, fetch and publish share");
+
+        drop(followed);
+        tokio::time::sleep(Duration::from_millis(2_500)).await;
+        let second = sign_transaction_event(&signer, "sidestr:pool", "0201", now + 1).unwrap();
+        assert_eq!(
+            pool.publish_one(&url, &second, Duration::from_secs(5))
+                .await,
+            PublishOutcome::Ok
+        );
+        assert_eq!(
+            relay.connections(),
+            2,
+            "the idle socket closed and a later operation reopened it"
+        );
     }
 }

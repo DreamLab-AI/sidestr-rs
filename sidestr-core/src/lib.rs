@@ -16,8 +16,8 @@
 //!
 //! This crate is a port of **siding**, the reference implementation by
 //! Melvin Carvalho (<https://github.com/sidestr/spec>, AGPL-3.0), ported from
-//! commit `2de40bdac4cba01be0864156a553d8287c22e279` and brought to SPEC 0.0.4
-//! (`@sidestr/spec` 0.0.6) at `fa86dac83d47b8f70195132e91e9dc083e1d9228` (the peg output is the one the peg
+//! commit `2de40bdac4cba01be0864156a553d8287c22e279` and brought through
+//! `fe689e9c723f9bf43393d2dd5b6f924a701c8a18` (the peg output is the one the peg
 //! holders own, or pays the script the signer announces; signatures follow
 //! the parent's family), together with the parts of
 //! the engine it loads — `bitcoin-desktop/schema` (the block, header and
@@ -249,8 +249,8 @@
 //!   a chain it would misjudge; a state built with rules
 //!   ([`StateOf::from_genesis_with_rules`]) accepts the names they answer to
 //!   ([`rules::BlockRule::name`]). The assets rule is carried here
-//!   ([`assets::AssetsRule`]); the EVM rule is `sidestr-evm`, which keeps
-//!   revm out of this crate; `pool` is carried nowhere. The Knots overlay's
+//!   ([`assets::AssetsRule`]), with [`pool`] and [`markets`] beside it; the
+//!   EVM rule is `sidestr-evm`, which keeps revm out of this crate. The Knots overlay's
 //!   RDTS weight cap (`knots:rule-blockctx-weight-rdts`) is not carried
 //!   either: on a sidestr chain `rdtsExpiryTime` is 0, so it is never active.
 
@@ -276,9 +276,12 @@ pub mod document;
 pub mod error;
 pub mod federation;
 pub mod marker;
+pub mod markets;
 pub mod mirror;
+pub mod overlays;
 pub mod parent;
 pub mod parents;
+pub mod pool;
 pub mod records;
 pub mod rules;
 pub mod sighash;

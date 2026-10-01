@@ -13,7 +13,7 @@ that script in bech32m under the chain's prefix. One key does three jobs:
 - it signs the kind-23500 event that carries each spend to the producer's
   relays.
 
-The binary generalises the tool that ran the first live loop on
+This binary generalises the tool that ran the first live loop on
 `sidestr:dreamlab`, beside Bitcoin testnet4. That loop was a peg-in, three
 trades between Alice and Bob as kind-23500 events each signed with its
 agent's own key, and a peg-out. **Testnet4 and experimental chains only.**
@@ -73,8 +73,8 @@ sidestr-agent --chain chain.json publish-parent <hex>
 |---|---|---|
 | `--url` | the producer (`/coins`, `/tip`, `/chain.json`, `POST /tx`) | `http://127.0.0.1:3450` |
 | `--relays` | relays for the kind-23500 event, comma-separated | siding's five defaults |
-| `--key-file` | 64 hex characters or an `nsec1…`; a key is never taken on the command line | — |
-| `--chain` | read the chain document from a file instead of `<url>/chain.json` | — |
+| `--key-file` | 64 hex characters or an `nsec1…`; a key is never taken on the command line | not applicable |
+| `--chain` | read the chain document from a file instead of `<url>/chain.json` | not applicable |
 | `--blocks` | the block file for the assets view: a path or an http(s) URL | `<url>/blocks.dat` |
 
 `send` and `burn` spend only coins that carry no issued asset: every spend
@@ -90,7 +90,7 @@ that carries an asset alone.
 ## As a library
 
 ```toml
-sidestr-agent = { version = "0.3", default-features = false }
+sidestr-agent = { version = "0.4", default-features = false }
 ```
 
 Without the `cli` feature the crate is pure: no runtime, no network, and it
@@ -101,7 +101,7 @@ the signed kind-23500 event for you to deliver.
 
 Every command prints one JSON object.
 
-## The peg-in plan
+## Peg-in plan
 
 SPEC 6 (0.0.3) makes the peg output the taproot output the peg holders own,
 at any position; since 0.0.4 the signer also announces the script a peg-in
@@ -124,7 +124,7 @@ sits. Who owns it depends on the level:
   sweep a peg left unclaimed for `refundBlocks`. The first live peg-in paid
   such an address: `tr(<dreamlab signer>, …)` with Alice's refund key.
 
-The plan also prints the marker `pegin:<chain id>:<script>` and the `send`
+A peg-in plan also prints the marker `pegin:<chain id>:<script>` and the `send`
 outputs for Bitcoin Core.
 
 ## Library
@@ -138,7 +138,7 @@ assert_eq!(id.script, format!("5120{bob}"));
 assert!(id.address.starts_with("drm1p"));
 ```
 
-The docs have a complete offline example: two agents on a chain held in
+A complete offline example follows two agents on a chain held in
 memory, paying each other by npub.
 
 ## Provenance and licence
@@ -150,9 +150,9 @@ AGPL-3.0). It is licensed **AGPL-3.0-only**, like everything it derives
 from. See [LICENSE](LICENSE). Part of
 [sidestr-rs](https://github.com/DreamLab-AI/sidestr-rs).
 
-## Status — 0.2.0
+## Status: 0.4.0
 
-The offline parts are tested without a network (`tests/offline.rs`):
+Offline tests cover (`tests/offline.rs`):
 
 - keys against NIP-19's published vectors;
 - the live loop's two agents, from did:nostr key to the `drm1…` address the

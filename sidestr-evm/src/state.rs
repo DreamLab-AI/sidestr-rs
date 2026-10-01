@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, HashMap};
 use alloy_consensus::TxEnvelope;
 use alloy_primitives::{logs_bloom, Address, Bloom, Bytes, Log, B256, U256};
 use bitcoin::{BlockHash, ScriptBuf, Transaction, Txid};
+use serde::{Deserialize, Serialize};
 use sidestr_core::block::{HeaderFamily, SidestrBlock};
 
 use crate::config::EvmConfig;
@@ -77,7 +78,7 @@ impl Verdict {
 }
 
 /// What a carried transaction left, kept for as long as the state is.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Receipt {
     /// Its hash.
     pub transaction_hash: B256,
@@ -149,12 +150,34 @@ pub struct Sequenced {
 }
 
 /// An applied block's Ethereum transactions and the root it left.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockRecord {
     /// Its Ethereum transactions' hashes, in order.
     pub hashes: Vec<B256>,
     /// The state root after it.
     pub root: B256,
+}
+
+/// A versioned, JSON-safe copy of all durable EVM state (`evm.mjs
+/// snapshot`).
+///
+/// Worlds are retained by height so [`EvmState::restore`] can select any
+/// height present in the snapshot. Candidate verdicts are deliberately
+/// excluded: they are transient work and must be prepared again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvmSnapshot {
+    /// Snapshot schema. This crate currently writes and reads version 1.
+    pub version: u32,
+    /// Consensus parameters of the snapshotted EVM.
+    pub config: EvmConfig,
+    /// Account and code state after each retained height.
+    pub worlds: BTreeMap<u32, World>,
+    /// Header time at each retained height.
+    pub times: BTreeMap<u32, u32>,
+    /// Applied block records, including committed roots.
+    pub blocks: BTreeMap<u32, BlockRecord>,
+    /// Receipts, each of which includes its signed transaction envelope.
+    pub receipts: Vec<Receipt>,
 }
 
 #[derive(Debug, Clone)]
@@ -180,8 +203,10 @@ struct Pending {
 pub struct EvmState {
     config: EvmConfig,
     world: World,
+    worlds: BTreeMap<u32, World>,
     height: u32,
     time: u32,
+    times: BTreeMap<u32, u32>,
     pending: Vec<Pending>,
     verdicts: HashMap<BlockHash, Verdict>,
     receipts: HashMap<B256, Receipt>,
@@ -193,6 +218,8 @@ impl EvmState {
     /// (`chain.mjs`: the genesis's root is the empty state's).
     pub fn new(config: EvmConfig) -> Self {
         let world = World::new();
+        let worlds = BTreeMap::from([(0, world.clone())]);
+        let times = BTreeMap::from([(0, 0)]);
         let blocks = BTreeMap::from([(
             0,
             BlockRecord {
@@ -203,8 +230,10 @@ impl EvmState {
         Self {
             config,
             world,
+            worlds,
             height: 0,
             time: 0,
+            times,
             pending: Vec::new(),
             verdicts: HashMap::new(),
             receipts: HashMap::new(),
@@ -257,6 +286,78 @@ impl EvmState {
     /// The verdict [`EvmState::prepare`] gave a block, by its hash.
     pub fn verdict(&self, hash: &BlockHash) -> Option<&Verdict> {
         self.verdicts.get(hash)
+    }
+
+    /// Copy the durable state into JSON-safe data (`evm.mjs snapshot`).
+    pub fn snapshot(&self) -> EvmSnapshot {
+        EvmSnapshot {
+            version: 1,
+            config: self.config.clone(),
+            worlds: self.worlds.clone(),
+            times: self.times.clone(),
+            blocks: self.blocks.clone(),
+            receipts: self.receipts().cloned().collect(),
+        }
+    }
+
+    /// Restore durable state at `height` from a snapshot (`evm.mjs
+    /// restore`). Candidate verdicts are cleared and must be prepared again.
+    pub fn restore(&mut self, snapshot: &EvmSnapshot, height: u32) -> Result<(), String> {
+        if snapshot.version != 1 {
+            return Err(format!(
+                "unsupported evm snapshot version {}",
+                snapshot.version
+            ));
+        }
+        if snapshot.config != self.config {
+            return Err("evm snapshot parameters do not match this chain".into());
+        }
+        let world = snapshot
+            .worlds
+            .get(&height)
+            .cloned()
+            .ok_or_else(|| format!("no evm state at height {height}"))?;
+        let block = snapshot
+            .blocks
+            .get(&height)
+            .ok_or_else(|| format!("no evm block record at height {height}"))?;
+        if world.root() != block.root {
+            return Err(format!(
+                "evm snapshot state root at height {height} does not match its block record"
+            ));
+        }
+        let time = snapshot
+            .times
+            .get(&height)
+            .copied()
+            .ok_or_else(|| format!("no evm header time at height {height}"))?;
+
+        self.world = world;
+        self.worlds = snapshot.worlds.clone();
+        self.height = height;
+        self.time = time;
+        self.times = snapshot.times.clone();
+        self.blocks = snapshot.blocks.clone();
+        self.receipts = snapshot
+            .receipts
+            .iter()
+            .cloned()
+            .map(|receipt| (receipt.transaction_hash, receipt))
+            .collect();
+        self.pending.clear();
+        self.verdicts.clear();
+        Ok(())
+    }
+
+    /// Construct state from a snapshot at `height`.
+    pub fn from_snapshot(
+        config: EvmConfig,
+        snapshot: &EvmSnapshot,
+        height: u32,
+    ) -> Result<Self, String> {
+        let mut state = Self::new(config);
+        state.restore(snapshot, height)?;
+        Ok(state)
     }
 
     /// Apply one sidechain transaction's deposits and carriers to `world`
@@ -476,6 +577,8 @@ impl EvmState {
         self.world = p.world;
         self.height = p.height;
         self.time = p.time;
+        self.worlds.insert(self.height, self.world.clone());
+        self.times.insert(self.height, self.time);
         true
     }
 

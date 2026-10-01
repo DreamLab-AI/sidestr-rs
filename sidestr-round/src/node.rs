@@ -21,8 +21,8 @@ use sidestr_core::document::ChainDocument;
 use sidestr_core::marker::{parse_claims, parse_peg_marker};
 use sidestr_core::parent::rpc::CoreRpc;
 use sidestr_core::parent::{
-    claimable, outpoints_to_lock, owned_by_peg_wallet, paid_pegouts_in, parent_network,
-    scan_pegins, FoundPegin, ParentRpc, PegOwner, PegWallet,
+    claimable_by_transaction, new_pegins, outpoints_to_lock, paid_pegouts_in, parent_network,
+    scan_pegins_with_wallet, FoundPegin, ParentRpc, PegWallet,
 };
 use sidestr_nostr::event::Event;
 use sidestr_nostr::kinds::{
@@ -30,7 +30,7 @@ use sidestr_nostr::kinds::{
     KIND_SEALED_BLOCK, KIND_TRANSACTION,
 };
 use sidestr_nostr::relay::Follower;
-use sidestr_nostr::tip::{sign_tip, TipTemplate, TIP_HEADERS};
+use sidestr_nostr::tip::{sign_tip_with_peg, TipTemplate, TIP_HEADERS};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::{Error, Result};
@@ -325,7 +325,7 @@ impl<F: HeaderFamily> Node<F> {
             "relays": self.settings.relays,
             "announce": if self.settings.mirrors.is_empty() { serde_json::Value::Null } else { serde_json::json!({"mirrors": self.settings.mirrors, "announced": self.announced.map(i64::from).unwrap_or(-1)}) },
             "pegouts": {"burned": s.pegouts().len(), "paid": self.pegout.as_ref().map(|p| p.ledger().paid.len()).unwrap_or(0), "min": s.pegout_min(), "payer": self.settings.parent.as_ref().and_then(|p| p.wallet.clone())},
-            "pegins": self.parent.as_ref().map(|_| serde_json::json!({"scanned": self.pegins.scanned, "known": self.pegins.pegins.len(), "claimed": self.pegins.pegins.iter().filter(|p| s.claimed(&p.txid, p.vout)).count()})),
+            "pegins": self.parent.as_ref().map(|_| serde_json::json!({"scanned": self.pegins.scanned, "known": self.pegins.pegins.len(), "claimed": self.pegins.pegins.iter().filter(|p| s.claimed_tx(&p.txid)).count()})),
             "signer": self.key.pubkey_hex(), "genesis": s.genesis_hash().to_string(), "interval": self.settings.interval,
             "level2": {"signers": fed.signers.len(), "threshold": fed.threshold, "slot": self.round.slot() + 1,
                         "proposeAfter": self.settings.round.propose_after, "resignAfter": self.settings.round.resign_after,
@@ -503,38 +503,36 @@ impl<F: HeaderFamily> Node<F> {
         };
         if i64::from(tip) > self.pegins.scanned {
             let from = u32::try_from(self.pegins.scanned + 1).unwrap_or(0);
-            // SPEC 6 (0.0.3): with a peg wallet, the peg is the output it owns
-            // (the k-of-n descriptor it imported); without one, the first taproot
-            // output (`parent.mjs scanPegins`, `parent.walletRpc`)
-            let wallet_owner = owned_by_peg_wallet(rpc.as_ref());
-            let owner: Option<PegOwner<'_>> = rpc.wallet().is_some().then_some(&wallet_owner);
-            match scan_pegins(
+            let announced = self.doc.challenge_script().ok();
+            let wallet: Option<&dyn PegWallet> = rpc
+                .wallet()
+                .is_some()
+                .then_some(rpc.as_ref() as &dyn PegWallet);
+            match scan_pegins_with_wallet(
                 rpc.as_ref(),
                 &self.doc.id,
                 from,
                 tip,
                 network,
-                owner,
+                announced.as_deref(),
+                wallet,
                 |_| {},
             ) {
                 Ok(found) => {
-                    for p in &found {
-                        if !self
-                            .pegins
-                            .pegins
-                            .iter()
-                            .any(|q| q.txid == p.txid && q.vout == p.vout)
-                        {
-                            log(format!(
-                                "peg-in {}…:{}: {} sats to {}…, parent h{}",
-                                &p.txid[..16],
-                                p.vout,
-                                p.amount,
-                                &p.script.to_hex_string()[..12],
-                                p.height
-                            ));
-                            self.pegins.pegins.push(p.into());
-                        }
+                    let known: Vec<FoundPegin> =
+                        self.pegins.pegins.iter().map(PeginRecord::found).collect();
+                    let fresh =
+                        new_pegins(&found, &known, |txid| self.chain.state().claimed_tx(txid));
+                    for p in fresh {
+                        log(format!(
+                            "peg-in {}…:{}: {} sats to {}…, parent h{}",
+                            &p.txid[..16],
+                            p.vout,
+                            p.amount,
+                            &p.script.to_hex_string()[..12],
+                            p.height
+                        ));
+                        self.pegins.pegins.push((&p).into());
                     }
                     self.pegins.scanned = i64::from(tip);
                     write_json(&self.settings.dir.join("pegins.json"), &self.pegins);
@@ -544,19 +542,18 @@ impl<F: HeaderFamily> Node<F> {
         }
         let found: Vec<FoundPegin> = self.pegins.pegins.iter().map(PeginRecord::found).collect();
         let s = self.chain.state();
-        let claims = claimable(&found, tip, self.doc.peg_confirmations, |t, v| {
-            s.claimed(t, v)
-        });
+        let claims =
+            claimable_by_transaction(&found, tip, self.doc.peg_confirmations, |t| s.claimed_tx(t));
         if self
             .settings
             .parent
             .as_ref()
             .is_some_and(|p| p.wallet.is_some())
         {
-            let lock = outpoints_to_lock(&found, |t, v| s.claimed(t, v));
+            let lock = outpoints_to_lock(&found, |t, _| s.claimed_tx(t));
             let unlock: Vec<OutPoint> = found
                 .iter()
-                .filter(|p| s.claimed(&p.txid, p.vout))
+                .filter(|p| s.claimed_tx(&p.txid))
                 .filter_map(|p| {
                     Some(OutPoint {
                         txid: p.txid.parse().ok()?,
@@ -647,6 +644,21 @@ fn parse_range(h: &str, size: u64) -> Option<(u64, u64)> {
     (start <= end && end < size).then_some((start, end))
 }
 
+fn blocks_etag(index: &serde_json::Value) -> String {
+    let to = index
+        .get("to")
+        .map(serde_json::Value::to_string)
+        .unwrap_or_else(|| "0".into());
+    let hash = index
+        .get("blocks")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|blocks| blocks.last())
+        .and_then(|block| block.get("hash"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    format!("\"{to}-{}\"", &hash[..hash.len().min(16)])
+}
+
 fn serve_http(port: u16, to_loop: mpsc::UnboundedSender<Query>) -> Result<()> {
     let server = tiny_http::Server::http(("127.0.0.1", port))
         .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
@@ -655,7 +667,14 @@ fn serve_http(port: u16, to_loop: mpsc::UnboundedSender<Query>) -> Result<()> {
             let path = req.url().split('?').next().unwrap_or("/").to_string();
             let cors = [
                 ("access-control-allow-origin", "*"),
-                ("access-control-allow-headers", "range, content-type"),
+                (
+                    "access-control-allow-headers",
+                    "range, content-type, if-none-match",
+                ),
+                (
+                    "access-control-expose-headers",
+                    "etag, accept-ranges, content-range",
+                ),
                 ("access-control-allow-methods", "GET, POST, OPTIONS"),
             ];
             let with_cors = |mut r: tiny_http::Response<std::io::Cursor<Vec<u8>>>| {
@@ -699,7 +718,25 @@ fn serve_http(port: u16, to_loop: mpsc::UnboundedSender<Query>) -> Result<()> {
                 }
                 ("GET", "/blocks.json") => {
                     let (tx, rx) = oneshot::channel();
-                    json(200, &ask(Query::Blocks(tx), rx))
+                    let index = ask(Query::Blocks(tx), rx);
+                    let tag = blocks_etag(&index);
+                    let unchanged = req
+                        .headers()
+                        .iter()
+                        .find(|h| h.field.equiv("if-none-match"))
+                        .is_some_and(|h| h.value.as_str() == tag.as_str());
+                    if unchanged {
+                        with_cors(tiny_http::Response::from_data(Vec::new()).with_status_code(304))
+                            .with_header(
+                                tiny_http::Header::from_bytes("etag", tag.as_str())
+                                    .expect("static header name"),
+                            )
+                    } else {
+                        json(200, &index).with_header(
+                            tiny_http::Header::from_bytes("etag", tag.as_str())
+                                .expect("static header name"),
+                        )
+                    }
                 }
                 ("GET", "/pegouts.json") => {
                     let (tx, rx) = oneshot::channel();
@@ -1045,7 +1082,7 @@ pub async fn run_as<F: HeaderFamily>(doc: ChainDocument, settings: Settings) -> 
                     let now = unix_now();
                     if node.announced != Some(tip.height) && now >= node.announce_retry_at {
                         let headers = node.headers_hex();
-                        match TipTemplate::new(node.doc.id.clone(), tip.height, headers.clone(), settings.mirrors.clone()).and_then(|t| sign_tip(&node.key, &t, now)) {
+                        match TipTemplate::new(node.doc.id.clone(), tip.height, headers.clone(), settings.mirrors.clone()).and_then(|t| sign_tip_with_peg(&node.key, &t, Some(&node.doc.challenge), now)) {
                             Ok(ev) => {
                                 let r = publish_all(&relays, &ev, Duration::from_secs(8)).await;
                                 let ok = ok_count(&r);

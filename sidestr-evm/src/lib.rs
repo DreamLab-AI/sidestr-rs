@@ -9,7 +9,7 @@
 //! AGPL-3.0): `siding/lib/overlays/evm.mjs`, the parts of
 //! `lib/overlays/index.mjs` and `lib/chain.mjs` that run it, and the
 //! Ethereum JSON-RPC over it, `lib/evmrpc.mjs` ([`rpc`]), at
-//! `fa86dac83d47b8f70195132e91e9dc083e1d9228` (`@sidestr/spec` 0.0.6), with
+//! `fe689e9c723f9bf43393d2dd5b6f924a701c8a18`, with
 //! the design in `proposals/evm.md`. It carries the same licence,
 //! AGPL-3.0-only. The reference executes on ethereumjs 10.1.3; this crate on
 //! [revm](https://github.com/bluealloy/revm) at the same Cancun rules, with
@@ -167,5 +167,7 @@ pub use config::EvmConfig;
 pub use error::{Error, Result};
 pub use exec::Simulation;
 pub use rule::{rules_for, Built, EvmRule, Produced, Rules, KNOWN, RULE};
-pub use state::{BlockRecord, EvmState, Receipt, Sequenced, TxOutcome, Verdict, Withdrawal};
+pub use state::{
+    BlockRecord, EvmSnapshot, EvmState, Receipt, Sequenced, TxOutcome, Verdict, Withdrawal,
+};
 pub use world::World;

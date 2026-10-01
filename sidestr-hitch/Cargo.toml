@@ -1,6 +1,6 @@
 [package]
 name = "sidestr-hitch"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
@@ -16,7 +16,7 @@ publish = true
 include = ["src/**", "tests/**", "README.md", "CHANGELOG.md", "LICENSE", "Cargo.toml"]
 
 [dependencies]
-sidestr-core = { path = "../sidestr-core", version = "0.3.3" }
+sidestr-core = { path = "../sidestr-core", version = "0.4.0" }
 bitcoin = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

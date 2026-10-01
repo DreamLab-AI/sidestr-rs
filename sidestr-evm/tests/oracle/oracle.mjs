@@ -1,4 +1,4 @@
-// The fixture generator for sidestr-evm: the `evm` rule of siding (sidestr/spec at fa86dac,
+// The fixture generator for sidestr-evm: the `evm` rule of siding (sidestr/spec at fe689e9,
 // siding/lib/overlays/evm.mjs, AGPL-3.0, Melvin Carvalho) run on ethereumjs 10.1.3 over a scripted
 // chain, every verdict and state root written as JSON for the Rust port to reproduce byte for byte.
 //
@@ -19,7 +19,7 @@ import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node
 import * as vmm from '@ethereumjs/vm'; import * as T from '@ethereumjs/tx'; import * as blk from '@ethereumjs/block';
 import * as com from '@ethereumjs/common'; import * as util from '@ethereumjs/util'; import { RLP } from '@ethereumjs/rlp';
 
-const REFERENCE_SHA256 = '8903eab6c67244ded02edf8122112efb015ee1e3e5d4ca913372e542cc1820cc'; // siding/lib/overlays/evm.mjs at fa86dac
+const REFERENCE_SHA256 = 'd526495d008a2f94b2d7060585ce6f7c89810d52b46d14883719fee5161aa58d'; // siding/lib/overlays/evm.mjs at fe689e9
 const out = process.argv[2]; if (!out) { console.error('usage: node oracle.mjs <fixtures dir>'); process.exit(2); }
 const here = path.dirname(new URL(import.meta.url).pathname);
 let Ref = null; const refPath = path.join(here, 'evm.reference.mjs');
@@ -288,7 +288,7 @@ rec('OP_PUSHDATA4', '6a4e05000000' + hex(enc.encode('evm:x')));
 rec('evmroot: read as a carrier prefix', rootScript('0x' + '00'.repeat(32)));
 
 fs.mkdirSync(out, { recursive: true });
-const meta = { reference: 'sidestr/spec fa86dac83d47b8f70195132e91e9dc083e1d9228 siding/lib/overlays/evm.mjs (sha256 ' + REFERENCE_SHA256 + ')', ethereumjs: '10.1.3', crossChecked: !!Ref };
+const meta = { reference: 'sidestr/spec fe689e9c723f9bf43393d2dd5b6f924a701c8a18 siding/lib/overlays/evm.mjs (sha256 ' + REFERENCE_SHA256 + ')', ethereumjs: '10.1.3', crossChecked: !!Ref };
 fs.writeFileSync(path.join(out, 'chain.json'), JSON.stringify({ ...meta, chain, emptyRoot: '0x' + driver.roots.get(-1), accounts: { alice, bob, carol, dave }, blocks, final: dumped }, null, 1) + '\n');
 fs.writeFileSync(path.join(out, 'decode.json'), JSON.stringify({ ...meta, chainId: 21474, cases: decode }, null, 1) + '\n');
 fs.writeFileSync(path.join(out, 'records.json'), JSON.stringify({ ...meta, cases: records }, null, 1) + '\n');

@@ -10,9 +10,9 @@ order through an EVM and keeps the account state beside the UTXO set. The
 coinbase commits the state root, so validators agree. **1 sat = 1 gwei**,
 and sats cross only by deposit and withdrawal.
 
-The rule and its design are Melvin Carvalho's: `siding/lib/overlays/evm.mjs`
+Melvin Carvalho designed the rule in `siding/lib/overlays/evm.mjs`,
 and `proposals/evm.md` in [sidestr/spec](https://github.com/sidestr/spec),
-ported from commit `fa86dac` (`@sidestr/spec` 0.0.6). The reference runs on
+ported through commit `fe689e9`. The reference runs on
 ethereumjs 10.1.3. This crate runs on [revm](https://github.com/bluealloy/revm)
 at the same Cancun rules, with alloy's transaction envelope and signer
 recovery and alloy-trie's state root. Nothing cryptographic is written here.
@@ -29,7 +29,7 @@ recovery and alloy-trie's state root. Nothing cryptographic is written here.
 | an Ethereum transaction to `0x…0501de` with value and 34 bytes of data | a withdrawal: the coinbase pays `floor(value / 10⁹)` sats to that script |
 | `OP_RETURN evmroot:` + 32 bytes, in the coinbase | the state root after the block |
 
-The reserve is the chain's challenge unless the document's `evm.reserve`
+By default the reserve is the chain's challenge unless the document's `evm.reserve`
 says otherwise. The chain id defaults to 21474 and the gas limit to
 30,000,000: `{"rules": ["evm"], "evm": {"chainId": 21474}}`.
 
@@ -43,7 +43,14 @@ let evm = rules.evm.as_ref().unwrap().state();        // balances, code, storage
 ```
 
 A producer uses `Rules::produce`. It sequences the mempool through the EVM,
-pays the withdrawals, and writes the `evmroot:` record.
+pays the withdrawals, writes the `evmroot:` record, and composes the assets,
+pool and markets rules named by the document.
+
+`EvmState::snapshot` serialises the configuration, retained worlds, block
+times, block records and receipts. `restore` validates the version,
+configuration, height, time and state root before moving to that height and
+clearing transient candidates; `from_snapshot` constructs a fresh state from
+the same checked data.
 
 ## JSON-RPC for wallets
 
@@ -75,7 +82,7 @@ server.
 | `eth_getTransactionReceipt`, `eth_getTransactionByHash`, `eth_getLogs` | receipts, transactions and logs of applied blocks |
 | `eth_getBlockByNumber`, `eth_getBlockByHash`, `eth_getBlockTransactionCountByNumber` | the sidechain block as an Ethereum block |
 
-The estimate is the reference's formula: 21,000, plus 32,000 for a
+Gas estimation follows the reference's formula: 21,000, plus 32,000 for a
 creation, plus the calldata (4 per zero byte, 16 per other), plus half as
 much again as the execution used and 10,000 when it used any.
 
@@ -92,7 +99,7 @@ itself and stops on any difference. It writes `tests/fixtures/`, and
   coinbase, three deployments, storage writes and a deletion, a revert, a
   contract recording the block environment at two heights, withdrawals of
   one sat and under a gwei, and the emptied WITHDRAW account touched again.
-  The other 15 are refused, as the reference refuses them.
+  Reference parity also covers 15 refused blocks.
 - **25 carrier decodings** at the edges.
 - **16 record scripts.**
 - **The final accounts**, field for field.
@@ -140,7 +147,6 @@ None of these departures changes which blocks are valid. The crate docs
 give the detail.
 
 - The EVM state moves when a block is applied, not when the rule passes.
-- The state is kept for the tip only.
 - A producer drops a failing transaction whole.
 - A record over 65,535 bytes is not written.
 - JSON-RPC read-only calls start afresh, as a transaction would. They

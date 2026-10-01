@@ -35,8 +35,14 @@ use sidestr_round::relay::{
 use support::*;
 use tokio_tungstenite::tungstenite::Message;
 
-/// One HTTP/1.1 request on a fresh connection: the status code and the body.
-fn http(port: u16, method: &str, path: &str, headers: &str, body: &[u8]) -> (u16, Vec<u8>) {
+/// One HTTP/1.1 request on a fresh connection: status, headers and body.
+fn http_full(
+    port: u16,
+    method: &str,
+    path: &str,
+    headers: &str,
+    body: &[u8],
+) -> (u16, String, Vec<u8>) {
     let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     write!(
@@ -54,7 +60,11 @@ fn http(port: u16, method: &str, path: &str, headers: &str, body: &[u8]) -> (u16
         .nth(1)
         .and_then(|c| c.parse().ok())
         .unwrap();
-    (code, bytes[split..].to_vec())
+    (code, head, bytes[split..].to_vec())
+}
+fn http(port: u16, method: &str, path: &str, headers: &str, body: &[u8]) -> (u16, Vec<u8>) {
+    let (code, _, body) = http_full(port, method, path, headers, body);
+    (code, body)
 }
 fn get(port: u16, path: &str, headers: &str) -> (u16, Vec<u8>) {
     http(port, "GET", path, headers, &[])
@@ -169,8 +179,36 @@ fn audit_http_unindexed_block() {
     let (_, tip) = get(port, "/tip", "");
     let tip = String::from_utf8(tip).unwrap();
     assert!(tip.contains("\"height\":0"), "{tip}");
+
+    let (code, headers, index) = http_full(port, "GET", "/blocks.json", "", &[]);
+    assert_eq!(code, 200);
+    let etag = headers
+        .lines()
+        .find_map(|line| {
+            line.split_once(':')
+                .filter(|(name, _)| name.eq_ignore_ascii_case("etag"))
+                .map(|(_, value)| value.trim().to_string())
+        })
+        .expect("blocks.json ETag");
+    assert!(etag.starts_with("\"0-"), "{etag}");
+    assert!(headers
+        .to_ascii_lowercase()
+        .contains("access-control-expose-headers: etag, accept-ranges, content-range"));
+    let (code, headers, body) = http_full(
+        port,
+        "GET",
+        "/blocks.json",
+        &format!("If-None-Match: {etag}\r\n"),
+        &[],
+    );
+    assert_eq!(code, 304);
+    assert!(body.is_empty());
+    assert!(headers
+        .lines()
+        .any(|line| line.eq_ignore_ascii_case(&format!("etag: {etag}"))));
+    assert!(!index.is_empty());
     println!(
-        "AUDIT HTTP unindexed sealed h1 not served: range beyond index=416, /blocks.dat={} committed bytes of {} on disk; /tip height=0",
+        "AUDIT HTTP unindexed sealed h1 not served: range beyond index=416, /blocks.dat={} committed bytes of {} on disk; /tip height=0; /blocks.json ETag={etag} returns 304",
         committed.len(),
         offset + bytes.len() as u64
     );

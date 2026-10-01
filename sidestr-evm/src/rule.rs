@@ -14,11 +14,14 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Amount, Transaction, TxOut, Txid};
-use sidestr_core::assets::{AssetView, AssetsRule};
+use sidestr_core::assets::AssetsRule;
 use sidestr_core::block::{
     build_block, sign_block, BlockTemplate, HeaderFamily, SidestrBlock, MARKER,
 };
 use sidestr_core::marker::claim_marker;
+use sidestr_core::markets::MarketsRule;
+use sidestr_core::overlays::OverlayRules;
+use sidestr_core::pool::PoolRule;
 use sidestr_core::rules::{BlockContext, BlockRule};
 use sidestr_core::state::{Applied, NextBlock, StateOf};
 use sidestr_core::ChainDocument;
@@ -32,8 +35,8 @@ use crate::state::{EvmState, Verdict};
 pub const RULE: &str = "sidestr:rule-evm";
 
 /// The rules this crate carries, by the names a document gives them
-/// (`overlays/index.mjs KNOWN`, less `pool`, which is not carried).
-pub const KNOWN: &[&str] = &["assets", "evm"];
+/// (`overlays/index.mjs KNOWN`).
+pub const KNOWN: &[&str] = &["assets", "pool", "evm", "markets"];
 
 /// `sidestr:rule-evm` as a [`BlockRule`], over a shared [`EvmState`].
 ///
@@ -143,13 +146,16 @@ pub struct Produced<B> {
 
 /// The rules a document names, as this crate carries them
 /// (`overlays/index.mjs rulesFor`): with any rule named, the assets rule;
-/// with `evm` named, the EVM rule too. A name this crate does not carry —
-/// `pool` among them — is [`Error::Config`], as the reference refuses a rule
-/// it does not have.
+/// with `pool`, `markets` or `evm` named, that rule too. An unknown name is
+/// [`Error::Config`], as the reference refuses a rule it does not have.
 #[derive(Debug, Clone, Default)]
 pub struct Rules {
     /// The assets rule, on every chain that names a rule.
     pub assets: Option<AssetsRule>,
+    /// The pool rule, when the document names it.
+    pub pool: Option<PoolRule>,
+    /// The markets rule, when the document names it.
+    pub markets: Option<MarketsRule>,
     /// The EVM rule, when the document names it.
     pub evm: Option<EvmRule>,
 }
@@ -163,6 +169,12 @@ impl Rules {
         if let Some(a) = &self.assets {
             out.push(Box::new(a.clone()));
         }
+        if let Some(pool) = &self.pool {
+            out.push(Box::new(pool.clone()));
+        }
+        if let Some(markets) = &self.markets {
+            out.push(Box::new(markets.clone()));
+        }
         if let Some(e) = &self.evm {
             out.push(Box::new(e.clone()));
         }
@@ -173,13 +185,22 @@ impl Rules {
     /// `sequencedEvm`): the mempool in order, less what breaks the assets rule
     /// against the transactions before it or does not apply in the EVM; the
     /// fees to the challenge, the withdrawals, the `evmroot:` record, the
-    /// claims with their markers. `sidestr-core`'s mempool has no eviction,
-    /// so the transactions left out stay in it until their inputs are spent,
-    /// and are left out of every block until then.
+    /// claims with their markers. [`Rules::produce`] removes sequencing losers
+    /// from the mempool and releases their inputs, as the reference does.
     pub fn build_next<F: HeaderFamily>(
         &self,
         state: &StateOf<F>,
         next: &NextBlock,
+    ) -> Result<Built<F::Block>> {
+        let txs: Vec<Transaction> = state.mempool().cloned().collect();
+        self.build_next_with(state, next, txs)
+    }
+
+    fn build_next_with<F: HeaderFamily>(
+        &self,
+        state: &StateOf<F>,
+        next: &NextBlock,
+        mut txs: Vec<Transaction>,
     ) -> Result<Built<F::Block>> {
         let tip = state.tip();
         let height = tip
@@ -187,23 +208,26 @@ impl Rules {
             .checked_add(1)
             .ok_or_else(|| Error::Config("the chain is at the last height".into()))?;
         let time = next.time.max(tip.time.saturating_add(1));
-        let mut txs: Vec<Transaction> = state.mempool().cloned().collect();
         let mut dropped = Vec::new();
         if let Some(assets) = &self.assets {
-            let mut view: AssetView = assets.view();
-            txs.retain(|tx| {
-                let mut carried = Default::default();
-                match view.check(tx, &mut carried) {
-                    Ok(_) => {
-                        view.apply_transactions(std::slice::from_ref(tx), height);
-                        true
-                    }
-                    Err(e) => {
-                        dropped.push((tx.compute_txid(), format!("assets: {e}")));
-                        false
-                    }
-                }
+            let overlays = OverlayRules {
+                assets: assets.clone(),
+                pool: self.pool.clone(),
+                markets: self.markets.clone(),
+            };
+            let sequence = overlays.sequence(&txs, height, |outpoint| {
+                state
+                    .output(outpoint)
+                    .map(|output| output.script_pubkey.clone())
             });
+            for (index, error) in sequence.dropped {
+                dropped.push((txs[index].compute_txid(), error));
+            }
+            txs = sequence
+                .kept
+                .into_iter()
+                .map(|index| txs[index].clone())
+                .collect();
         }
         let mut evm_outputs = Vec::new();
         if let Some(evm) = &self.evm {
@@ -286,7 +310,10 @@ impl Rules {
                 "a federated chain makes blocks through the round (proposals/level-2.md), not produce()".into(),
             )));
         }
-        let built = self.build_next(state, next)?;
+        let mut built = self.build_next(state, next)?;
+        for (txid, _) in &built.dropped {
+            state.discard(*txid);
+        }
         let signed = sign_block(
             state.family(),
             &built.block,
@@ -294,9 +321,72 @@ impl Rules {
             key,
             &[0u8; 32],
         )?;
+        let first_error = match state.add_block(&signed, None, now) {
+            Ok(mut applied) => {
+                applied.fees = built.fees;
+                applied.claims = built.claims;
+                return Ok(Produced {
+                    applied,
+                    block: signed,
+                    dropped: built.dropped,
+                });
+            }
+            Err(error) => error,
+        };
+        if state.mempool().next().is_none() {
+            return Err(first_error.into());
+        }
+
+        let pending: Vec<Transaction> = state.mempool().cloned().collect();
+        let mut kept = Vec::new();
+        let mut evicted = Vec::new();
+        for tx in pending {
+            let mut candidate = kept.clone();
+            candidate.push(tx.clone());
+            let tested = self.build_next_with(state, next, candidate)?;
+            if let Some((_, why)) = tested
+                .dropped
+                .iter()
+                .find(|(txid, _)| *txid == tx.compute_txid())
+            {
+                if state.evict(tx.compute_txid(), why.clone()) {
+                    evicted.push((tx.compute_txid(), why.clone()));
+                }
+                continue;
+            }
+            let candidate = sign_block(
+                state.family(),
+                &tested.block,
+                state.challenge(),
+                key,
+                &[0u8; 32],
+            )?;
+            let (verdict, _) = state.judge(state.height() + 1, &candidate, now);
+            if verdict.ok() {
+                kept.push(tx);
+            } else {
+                let why = verdict.failed().join(", ");
+                if state.evict(tx.compute_txid(), why.clone()) {
+                    evicted.push((tx.compute_txid(), why));
+                }
+            }
+        }
+        if evicted.is_empty() {
+            return Err(first_error.into());
+        }
+        built.dropped.extend(evicted);
+
+        let retry = self.build_next(state, next)?;
+        let signed = sign_block(
+            state.family(),
+            &retry.block,
+            state.challenge(),
+            key,
+            &[0u8; 32],
+        )?;
         let mut applied = state.add_block(&signed, None, now)?;
-        applied.fees = built.fees;
-        applied.claims = built.claims;
+        applied.fees = retry.fees;
+        applied.claims = retry.claims;
         Ok(Produced {
             applied,
             block: signed,
@@ -306,7 +396,7 @@ impl Rules {
 }
 
 /// The rules `doc` names (`overlays/index.mjs rulesFor`). No rules named is
-/// no rules; `pool`, `desk` and any other name this crate does not carry is
+/// no rules; `desk` and any other name this crate does not carry is
 /// [`Error::Config`].
 ///
 /// ```
@@ -319,10 +409,10 @@ impl Rules {
 /// assert!(rules.assets.is_some() && rules.evm.is_some());
 /// ```
 pub fn rules_for(doc: &ChainDocument) -> Result<Rules> {
-    let names = doc.rules.clone().unwrap_or_default();
-    let names: Vec<&str> = names
+    let entries = doc.rules.clone().unwrap_or_default();
+    let names: Vec<&str> = entries
         .iter()
-        .map(String::as_str)
+        .map(sidestr_core::document::RuleEntry::name)
         .filter(|n| !n.is_empty())
         .collect();
     if let Some(n) = names.iter().find(|n| !KNOWN.contains(n)) {
@@ -335,8 +425,23 @@ pub fn rules_for(doc: &ChainDocument) -> Result<Rules> {
     if names.is_empty() {
         return Ok(Rules::default());
     }
+    if names.contains(&"pool") && !names.contains(&"assets") {
+        return Err(Error::Config("the pool rule needs the assets rule".into()));
+    }
+    if names.contains(&"markets") && !names.contains(&"assets") {
+        return Err(Error::Config(
+            "the markets rule needs the assets rule".into(),
+        ));
+    }
+    let markets_from = entries
+        .iter()
+        .find(|entry| entry.name() == "markets")
+        .map(sidestr_core::document::RuleEntry::from);
+    let overlays = OverlayRules::new(names.contains(&"pool"), markets_from);
     Ok(Rules {
-        assets: Some(AssetsRule::new()),
+        assets: Some(overlays.assets),
+        pool: overlays.pool,
+        markets: overlays.markets,
         evm: names
             .contains(&"evm")
             .then(|| EvmRule::for_document(doc))

@@ -41,7 +41,7 @@ use crate::block::{
     SidestrBlock,
 };
 use crate::marker::{looks_like_pegout, parse_claims, parse_pegout, Burn};
-use crate::sighash::verify_taproot_key_path;
+use crate::sighash::verify_supported_input;
 
 /// Network parameters a sidestr chain inherits (`btc:regtest` in
 /// `schema/chain.jsonld`, as `sidestrGraph` extends it) — everything the
@@ -163,6 +163,12 @@ impl Records {
     /// Whether the parent outpoint has been claimed on this chain.
     pub fn claimed(&self, txid: &str, vout: u32) -> bool {
         self.claims.contains_key(&(txid.to_string(), vout))
+    }
+    /// Whether any output of a parent transaction has been claimed. SPEC 6
+    /// permits one claim per marker transaction, even if a later scan names
+    /// another output.
+    pub fn claimed_tx(&self, txid: &str) -> bool {
+        self.claims.keys().any(|(claimed, _)| claimed == txid)
     }
     /// Every burn the chain has validated, oldest first (SPEC 7).
     pub fn pegouts(&self) -> Vec<Burn> {
@@ -775,7 +781,7 @@ pub fn validate_block_context<F: HeaderFamily>(
         }
         let prevouts: Vec<TxOut> = (0..tx.input.len()).map(|i| resolved[&i].clone()).collect();
         for ii in 0..tx.input.len() {
-            if verify_taproot_key_path(tx, ii, &prevouts, sighash).is_err() {
+            if verify_supported_input(tx, ii, &prevouts, sighash).is_err() {
                 scripts_ok = false;
             }
         }

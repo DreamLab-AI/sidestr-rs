@@ -2,7 +2,20 @@
 
 All notable changes to `sidestr-round`. The crate follows semantic versioning.
 
-## 0.2.1 — 2026-09-25
+## 0.3.0 (2026-10-01)
+
+- `RelayPool` keeps one reconnecting websocket per relay and shares it among
+  subscriptions, one-shot fetches and publishes. Subscriptions are replayed
+  after reconnect; the socket closes two seconds after its last user.
+- The runnable signer announces its peg script, accepts federated announcement
+  authors, and uses the issue-15 peg scan: no wallet change, no self-funded
+  fallback deposits, and one candidate per parent transaction.
+- `/blocks.json` sends an `ETag` derived from the index tip, honours
+  `If-None-Match` with 304, and exposes cache and range headers through CORS.
+- Follows `sidestr-core` and `sidestr-nostr` 0.4 and interoperates with
+  sidestr/spec at `fe689e9`.
+
+## 0.2.1 (2026-09-25)
 
 Additive.
 
@@ -15,7 +28,7 @@ Additive.
 - Interoperates with siding at `fa86dac` (SPEC 0.0.4, `@sidestr/spec`
   0.0.6); the oracle suites run against it.
 
-## 0.2.0 — 2026-09-23
+## 0.2.0 (2026-09-23)
 
 - Follows `sidestr-core` 0.3, `sidestr-header` 0.3 and `sidestr-nostr` 0.3.
 - **Peg-in scanning follows SPEC 0.0.3.** With a peg wallet configured, the
@@ -31,7 +44,7 @@ Additive.
   the wanted payer's slot, and the test judges the proposal that was
   co-signed, not the first one.
 
-## 0.1.1 — 2026-09-22
+## 0.1.1 (2026-09-22)
 
 Documentation only; no code change.
 
@@ -41,7 +54,7 @@ Documentation only; no code change.
   items behind it are plain code spans, and CI documents both feature sets.
 - `missing_docs` is denied, not warned.
 
-## 0.1.0 — 2026-09-22
+## 0.1.0 (2026-09-22)
 
 - First release: the block round (`round::Round`) and the peg-out PSBT round
   (`pegout::PegoutRound`) as pure state machines on upstream's wire

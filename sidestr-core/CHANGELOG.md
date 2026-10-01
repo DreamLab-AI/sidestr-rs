@@ -2,13 +2,28 @@
 
 All notable changes to `sidestr-core`. The crate follows semantic versioning.
 
-## Unreleased — 0.3.4
+## 0.4.0 (2026-10-01)
 
-The owner lifted ADR-2096 decision 5: a chain may carry Melvin Carvalho's
-`evm` rule as upstream defines it. The rule itself is the new `sidestr-evm`
-crate (revm stays out of this one); what it needs here is additive.
+Parity with sidestr/spec at `fe689e9`. `ChainDocument::rules` now preserves
+activation heights, so this release changes its public type from strings to
+`RuleEntry`.
 
 ### Added
+
+- The SPEC 12 constant-product pool and binary prediction-market rules,
+  including integer boundary checks, resolver signatures, expiry/grace
+  refunds, activation-height replay, and the records they use.
+- Asset traces and per-output carried amounts shared by assets, pools and
+  markets; the narrowly scoped `OP_TRUE` pool and market coins are spendable
+  only when an adopted overlay accounts for them.
+- Session eviction for transactions that pass admission but make a candidate
+  block fail. Production tests transactions in order, remembers exact bytes,
+  retries without offenders, and admits a witness-only repair with the same
+  txid.
+- `parent::scan_pegins_with_wallet`, `new_pegins`,
+  `claimable_by_transaction` and `StateOf::claimed_tx`: announced scripts win;
+  fallback excludes wallet change and wallet-funded transactions; a marker
+  transaction supplies at most one claim candidate.
 
 - `BlockRule` gains three default methods: `name` (the document name a rule
   answers to), `coinbase_allowance` (sats `btc:rule-blockctx-coinbase-amount`
@@ -37,7 +52,14 @@ crate (revm stays out of this one); what it needs here is additive.
   else the challenge, read as `evm.mjs` and `spend.mjs` read it; what
   `sidestr-evm`'s `EvmConfig` refuses, it refuses.
 
-## 0.3.3 — 2026-09-25
+### Changed
+
+- A rule may be a string or `{ "name": "…", "from": height }`; rule checks
+  start at the declared height.
+- `bitcoin` enables serde so versioned execution snapshots can include
+  consensus primitives without a separate wire format.
+
+## 0.3.3 (2026-09-25)
 
 SPEC 0.0.4 (`@sidestr/spec` 0.0.6, reference `fa86dac`). Additive.
 
@@ -51,7 +73,7 @@ SPEC 0.0.4 (`@sidestr/spec` 0.0.6, reference `fa86dac`). Additive.
   does at `fa86dac`. `find_pegin` and `scan_pegins` are unchanged: they are
   the announced forms with no script.
 
-## 0.3.2 — 2026-09-25
+## 0.3.2 (2026-09-25)
 
 A fix.
 
@@ -64,7 +86,7 @@ A fix.
   `--no-default-features`, natively and for wasm32: built beside the other
   crates, feature unification had turned `std` back on and hidden this.
 
-## 0.3.1 — 2026-09-24
+## 0.3.1 (2026-09-24)
 
 Additive.
 
@@ -94,7 +116,7 @@ Additive.
   a record. The reference's `recordText` has its length check after a `//`
   on the same line, so it reads trailing bytes into the text.
 
-## 0.3.0 — 2026-09-23
+## 0.3.0 (2026-09-23)
 
 SPEC 0.0.3, ported from the reference at `722ad42` (Melvin Carvalho). Breaking.
 
@@ -136,7 +158,7 @@ SPEC 0.0.3, ported from the reference at `722ad42` (Melvin Carvalho). Breaking.
   `StateOf::submit` already checks under `HeaderFamily::sighash_rules`, the
   block rule's own reading. The new tests pin it.
 
-## 0.2.2 — 2026-09-22
+## 0.2.2 (2026-09-22)
 
 Documentation only; no code change.
 
@@ -148,7 +170,7 @@ Documentation only; no code change.
 - The crate docs, `federation` and the README no longer say the co-signing
   round is unported: it is `sidestr-round`.
 
-## 0.2.1 — 2026-09-22
+## 0.2.1 (2026-09-22)
 
 ### Fixed
 
@@ -194,14 +216,14 @@ Documentation only; no code change.
   the checked forms of `claim_marker` and `pegout_marker`, refusing a txid
   that is not 64 lower-hex characters, a `vout` above `CLAIM_VOUT_MAX`
   (99 999: the reference reads five decimal digits, kept), or a parent script
-  outside 2 to 40 bytes of hex — the inputs the parsers would not read back.
-  The unchecked forms keep their signatures, document their domain, and no
+  outside 2 to 40 bytes of hex, which the parsers would not read back.
+  Unchecked forms keep their signatures, document their domain, and no
   longer truncate a payload over 255 bytes to a one-byte length: they emit a
   whole `OP_PUSHDATA2` push that no marker parser matches.
 
 Additive API only.
 
-## 0.2.0 — 2026-09-22
+## 0.2.0 (2026-09-22)
 
 - Blocks generic over the header family (`HeaderFamily`): stock and, through
   `sidestr-header`, Knots' BLAKE2b v2, proven on a live chain.
@@ -210,7 +232,7 @@ Additive API only.
 - The parent view (`parent`, `parents`), claims checked against it.
 - The five audit counter-examples fixed and pinned (`tests/audit_regressions.rs`).
 
-## 0.1.0 — 2026-09-22
+## 0.1.0 (2026-09-22)
 
 - First release: the chain document, block build/sign, the rules, the block
   file and the validating chain for level 1 beside a stock parent.

@@ -8,10 +8,10 @@ blocks carry a BIP-325 signed challenge instead of proof of work. Coins enter
 by a peg-in on the parent and leave by a burn the peg holders pay. Nostr
 relays carry the chain's transactions and its tip announcements.
 
-The protocol, and the reference implementation this repository ports
-(**siding**, with the `bitcoin-desktop/schema` kernel and
-`bitcoin-blake/blaketestnode` it loads), are the work of **Melvin Carvalho**.
-This repository is a Rust port of them. Where it adds something, it says so.
+Melvin Carvalho designed the protocol and the reference implementation this
+repository ports (**siding**, with the `bitcoin-desktop/schema` kernel and
+`bitcoin-blake/blaketestnode` it loads). This repository is a Rust port of
+them. Where it adds something, it says so.
 
 In a sidestr chain the output key of a taproot coin is a 32-byte x-only
 secp256k1 key, and so is a Nostr identity. So an agent that holds a
@@ -32,7 +32,7 @@ its identity already has, and sign the event that carries each payment.
 | crate | what | crates.io | docs |
 |---|---|---|---|
 | [`sidestr-header`](sidestr-header) | both header families: stock 80-byte SHA-256d and Knots' 164-byte v2 BLAKE2b; compact targets, powLimit, BIP-325 block data; `no_std` | [![](https://img.shields.io/crates/v/sidestr-header.svg)](https://crates.io/crates/sidestr-header) | [docs.rs](https://docs.rs/sidestr-header) |
-| [`sidestr-core`](sidestr-core) | the chain document, parents table, signed blocks, peg-in claims and peg-out burns, Knots' unified sighash, the parent view, the block file and a mirror's bytes replayed, SPEC 12 records and the assets view, a validating chain | [![](https://img.shields.io/crates/v/sidestr-core.svg)](https://crates.io/crates/sidestr-core) | [docs.rs](https://docs.rs/sidestr-core) |
+| [`sidestr-core`](sidestr-core) | the chain document, parents table, signed blocks, peg-in claims and peg-out burns, Knots' unified sighash, the parent view, block files, SPEC 12 assets, constant-product pools and prediction markets, a validating chain | [![](https://img.shields.io/crates/v/sidestr-core.svg)](https://crates.io/crates/sidestr-core) | [docs.rs](https://docs.rs/sidestr-core) |
 | [`sidestr-nostr`](sidestr-nostr) | the Nostr plane: NIP-01 events, a sealed signer port, tips (33333, with the peg script), transactions (23500/23501/23503), rule and genesis documents, the round envelopes, estate kinds 38420–38425 | [![](https://img.shields.io/crates/v/sidestr-nostr.svg)](https://crates.io/crates/sidestr-nostr) | [docs.rs](https://docs.rs/sidestr-nostr) |
 | [`sidestr-wallet`](sidestr-wallet) | coins, the reference coin selection, key-path spends, burns and EVM deposits signed by the parent's family, spends with records, issued assets (issue, transfer), the peg-in shape, delivery | [![](https://img.shields.io/crates/v/sidestr-wallet.svg)](https://crates.io/crates/sidestr-wallet) | [docs.rs](https://docs.rs/sidestr-wallet) |
 | [`sidestr-round`](sidestr-round) | the level-2 co-signing round and the peg-out PSBT round as pure state machines on the reference's wire, a vote journal, the `cosign` signer | [![](https://img.shields.io/crates/v/sidestr-round.svg)](https://crates.io/crates/sidestr-round) | [docs.rs](https://docs.rs/sidestr-round) |
@@ -54,15 +54,15 @@ of account (ADR-2117):
 Neither depends on the published crates. Another reserve network would be a
 sibling adapter.
 
-The dependencies remain acyclic. `sidestr-hitch` depends on `sidestr-core`;
+Dependencies remain acyclic. `sidestr-hitch` depends on `sidestr-core`;
 the channel crate does not enter the consensus core. `sidestr-core` never
 depends on `sidestr-header`, nor on the EVM: revm and alloy stay in
 `sidestr-evm`.
 
 ## Status
 
-**SPEC 0.0.4** (`@sidestr/spec` 0.0.6), reference commit
-[`fa86dac`](https://github.com/sidestr/spec/commit/fa86dac83d47b8f70195132e91e9dc083e1d9228).
+Reference commit
+[`fe689e9`](https://github.com/sidestr/spec/commit/fe689e9c723f9bf43393d2dd5b6f924a701c8a18).
 Ported since 0.0.2:
 
 - the peg output is the taproot output the peg holders own, at any position (0.0.3);
@@ -73,6 +73,15 @@ Ported since 0.0.2:
   (0.0.4);
 - a record is exactly its push: bytes after it or missing refuse it
   (sidestr/spec#17; sidestr-rs always read it so).
+- rule activation heights, assets, constant-product pools and binary
+  prediction markets;
+- producer eviction for a transaction that admission accepted but a block
+  cannot carry;
+- wallet-change and self-funding exclusions in peg scans, with one claim
+  candidate per marker transaction;
+- federated tip authors, one relay socket per URL, and `ETag` caching for
+  `blocks.json`;
+- EVM snapshots restored at any retained height.
 
 - **Level 1 (one signer): complete.** Both header families work end to end:
   genesis from the document, production, validation, the mempool policy,
@@ -87,6 +96,9 @@ Ported since 0.0.2:
   beside it, as the reference installs it on every chain naming a rule. Every
   state root of a scripted chain matches siding on ethereumjs byte for byte.
   The JSON-RPC endpoint (`evmrpc.mjs`) is ported as `sidestr_evm::rpc`.
+- **Assets, pools and markets: ported.** Rule activation heights replay from
+  the named height. Pools enforce the reference's integer constant-product
+  boundary; markets cover open, split, merge, resolve, redeem and refund.
 - **Hitch channels: pure channel kernel ported.** The funding output,
   asymmetric commitments, revocable delayed outputs, HTLC success/timeout/
   penalty paths, cooperative and unilateral close produce the reference's
@@ -95,13 +107,13 @@ Ported since 0.0.2:
   snapshots. Invoices and one-hop hub routing preserve Hitch's fee and
   timeout rules. A host still supplies wallet funding, Nostr relay I/O,
   chain watches, storage and broadcasting.
-- Out of scope: the pool rule and a trust-minimised peg-out. Assets are read
-  as a holders' view on any chain (`sidestr-core`'s `assets`), and are
-  consensus on a chain that names a rule.
+- Out of scope: a trust-minimised peg-out and the draft dispute and
+  multi-outcome market extensions. Assets are also available as a holders'
+  view on chains that do not adopt the rule.
 
 ## What is proven against the reference
 
-The reference engine is the oracle. What is tested:
+Reference conformance uses the engine as the oracle. What is tested:
 
 - **Genesis:** a throwaway chain's genesis is byte-identical to the one siding
   seals. The sealed `sidestr:dreamlab` genesis replays to its documented hash.
@@ -141,7 +153,7 @@ To run the oracle suites, check out the four reference repositories at the
 pinned commits and name them:
 
 ```sh
-git clone https://github.com/sidestr/spec && git -C spec checkout fa86dac83d47b8f70195132e91e9dc083e1d9228
+git clone https://github.com/sidestr/spec && git -C spec checkout fe689e9c723f9bf43393d2dd5b6f924a701c8a18
 git clone https://github.com/bitcoin-desktop/schema && git -C schema checkout b8cbf6337c7450fe14ddc5bce00c7280059aab5d
 git clone https://github.com/bitcoin-blake/blaketestnode && git -C blaketestnode checkout d2764d21fe1f8c29b1979e49eb8287a72dd2347e
 git clone https://github.com/bitcoin-blake/hitch && git -C hitch checkout 6752e24041f98dd9260d6be6f3710b29e9664a7f
@@ -154,7 +166,7 @@ Without these four variables the oracle halves say they are skipped, and
 the Rust halves still run. You need Node.js 20 or later, and no `npm
 install`. CI runs both ways ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
-## The live chain
+## Live chain
 
 **`sidestr:dreamlab`** runs beside Bitcoin testnet4 (`tbtc4`):
 
