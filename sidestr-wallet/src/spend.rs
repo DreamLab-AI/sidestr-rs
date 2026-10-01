@@ -79,7 +79,15 @@ pub fn resolve_to(to: &str, hrp: &str) -> Result<Resolved> {
             .map_err(|_| Error::BadDestination(to.to_string()))?;
         return Ok(Resolved { script, note: None });
     }
-    let a = decode_address(to).ok_or_else(|| Error::BadDestination(to.to_string()))?;
+    resolve_address(to, hrp).ok_or_else(|| Error::BadDestination(to.to_string()))
+}
+
+/// A segwit address under any prefix → its script, with the note
+/// [`resolve_to`] gives when the prefix is not `hrp`; `None` when `to` is no
+/// such address. The address half of `resolve_to`, which a BIP 21 request
+/// ([`crate::bip21`]) shares.
+pub(crate) fn resolve_address(to: &str, hrp: &str) -> Option<Resolved> {
+    let a = decode_address(to)?;
     let note = (a.hrp != hrp.to_ascii_lowercase()).then(|| {
         format!(
             "{}… carries prefix '{}', this chain's is '{hrp}' ({}); paying its script",
@@ -88,7 +96,7 @@ pub fn resolve_to(to: &str, hrp: &str) -> Result<Resolved> {
             script_to_address(&a.script, hrp).unwrap_or_default()
         )
     });
-    Ok(Resolved {
+    Some(Resolved {
         script: a.script,
         note,
     })

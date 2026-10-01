@@ -48,6 +48,12 @@ is the design; the crate documentation cites its sections, and every ported
 function names its original. Consensus types, markers, addresses and the chain
 document come from `sidestr-core` and are not duplicated.
 
+The `bip21` module ports the payment-request reader of **Reef**, the BLAKE2b
+testnet4 browser wallet by Melvin Carvalho
+([github.com/bitcoin-blake/reef](https://github.com/bitcoin-blake/reef),
+AGPL-3.0-or-later, taken here under version 3): `lib/wallet.mjs
+parsePaymentUri` and its tests at commits `91d6eb2` and `648487a`.
+
 ## What changed in the port
 
 - **Signatures name their hash type.** As siding's `lib/txsign.mjs` does
@@ -97,7 +103,37 @@ document come from `sidestr-core` and are not duplicated.
 - **Not carried:** the faucet's relay loop and rate state (its payment is
   `build_spend`; the request template is `deliver::faucet_request`).
 
-## Status: 0.5.0
+## Payment requests (BIP 21)
+
+`bip21::PaymentRequest` reads and writes `bitcoin:<address>?amount=<coins>&label=…&message=…`
+with Reef's rules, so a request either wallet accepts the other accepts, and
+one either refuses the other refuses in the same words:
+
+- text that is not a `bitcoin:` URI is not a request (`Ok(None)`); the scheme is
+  read in any case, an address in capitals (a QR code) in lower case;
+- the amount is whole coins with a dot, read into sats exactly, without
+  floating point: no comma, grouping, sign, unit or exponent, at most 8
+  decimals, never zero, never over 21 million coins, never named twice;
+- a `req-…` parameter refuses the request (BIP 21); other unknown parameters
+  are ignored; `label` and `message` are percent-decoded (`+` is a space),
+  capped at 200 UTF-16 code units, and a broken `%` escape is refused.
+
+Reading a request decides nothing. The address is judged as any destination is:
+`resolve(hrp)` on a sidechain (any prefix, with a note when it is not the
+chain's), `parent_address(parent)` on the parent (a `tb1…` beside tbtc4 or
+txbt4, a `bc1…` beside btc or xbt). The builder refuses what a reader would
+refuse or cut, so its URI reads back unchanged.
+
+```rust
+use sidestr_wallet::bip21::PaymentRequest;
+
+let asked = PaymentRequest::parse(pasted)?;                 // None: not a request, treat it as an address
+let to = asked.as_ref().map(|r| r.resolve(&chain.address_prefix)).transpose()?;
+let uri = PaymentRequest::new(&my_address)?.with_amount(100_000)?.with_label("Table 7")?.to_uri();
+// "bitcoin:tb1p…?amount=0.001&label=Table%207"
+```
+
+## Status: 0.5.1
 
 Spend, burn, peg-in shape, delivery data, coin listing and selection, the
 signer and policy ports. Signatures follow the parent's family (SPEC 0.0.3):
@@ -131,7 +167,11 @@ fixed, are kept as `tests/audit_regressions_0_0_3.rs`. Proven:
   with `sidestr_core::marker`;
 - accept and reject for every builder: insufficient funds, dust, below
   `pegoutMin`, wrong parent network, fee below `minFeeRate`, policy refusal
-  (`tests/builders.rs`).
+  (`tests/builders.rs`);
+- BIP 21 payment requests: Reef's own parser and this crate read 118 strings
+  the same way (Reef's test cases, the edges of its expressions, and URIs
+  built here, which Reef reads back unchanged), down to the words of each
+  refusal (`tests/bip21.rs`, `tests/xcheck-bip21.mjs`, needs a Reef checkout).
 
 Elsewhere in the stack: the relay client and the level-2 peg-out PSBT round
 are `sidestr-round`'s. Not yet: a PSBT for the parent-side peg-in, the peg
@@ -144,6 +184,7 @@ sweep, script-path spends, hardened BIP-32 custody roles (ADR-2101).
 cargo test -p sidestr-wallet                       # unit, builders, doctests; the oracle's Rust half
 SIDESTR_SIDING=<sidestr/spec>/siding SCHEMA=<bitcoin-desktop/schema> BLAKETESTNODE=<bitcoin-blake/blaketestnode> \
   cargo test -p sidestr-wallet --test oracle --test deposit_oracle   # and siding's verdict, and its deposits
+REEF=<bitcoin-blake/reef> cargo test -p sidestr-wallet --test bip21   # and Reef's reading of every payment request
 RUSTDOCFLAGS="-D warnings" cargo doc -p sidestr-wallet --no-deps
 cargo clippy -p sidestr-wallet --all-targets -- -D warnings && cargo fmt -p sidestr-wallet -- --check
 ```
