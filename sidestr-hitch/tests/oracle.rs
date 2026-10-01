@@ -14,9 +14,14 @@ use bitcoin::{Amount, OutPoint, Transaction, TxOut, Txid};
 use serde_json::json;
 use sidestr_core::block::secp;
 use sidestr_core::sighash::SighashRules;
+use sidestr_hitch::protocol::{
+    AcceptPolicy, Bytes32, ChainSpend, ChannelMachine, Context, FunderOpening, OpenParams,
+    OpeningKeys, OutputLookup, ReceiveUpdate, ReceiverOpening,
+};
 use sidestr_hitch::{
-    claim_htlc, key_path_spend, sweep_to_local, to_remote_script, Balances, Channel, ChannelState,
-    Htlc, HtlcClaim, HtlcClaimPath, RevocationKeys, Side, SweepPath,
+    claim_htlc, key_path_spend, pop_sign, revocation_key, revocation_pub, sweep_to_local,
+    to_remote_script, Balances, Channel, ChannelState, Commitment, Htlc, HtlcClaim, HtlcClaimPath,
+    RevocationKeys, Side, SweepPath,
 };
 
 fn key(byte: u8) -> SecretKey {
@@ -204,6 +209,9 @@ fn reference_accepts_every_rust_built_spend() {
         "closeSigned": serialize_hex(&signed_close),
         "closeSigA": close_sig_a,
         "closeSigB": close_sig_b,
+        "revocation": revocation_vectors(),
+        "spends": protocol_spends(),
+        "mustFail": owner_cannot_cheat(),
     });
     let mut child = Command::new("node")
         .arg(format!("{}/tests/xcheck.mjs", env!("CARGO_MANIFEST_DIR")))
@@ -230,4 +238,255 @@ fn reference_accepts_every_rust_built_spend() {
         "reference disagreements: {}",
         verdict["failures"]
     );
+    eprintln!("Hitch reference: {} checks", verdict["checked"]);
+    assert_eq!(verdict["checked"], 32, "every reference check ran");
+}
+
+fn prevout(output: &TxOut) -> serde_json::Value {
+    json!({ "value": output.value.to_sat(), "spk": hex(output.script_pubkey.as_bytes()) })
+}
+
+fn spend(name: &str, tx: &Transaction, prevouts: &[TxOut]) -> serde_json::Value {
+    json!({
+        "name": name,
+        "hex": serialize_hex(tx),
+        "prevouts": prevouts.iter().map(prevout).collect::<Vec<_>>(),
+    })
+}
+
+/// Hitch's golden two-party key, computed by Rust, and a Rust proof of
+/// possession, for Hitch to recompute and verify.
+fn revocation_vectors() -> serde_json::Value {
+    let r = key(0x33);
+    let s = key(0x44);
+    let point = revocation_pub(public(&r), &s).unwrap();
+    let context = "abababababababab/a/2";
+    json!({
+        "basepoint": public(&r).to_string(),
+        "basepointSecret": hex(&r.secret_bytes()),
+        "perStatePoint": public(&s).to_string(),
+        "perStateSecret": hex(&s.secret_bytes()),
+        "point": point.to_string(),
+        "secret": hex(&revocation_key(&r, &s).unwrap().secret_bytes()),
+        "popPoint": public(&key(0x51)).to_string(),
+        "pop": pop_sign(&key(0x51), context, &[9; 32]).to_hex(),
+        "popContext": context,
+    })
+}
+
+const H: u32 = 152_100;
+
+fn ctx(height: u32) -> Context {
+    Context::new(height, 1_800_000_000, [4; 32])
+}
+
+fn pair() -> (ChannelMachine, ChannelMachine) {
+    let (funder, open) = FunderOpening::propose(
+        OpenParams {
+            funding: OutPoint {
+                txid: Txid::from_byte_array([0xab; 32]),
+                vout: 1,
+            },
+            funding_value: Amount::from_sat(100_000),
+            push: Amount::from_sat(20_000),
+            delay: 6,
+            fee: Amount::from_sat(300),
+            hub_fee: None,
+        },
+        OpeningKeys {
+            channel: key(0x11),
+            revocation_base: key(0x30),
+            revocation: [key(0x31), key(0x32)],
+        },
+        public(&key(0x22)),
+        SighashRules::KnotsUnified,
+        &[0; 32],
+    )
+    .unwrap();
+    let (receiver, accept) = ReceiverOpening::accept(
+        open,
+        public(&key(0x11)),
+        OpeningKeys {
+            channel: key(0x22),
+            revocation_base: key(0x40),
+            revocation: [key(0x41), key(0x42)],
+        },
+        SighashRules::KnotsUnified,
+        AcceptPolicy::default(),
+        &[0; 32],
+    )
+    .unwrap();
+    let (accepted, commit) = funder.accept(accept, &[0; 32]).unwrap();
+    let (mut b, ready) = receiver.commit(commit).unwrap();
+    let mut a = accepted.ready(ready).unwrap();
+    a.confirm_funding(H);
+    b.confirm_funding(H);
+    (a, b)
+}
+
+fn round(
+    from: &mut ChannelMachine,
+    to: &mut ChannelMachine,
+    message: sidestr_hitch::protocol::UpdateMessage,
+    seed: u8,
+) {
+    let ReceiveUpdate::Acknowledge(ack) = to.receive_update(message, key(seed), &ctx(H)).unwrap()
+    else {
+        panic!("acknowledged")
+    };
+    let outcome = from.receive_ack(ack).unwrap();
+    to.receive_revoke(outcome.revoke).unwrap().unwrap();
+}
+
+fn to_local(commitment: &Commitment) -> TxOut {
+    TxOut {
+        value: commitment.local_value,
+        script_pubkey: commitment.to_local.script_pubkey.clone(),
+    }
+}
+
+fn htlc_output(commitment: &Commitment) -> TxOut {
+    TxOut {
+        value: commitment.htlcs[0].htlc.amount,
+        script_pubkey: commitment.htlcs[0].scripts.script_pubkey.clone(),
+    }
+}
+
+/// A Rust protocol run, every transaction it would broadcast: signed
+/// commitments, the penalty on a revoked state (two-party key), the delayed
+/// sweep, the HTLC success claim with its preimage and the refund.
+fn protocol_spends() -> Vec<serde_json::Value> {
+    let (mut a, mut b) = pair();
+    let funding = a.channel().funding_prevout();
+    let mut spends = vec![spend(
+        "the state-0 commitment",
+        &b.signed_commitment(0, &[1; 32]).unwrap(),
+        std::slice::from_ref(&funding),
+    )];
+    let pay = a.pay(1_000, None, key(0x33), &ctx(H)).unwrap();
+    round(&mut a, &mut b, pay, 0x43);
+    let preimage = [0x55; 32];
+    let hash = Bytes32(sha256::Hash::hash(&preimage).to_byte_array());
+    let add = a
+        .add_htlc(5_000, hash, H + 40, None, None, key(0x34), &ctx(H))
+        .unwrap();
+    round(&mut a, &mut b, add, 0x44);
+    b.remember_preimage(preimage);
+    let destination_a = to_remote_script(public(&key(0x11)));
+    let destination_b = to_remote_script(public(&key(0x22)));
+    let none = |_: OutPoint, _: u32| OutputLookup::Unspent;
+
+    // B's revoked state 0 published: A punishes it with r_A + s_B0.
+    let old = b.signed_commitment(0, &[2; 32]).unwrap();
+    let old_commitment = b.my_commitment(0).unwrap();
+    let mut punisher = a.clone();
+    let penalties = punisher
+        .on_spend(
+            ChainSpend {
+                txid: old.compute_txid(),
+                height: H + 1,
+            },
+            &destination_a,
+            &ctx(H + 1),
+            none,
+        )
+        .unwrap()
+        .broadcasts;
+    assert_eq!(penalties.len(), 1);
+    spends.push(spend(
+        "the penalty on a revoked to_local",
+        &penalties[0].tx,
+        &[to_local(&old_commitment)],
+    ));
+
+    // B force-closes at state 2 with the HTLC in flight.
+    let mut closer = b.clone();
+    let close = closer.force_close(None, "forced", &ctx(H)).unwrap().tx;
+    spends.push(spend("the forced close with an HTLC", &close, &[funding]));
+    let mine = closer.my_commitment(2).unwrap();
+    closer
+        .on_spend(
+            ChainSpend {
+                txid: close.compute_txid(),
+                height: H,
+            },
+            &destination_b,
+            &ctx(H),
+            none,
+        )
+        .unwrap();
+    let claims = closer.after_close(&destination_b, &ctx(H + 6), none);
+    let sweep = claims
+        .iter()
+        .find(|c| c.label == "sweep of to_local")
+        .unwrap();
+    spends.push(spend("the delayed sweep", &sweep.tx, &[to_local(&mine)]));
+    let success = claims
+        .iter()
+        .find(|c| c.label.contains("with the preimage"))
+        .unwrap();
+    let mut entry = spend(
+        "the HTLC success claim on its own commitment",
+        &success.tx,
+        &[htlc_output(&mine)],
+    );
+    entry["preimage"] = json!(hex(&preimage));
+    entry["hash"] = json!(hex(&hash.0));
+    spends.push(entry);
+
+    // A sees B's close and takes the refund after the expiry.
+    let mut refunder = a.clone();
+    refunder
+        .on_spend(
+            ChainSpend {
+                txid: close.compute_txid(),
+                height: H,
+            },
+            &destination_a,
+            &ctx(H),
+            none,
+        )
+        .unwrap();
+    let theirs = refunder
+        .their_commitment(2, refunder.current_state())
+        .unwrap();
+    let refunds = refunder.after_close(&destination_a, &ctx(H + 40), none);
+    let refund = refunds.iter().find(|c| c.label.contains("refund")).unwrap();
+    spends.push(spend(
+        "the HTLC refund after its expiry",
+        &refund.tx,
+        &[htlc_output(&theirs)],
+    ));
+    spends
+}
+
+/// The flaw 0.2 fixes: the owner's own per-state secret, or its channel key,
+/// must not open its commitment's revocation leaf.
+fn owner_cannot_cheat() -> Vec<serde_json::Value> {
+    let (a, _) = pair();
+    let mine = a.my_commitment(0).unwrap();
+    let destination = to_remote_script(public(&key(0x11)));
+    [
+        ("the owner's per-state secret", key(0x31)),
+        ("the owner's channel key", key(0x11)),
+    ]
+    .into_iter()
+    .map(|(name, secret)| {
+        let tx = sweep_to_local(
+            &mine,
+            SweepPath::Revocation,
+            destination.clone(),
+            Amount::from_sat(300),
+            &secret,
+            SighashRules::KnotsUnified,
+            &[0; 32],
+        )
+        .unwrap();
+        spend(
+            &format!("a revocation spend by {name}"),
+            &tx,
+            &[to_local(&mine)],
+        )
+    })
+    .collect()
 }

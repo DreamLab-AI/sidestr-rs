@@ -16,10 +16,10 @@ env:
   # and say so in the changelogs.
   SIDESTR_SPEC_REF: fe689e9c723f9bf43393d2dd5b6f924a701c8a18
   SCHEMA_REF: b8cbf6337c7450fe14ddc5bce00c7280059aab5d
-  BLAKETESTNODE_REF: d2764d21fe1f8c29b1979e49eb8287a72dd2347e
+  BLAKETESTNODE_REF: f1da4a6b64a6a9a6f791d2e5dea8a1c1be81ea09
   # Hitch's channel transaction oracle is independent of siding's release
   # pin. Its script and wire format first landed as one reviewed unit here.
-  HITCH_REF: 6752e24041f98dd9260d6be6f3710b29e9664a7f
+  HITCH_REF: 62f8e390b8acbbf1e534ee48cf2d519e0b859586
 
 jobs:
   gate:

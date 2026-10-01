@@ -102,14 +102,17 @@ Ported since 0.0.2:
 - **Assets, pools and markets: ported.** Rule activation heights replay from
   the named height. Pools enforce the reference's integer constant-product
   boundary; markets cover open, split, merge, resolve, redeem and refund.
-- **Hitch channels: pure channel kernel ported.** The funding output,
-  asymmetric commitments, revocable delayed outputs, HTLC success/timeout/
-  penalty paths, cooperative and unilateral close produce the reference's
-  exact scripts. The Rust peer machine covers opening, update/ack/revoke
-  finality, collision handling, recovery, buffered updates and checked
-  snapshots. Invoices and one-hop hub routing preserve Hitch's fee and
-  timeout rules. A host still supplies wallet funding, Nostr relay I/O,
-  chain watches, storage and broadcasting.
+- **Hitch channels: pure channel kernel ported, at Hitch's fifth
+  adversarial-review round.** The funding output, asymmetric commitments
+  with two-party revocation keys, revocable delayed outputs, HTLC
+  success/timeout/penalty paths, cooperative and unilateral close produce
+  the reference's exact scripts and transaction ids. The Rust peer machine
+  covers opening with proofs of possession, update/ack/revoke finality,
+  rejects, set-aside states and their binding, collision handling, recovery,
+  closes, the periodic tick, following a close on the chain and checked
+  snapshots. Invoices and one-hop hub routing preserve Hitch's fee, timeout
+  and protective-close rules. A host still supplies wallet funding, Nostr
+  relay I/O, chain watches, storage and broadcasting.
 - Out of scope: a trust-minimised peg-out and the draft dispute and
   multi-outcome market extensions. Assets are also available as a holders'
   view on chains that do not adopt the rule.
@@ -139,11 +142,15 @@ Reference conformance uses the engine as the oracle. What is tested:
   state root, withdrawals and receipts match byte for byte, and every refused
   block is refused (`sidestr-evm/tests/oracle.rs`).
 - **Hitch:** every Rust-built commitment, close, delayed sweep, penalty,
-  HTLC success/timeout/revocation claim and direct key-path claim is checked
-  by Hitch's JavaScript module and the schema kernel interpreter
-  (`sidestr-hitch/tests/oracle.rs`). Every opening, update, acknowledgement,
-  revocation, close and sync message also passes Hitch's exact JavaScript
-  wire validator (`sidestr-hitch/tests/wire_oracle.rs`).
+  HTLC success/timeout/revocation claim and direct key-path claim, and every
+  transaction a Rust protocol run broadcasts, is checked by Hitch's
+  JavaScript module and the schema kernel interpreter, which also refuses an
+  owner's attempt on its own revocation leaf; Hitch recomputes the two-party
+  revocation key and verifies a Rust proof of possession
+  (`sidestr-hitch/tests/oracle.rs`). Every message kind, `reject` included,
+  passes Hitch's exact JavaScript wire validator
+  (`sidestr-hitch/tests/wire_oracle.rs`). Hitch's peer and adversarial
+  suites run in Rust, 21 and 77 checks.
 - **Audit regressions:** independent audits' counter-examples are kept as
   `tests/audit_regressions*.rs`. The 0.0.3 release was verified by GPT-6
   Astra before publishing. It re-ran every gate and confirmed each change at
@@ -158,8 +165,8 @@ pinned commits and name them:
 ```sh
 git clone https://github.com/sidestr/spec && git -C spec checkout fe689e9c723f9bf43393d2dd5b6f924a701c8a18
 git clone https://github.com/bitcoin-desktop/schema && git -C schema checkout b8cbf6337c7450fe14ddc5bce00c7280059aab5d
-git clone https://github.com/bitcoin-blake/blaketestnode && git -C blaketestnode checkout d2764d21fe1f8c29b1979e49eb8287a72dd2347e
-git clone https://github.com/bitcoin-blake/hitch && git -C hitch checkout 6752e24041f98dd9260d6be6f3710b29e9664a7f
+git clone https://github.com/bitcoin-blake/blaketestnode && git -C blaketestnode checkout f1da4a6b64a6a9a6f791d2e5dea8a1c1be81ea09
+git clone https://github.com/bitcoin-blake/hitch && git -C hitch checkout 62f8e390b8acbbf1e534ee48cf2d519e0b859586
 
 SIDESTR_SIDING=$PWD/spec/siding SCHEMA=$PWD/schema BLAKETESTNODE=$PWD/blaketestnode HITCH=$PWD/hitch \
   cargo test --workspace --all-features

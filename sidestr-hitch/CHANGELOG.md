@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.2.0 - 2026-10-01
+
+Parity with Hitch at commit `62f8e39` (`lib/channel.mjs`, `lib/peer.mjs`,
+`lib/route.mjs`), through the five rounds of Hitch's adversarial review.
+Breaking: commitment transactions change, so 0.1 channels cannot be carried
+over (see below).
+
+- The revocation key of a commitment is a two-party key: the other side's
+  basepoint plus the owner's per-state point (`revocation_pub`), signed for
+  with `revocation_key` once the state is revoked. The owner can no longer
+  spend its own revocation leaf. `even_secret` lifts a secret to its even
+  point, as Hitch's `evenSecret`.
+- Every announced revocation point carries a proof of possession
+  (`pop_sign`, `pop_verify`: BIP 340 over `tagged_hash("hitch/pop",
+  context || point)`), checked before the point is kept: `open` and
+  `accept` gain `revBase` and `pop`, `update` and `ack` gain `nextRevPop`.
+- `preimage_in` reads a preimage from an HTLC claim's witness.
+- Golden vectors from Hitch's channel suite: the two-party key
+  `4f355bdc…`, commitment txids `138fe225…`, `56ae7f0f…`, `4cd9bf1f…` and
+  the cooperative close `5a31ac74…`.
+- The protocol machine is rebuilt on Hitch's peer: a lifecycle
+  (`ChannelStatus`), `reject` naming the update's signature, set-aside
+  updates remembered as signed alternatives and announced as
+  `ChannelEvent::Dropped`, an acknowledgement of a set-aside state adopted,
+  `bound` (agreed state, pending, unrevoked alternative, followed close
+  output), HTLC ids that never repeat, a state leaving the funder below its
+  fee always refused, no secret of a published commitment revealed, the
+  cooperative close blocking updates, `tick` (retries with backoff, the
+  protective close `delay + CLAIM_MARGIN` before a claimable HTLC's expiry,
+  an overdue HTLC to the chain), and the chain half: `on_spend`,
+  `un_spend`, `after_close`, `watch_outputs` with penalties, sweeps, claims
+  and preimages read from the chain (`ChannelEvent::Preimage`).
+- New constants `CLAIM_MARGIN`, `CLOSE_DEPTH`, `FUNDING_TIMEOUT`,
+  `PROPOSAL_TIMEOUT`, `UNFUNDED_TIMEOUT`, `MIN_CONF`.
+- The opening typestates borrow, so a bad `accept` or `commit` leaves the
+  proposal standing, and gain resend and funding-sync accessors.
+- `route::Router` replaces the decision functions: `forward_delta` (margin
+  + both delays + `CLAIM_MARGIN`), an invoice already paid and a duplicate
+  hash refused, forwards recorded before the add, an in-flight set, a
+  downstream channel chosen with room, `on_dropped`, `on_preimage`, and the
+  tick (lost forwards, the protective close when only a set-aside state
+  binds the hash near the upstream deadline, the close past the downstream
+  expiry).
+- Snapshots are version 2. Version 1 snapshots are refused: their
+  single-party revocation keys are the flaw this release fixes; close such
+  channels with 0.1.
+- Hitch's peer and adversarial suites are ported as Rust tests (21 and 77
+  checks). The oracles run against Hitch `62f8e39` and blaketestnode
+  `f1da4a6`; the interpreter now also checks every transaction a Rust
+  protocol run broadcasts.
+
 ## 0.1.1 - 2026-10-01
 
 - Follow `sidestr-core` 0.4. Hitch's scripts, transactions, state machine and

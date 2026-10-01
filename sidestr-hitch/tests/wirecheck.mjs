@@ -18,4 +18,4 @@ const { messages } = JSON.parse(readFileSync(0, 'utf8'));
 const failures = messages
   .map((message, index) => ({ index, type: message.t, error: peer.wellFormed(message) }))
   .filter(({ error }) => error != null);
-process.stdout.write(JSON.stringify({ ok: failures.length === 0, failures }));
+process.stdout.write(JSON.stringify({ ok: failures.length === 0, checked: messages.length, failures }));

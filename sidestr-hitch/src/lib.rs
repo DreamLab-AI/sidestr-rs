@@ -2,12 +2,19 @@
 //! Bitcoin-family testnets.
 //!
 //! This is an attributed Rust port of `lib/channel.mjs` in Melvin Carvalho's
-//! [Hitch](https://github.com/bitcoin-blake/hitch), pinned initially at
-//! commit `6752e24`. Hitch is the Lightning construction without the
-//! Lightning network: two peers lock a coin in a 2-of-2 Taproot leaf, hold
-//! asymmetric revocable commitments, and update them off chain. Optional
-//! HTLC outputs add a preimage success path, an absolute timeout and a
-//! revocation path.
+//! [Hitch](https://github.com/bitcoin-blake/hitch), at commit `62f8e39`.
+//! Hitch is the Lightning construction without the Lightning network: two
+//! peers lock a coin in a 2-of-2 Taproot leaf, hold asymmetric revocable
+//! commitments, and update them off chain. Optional HTLC outputs add a
+//! preimage success path, an absolute timeout and a revocation path.
+//!
+//! A commitment's revocation key is a two-party key: the counterparty's
+//! basepoint plus the owner's per-state point ([`revocation_pub`]). The owner
+//! never holds its secret, so it cannot use its own revocation leaf; the
+//! counterparty learns the per-state secret when the state is revoked and
+//! then signs with [`revocation_key`]. Every announced point carries a proof
+//! of possession ([`pop_sign`]), so neither side can choose a point that
+//! cancels the other's.
 //!
 //! The transaction builders are paired with a pure peer state machine in
 //! [`protocol`] and the one-hop invoice decisions in [`route`]. Hosts provide
@@ -143,6 +150,9 @@ pub enum Error {
     /// A Schnorr signature had the wrong encoding or hash type.
     #[error("invalid leaf signature")]
     InvalidSignature,
+    /// A two-party revocation key summed to the point at infinity or to zero.
+    #[error("bad revocation key")]
+    RevocationKey,
     /// A secp256k1 key or tweak was invalid.
     #[error(transparent)]
     Secp(#[from] bitcoin::secp256k1::Error),
@@ -369,6 +379,37 @@ impl LeafSignature {
         let mut bytes = [0u8; 65];
         decode_hex_into(text, &mut bytes).ok_or(Error::InvalidSignature)?;
         Self::from_slice(&bytes)
+    }
+}
+
+/// A 64-byte BIP 340 proof of possession of a revocation secret, carried as
+/// 128 lower-case hex characters on Hitch's wire.
+///
+/// See [`pop_sign`] and [`pop_verify`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PopSignature([u8; 64]);
+
+impl PopSignature {
+    /// Wrap exactly 64 signature bytes.
+    pub fn from_bytes(bytes: [u8; 64]) -> Self {
+        Self(bytes)
+    }
+
+    /// Borrow the signature bytes.
+    pub fn as_bytes(&self) -> &[u8; 64] {
+        &self.0
+    }
+
+    /// Encode as lower-case hex.
+    pub fn to_hex(self) -> String {
+        hex_bytes(&self.0)
+    }
+
+    /// Parse the 128-character lower-case wire form.
+    pub fn from_hex(text: &str) -> Result<Self> {
+        let mut bytes = [0u8; 64];
+        decode_hex_into(text, &mut bytes).ok_or(Error::InvalidSignature)?;
+        Ok(Self(bytes))
     }
 }
 
@@ -658,6 +699,108 @@ pub fn internal_key() -> Result<XOnlyPublicKey> {
     let point = PublicKey::from_slice(&encoded)?;
     let scalar = Scalar::from_be_bytes(tweak).map_err(|_| Error::Nums)?;
     Ok(point.add_exp_tweak(secp(), &scalar)?.x_only_public_key().0)
+}
+
+/// Negate `secret` when its public point has an odd y coordinate, so the
+/// result's point is the even lift of the same x-only key. This is Hitch's
+/// `evenSecret`.
+pub fn even_secret(secret: &SecretKey) -> SecretKey {
+    let (_, parity) = secret.x_only_public_key(secp());
+    if parity == Parity::Odd {
+        secret.negate()
+    } else {
+        *secret
+    }
+}
+
+/// The public half of a two-party revocation key: `lift_x(point) +
+/// even(scalar)·G`, as an x-only key. This is Hitch's `revocationPub`.
+///
+/// A commitment's revocation key combines the counterparty's basepoint `R`
+/// with the owner's per-state point `S_i`. The owner computes it as
+/// `revocation_pub(R, s_i)`, the counterparty as `revocation_pub(S_i, r)`,
+/// and both obtain `R + S_i`. Neither side alone knows its discrete
+/// logarithm; the counterparty learns it only when the owner reveals `s_i`
+/// to revoke the state (see [`revocation_key`]).
+///
+/// ```
+/// use bitcoin::secp256k1::{Keypair, SecretKey};
+/// use sidestr_core::block::secp;
+/// use sidestr_hitch::{revocation_key, revocation_pub};
+///
+/// let r = SecretKey::from_slice(&[0x33; 32]).unwrap();
+/// let s = SecretKey::from_slice(&[0x44; 32]).unwrap();
+/// let big_r = Keypair::from_secret_key(secp(), &r).x_only_public_key().0;
+/// let big_s = Keypair::from_secret_key(secp(), &s).x_only_public_key().0;
+/// let owner_view = revocation_pub(big_r, &s).unwrap();
+/// assert_eq!(owner_view, revocation_pub(big_s, &r).unwrap());
+/// let key = revocation_key(&r, &s).unwrap();
+/// assert_eq!(Keypair::from_secret_key(secp(), &key).x_only_public_key().0, owner_view);
+/// ```
+pub fn revocation_pub(point: XOnlyPublicKey, scalar: &SecretKey) -> Result<XOnlyPublicKey> {
+    let lifted = point.public_key(Parity::Even);
+    let tweak = Scalar::from(even_secret(scalar));
+    let combined = lifted
+        .add_exp_tweak(secp(), &tweak)
+        .map_err(|_| Error::RevocationKey)?;
+    Ok(combined.x_only_public_key().0)
+}
+
+/// The secret of a two-party revocation key: `even(basepoint_secret) +
+/// even(per_state_secret) mod n`. This is Hitch's `revocationKey`; it signs
+/// the revocation leaves of a commitment whose public key is
+/// [`revocation_pub`].
+pub fn revocation_key(basepoint_secret: &SecretKey, per_state: &SecretKey) -> Result<SecretKey> {
+    even_secret(basepoint_secret)
+        .add_tweak(&Scalar::from(even_secret(per_state)))
+        .map_err(|_| Error::RevocationKey)
+}
+
+fn pop_message(point: &XOnlyPublicKey, context: &str) -> [u8; 32] {
+    let mut message = Vec::with_capacity(context.len() + 32);
+    message.extend_from_slice(context.as_bytes());
+    message.extend_from_slice(&point.serialize());
+    tagged_sha256(b"hitch/pop", &message)
+}
+
+/// Prove possession of a revocation secret: a BIP 340 signature by `secret`
+/// over `tagged_hash("hitch/pop", context || point)`. Hitch's `context` is
+/// `"<channel id>/<owner role>/<base or state number>"`.
+///
+/// A plain sum of points is open to a rogue key: a peer could announce
+/// `k·G − R` and hold `k`. Every announced revocation point therefore
+/// carries this proof, and [`pop_verify`] runs before the point is kept.
+pub fn pop_sign(secret: &SecretKey, context: &str, aux: &[u8; 32]) -> PopSignature {
+    let keypair = Keypair::from_secret_key(secp(), secret);
+    let point = keypair.x_only_public_key().0;
+    let message = Message::from_digest(pop_message(&point, context));
+    let signature = secp().sign_schnorr_with_aux_rand(&message, &keypair, aux);
+    let mut bytes = [0u8; 64];
+    bytes.copy_from_slice(signature.as_ref());
+    PopSignature(bytes)
+}
+
+/// Check a proof of possession made by [`pop_sign`] for `point` in
+/// `context`. Malformed signatures verify as `false`.
+pub fn pop_verify(point: &XOnlyPublicKey, signature: &PopSignature, context: &str) -> bool {
+    let Ok(signature) = Signature::from_slice(&signature.0) else {
+        return false;
+    };
+    let message = Message::from_digest(pop_message(point, context));
+    secp().verify_schnorr(&signature, &message, point).is_ok()
+}
+
+/// The payment preimage revealed by a spend of an HTLC output, if any
+/// 32-byte witness item hashes to `payment_hash` under SHA-256. This is
+/// Hitch's `preimageIn`, used to carry a preimage the counterparty revealed
+/// on the chain back upstream.
+pub fn preimage_in(tx: &Transaction, payment_hash: &[u8; 32]) -> Option<[u8; 32]> {
+    tx.input
+        .iter()
+        .flat_map(|input| input.witness.iter())
+        .filter(|item| item.len() == 32)
+        .find(|item| sha256::Hash::hash(item).to_byte_array() == *payment_hash)
+        .map(|item| item.try_into().expect("a 32-byte witness item"))
 }
 
 /// Construct the 2-of-2 funding script. Keys are sorted lexicographically in
@@ -1449,6 +1592,272 @@ mod tests {
             revocation.input[0].sequence.to_consensus_u32(),
             INPUT_SEQUENCE
         );
+    }
+
+    /// Hitch `test/channel-test.mjs`, the two-party revocation section.
+    #[test]
+    fn two_party_revocation_key_matches_hitch_golden_vectors() {
+        let r = key(0x33);
+        let s = key(0x44);
+        let p1 = revocation_pub(public(&r), &s).unwrap();
+        let p2 = revocation_pub(public(&s), &r).unwrap();
+        assert_eq!(p1, p2, "R + s·G = S + r·G");
+        assert_eq!(
+            p1.to_string(),
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+        );
+        let combined = revocation_key(&r, &s).unwrap();
+        assert_eq!(public(&combined), p1);
+
+        // Hitch draws the channel keys at random here; fixed 0x11 would equal
+        // the combined key of these vectors (-0x33.. + 0x44.. = 0x11..).
+        let a = key(0x12);
+        let b = key(0x23);
+        let channel = Channel::new(
+            public(&a),
+            public(&b),
+            OutPoint {
+                txid: Txid::from_byte_array([0xab; 32]),
+                vout: 1,
+            },
+            Amount::from_sat(100_000),
+            Amount::from_sat(DEFAULT_FEE),
+            DEFAULT_DELAY,
+        )
+        .unwrap();
+        let local = to_local_script(public(&a), p1, 6).unwrap();
+        let state = ChannelState {
+            balances: Balances {
+                a: Amount::from_sat(60_000),
+                b: Amount::from_sat(40_000),
+            },
+            revocation: RevocationKeys { a: p1, b: p1 },
+            htlcs: vec![],
+        };
+        let commitment = channel.commitment(1, Side::A, &state).unwrap();
+        assert_eq!(commitment.to_local, local);
+        let prevouts = [TxOut {
+            value: commitment.local_value,
+            script_pubkey: local.script_pubkey.clone(),
+        }];
+        for rules in [SighashRules::Bip341, SighashRules::KnotsUnified] {
+            let both = sweep_to_local(
+                &commitment,
+                SweepPath::Revocation,
+                to_remote_script(public(&b)),
+                Amount::from_sat(200),
+                &combined,
+                rules,
+                &[0; 32],
+            )
+            .unwrap();
+            let sig = LeafSignature::from_slice(&both.input[0].witness[0]).unwrap();
+            assert!(verify_leaf_signature(
+                &both,
+                0,
+                &prevouts,
+                local.revocation.leaf_hash,
+                &p1,
+                &sig,
+                rules
+            ));
+            // Neither secret alone, nor the owner's channel key, opens the leaf.
+            for alone in [s, r, a] {
+                let one = sweep_to_local(
+                    &commitment,
+                    SweepPath::Revocation,
+                    to_remote_script(public(&b)),
+                    Amount::from_sat(200),
+                    &alone,
+                    rules,
+                    &[0; 32],
+                )
+                .unwrap();
+                let sig = LeafSignature::from_slice(&one.input[0].witness[0]).unwrap();
+                assert!(!verify_leaf_signature(
+                    &one,
+                    0,
+                    &prevouts,
+                    local.revocation.leaf_hash,
+                    &p1,
+                    &sig,
+                    rules
+                ));
+            }
+        }
+    }
+
+    /// Hitch `test/channel-test.mjs`: fixed keys, fixed funding and fixed
+    /// revocation points give transaction ids that must never change, or
+    /// funded channels are stranded.
+    #[test]
+    fn commitment_and_close_txids_match_hitch_golden_vectors() {
+        let (channel, _, _) = channel();
+        let p1 = revocation_pub(public(&key(0x33)), &key(0x44)).unwrap();
+        let revocation = RevocationKeys { a: p1, b: p1 };
+        let state = ChannelState {
+            balances: Balances {
+                a: Amount::from_sat(60_000),
+                b: Amount::from_sat(40_000),
+            },
+            revocation,
+            htlcs: vec![],
+        };
+        assert_eq!(
+            channel
+                .commitment(1, Side::A, &state)
+                .unwrap()
+                .tx
+                .compute_txid()
+                .to_string(),
+            "138fe22589d87f2f363907ad877a25f73d20d5415f233c7dcc0dbd9ac2f03c13"
+        );
+        assert_eq!(
+            channel
+                .commitment(1, Side::B, &state)
+                .unwrap()
+                .tx
+                .compute_txid()
+                .to_string(),
+            "56ae7f0fb0b450356387a552da8a952eae772286320e2a94f36ee7c07ce05152"
+        );
+        let with_htlc = ChannelState {
+            balances: Balances {
+                a: Amount::from_sat(40_000),
+                b: Amount::from_sat(40_000),
+            },
+            revocation,
+            htlcs: vec![Htlc {
+                id: 1,
+                from: Side::A,
+                amount: Amount::from_sat(20_000),
+                payment_hash: [0xab; 32],
+                expiry: 152_200,
+            }],
+        };
+        assert_eq!(
+            channel
+                .commitment(2, Side::A, &with_htlc)
+                .unwrap()
+                .tx
+                .compute_txid()
+                .to_string(),
+            "4cd9bf1f440e682fcfae5d1bb0e0dd11ff9ce71d738d9ad60e8b6f3e4fe30110"
+        );
+        assert_eq!(
+            channel
+                .cooperative_close(&state)
+                .unwrap()
+                .compute_txid()
+                .to_string(),
+            "5a31ac748e2e364b1c11f21b32b85d8e539dbf9baa9f4a8c41c596a41065d1b7"
+        );
+    }
+
+    #[test]
+    fn htlc_revocation_leaf_needs_both_secrets_and_preimage_is_read_back() {
+        let (channel, a, b) = channel();
+        let r = key(0x33);
+        let s = key(0x44);
+        let p1 = revocation_pub(public(&r), &s).unwrap();
+        let preimage = [0x55; 32];
+        let payment_hash = sha256::Hash::hash(&preimage).to_byte_array();
+        let state = ChannelState {
+            balances: Balances {
+                a: Amount::from_sat(40_000),
+                b: Amount::from_sat(40_000),
+            },
+            revocation: RevocationKeys { a: p1, b: p1 },
+            htlcs: vec![Htlc {
+                id: 1,
+                from: Side::B,
+                amount: Amount::from_sat(20_000),
+                payment_hash,
+                expiry: 152_200,
+            }],
+        };
+        let commitment = channel.commitment(2, Side::A, &state).unwrap();
+        let htlc = &commitment.htlcs[0];
+        let prevouts = [TxOut {
+            value: htlc.htlc.amount,
+            script_pubkey: htlc.scripts.script_pubkey.clone(),
+        }];
+        let claim = |key: &SecretKey, path, preimage| {
+            claim_htlc(
+                &commitment,
+                htlc,
+                HtlcClaim {
+                    path,
+                    destination: to_remote_script(public(&b)),
+                    fee: Amount::from_sat(200),
+                    preimage,
+                },
+                key,
+                SighashRules::KnotsUnified,
+                &[0; 32],
+            )
+            .unwrap()
+        };
+        let verifies = |tx: &Transaction, leaf: TapLeafHash, pubkey: XOnlyPublicKey| {
+            let sig = LeafSignature::from_slice(&tx.input[0].witness[0]).unwrap();
+            verify_leaf_signature(
+                tx,
+                0,
+                &prevouts,
+                leaf,
+                &pubkey,
+                &sig,
+                SighashRules::KnotsUnified,
+            )
+        };
+        let leaf = htlc.scripts.revocation.leaf_hash;
+        let combined = revocation_key(&r, &s).unwrap();
+        assert!(verifies(
+            &claim(&combined, HtlcClaimPath::Revocation, None),
+            leaf,
+            p1
+        ));
+        assert!(!verifies(
+            &claim(&s, HtlcClaimPath::Revocation, None),
+            leaf,
+            p1
+        ));
+
+        // A success claim by A (the receiver on its own commitment) carries
+        // the preimage; a timeout claim carries none.
+        let success = claim(&a, HtlcClaimPath::Success, Some(preimage));
+        assert_eq!(preimage_in(&success, &payment_hash), Some(preimage));
+        let timeout = claim(&b, HtlcClaimPath::Timeout, None);
+        assert_eq!(preimage_in(&timeout, &payment_hash), None);
+    }
+
+    #[test]
+    fn proof_of_possession_binds_the_point_and_its_place() {
+        let secret = key(0x51);
+        let point = public(&secret);
+        let proof = pop_sign(&secret, "abababababababab/a/base", &[7; 32]);
+        assert!(pop_verify(&point, &proof, "abababababababab/a/base"));
+        assert!(!pop_verify(&point, &proof, "abababababababab/a/0"));
+        assert!(!pop_verify(
+            &public(&key(0x52)),
+            &proof,
+            "abababababababab/a/base"
+        ));
+        // A proof made with another secret does not cover a chosen point.
+        let forged = pop_sign(&key(0x54), "abababababababab/a/base", &[7; 32]);
+        assert!(!pop_verify(&point, &forged, "abababababababab/a/base"));
+        assert_eq!(PopSignature::from_hex(&proof.to_hex()).unwrap(), proof);
+        assert!(PopSignature::from_hex("ab").is_err());
+    }
+
+    #[test]
+    fn even_secret_lifts_to_the_even_point() {
+        for byte in 1..=40u8 {
+            let k = key(byte);
+            let even = even_secret(&k);
+            assert_eq!(public(&even), public(&k));
+            assert_eq!(even.x_only_public_key(secp()).1, Parity::Even);
+        }
     }
 
     #[test]
