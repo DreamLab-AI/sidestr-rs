@@ -222,6 +222,13 @@ sidestr-rs is the economic layer of DreamLab's agent estate:
 - [**dreamlab-ai-website**](https://github.com/DreamLab-AI/dreamlab-ai-website):
   the DreamLab website.
 
+## Architecture decisions
+
+Our local [ADR ledger](docs/adr/README.md) records the compatibility-oracle,
+crate-boundary and reserve-adapter decisions owned by this repository. Estate
+deployment and policy decisions remain in their owning repositories and are
+linked from the local records.
+
 ## Licence
 
 **AGPL-3.0-only** ([LICENSE](LICENSE)). The reference implementation these
