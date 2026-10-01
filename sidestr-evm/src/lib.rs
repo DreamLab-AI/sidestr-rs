@@ -1,4 +1,4 @@
-//! `sidestr-evm` — the `evm` rule for sidestr chains, in Rust: Ethereum
+//! `sidestr-evm`: the `evm` rule for sidestr chains, in Rust. Ethereum
 //! transactions ride inside ordinary sidechain transactions, every validator
 //! runs them in block order through an EVM and keeps the account state
 //! beside the UTXO set, and the coinbase commits the state root so validators
@@ -33,9 +33,10 @@
 //!
 //! # Following a chain
 //!
-//! [`rules_for`] gives the rules a document names — the EVM rule and, as
+//! [`rules_for`] gives the rules a document names: the EVM rule and, as
 //! upstream installs it on every chain that names any rule, the assets rule
-//! ([`sidestr_core::assets::AssetsRule`]) — and
+//! ([`sidestr_core::assets::AssetsRule`]), followed by optional pool and
+//! markets rules in the reference's order. Then
 //! [`sidestr_core::StateOf::from_genesis_with_rules`] carries them from the
 //! genesis on. Then [`sidestr_core::StateOf::add_block`] is the whole of
 //! validating a block; a clone of the [`EvmRule`] reads balances, code,
@@ -87,10 +88,12 @@
 //!   `sidestr-core` applies it ([`EvmState::commit`]), as `sidestr-core`
 //!   commits its own records; between the two, the state a caller reads is
 //!   the applied chain's, never a refused block's.
-//! - **State is kept for the tip.** The reference keeps a root per height
-//!   and can re-run any block whose parent's root it holds; `sidestr-core`
-//!   has no reorganisations, and [`EvmState::prepare`] judges the next
-//!   height only.
+//! - **Committed history can be snapshotted and restored.**
+//!   [`EvmState::snapshot`] retains committed worlds, times, block records
+//!   and receipts. [`EvmState::restore`] and [`EvmState::from_snapshot`]
+//!   validate the version, configuration, requested height, time and root
+//!   before exposing a retained state. `sidestr-core` has no reorganisations,
+//!   and [`EvmState::prepare`] still judges the next height only.
 //! - **The KZG precompile aborts by design.** ethereumjs's point-evaluation
 //!   precompile throws without a KZG library, which the reference's
 //!   `Common` does not carry, so a transaction reaching `0x0a` invalidates its
@@ -109,8 +112,8 @@
 //! with these exceptions:
 //!
 //! - **Read-only calls start afresh.** ethereumjs's `runCall` starts with
-//!   no address warm — not the sender, the target, the precompiles or the
-//!   coinbase — and keeps what one call warms (addresses and storage slots)
+//!   no address warm (not the sender, the target, the precompiles or the
+//!   coinbase) and keeps what one call warms (addresses and storage slots)
 //!   until the node next runs a transaction, so the reference estimates the
 //!   same call differently the second time (a first storage write: 64,303,
 //!   then 61,153). revm runs a call as a transaction would run: those four

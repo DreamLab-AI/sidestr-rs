@@ -1,8 +1,8 @@
-//! `sidestr-wallet` — a wallet for sidestr sidechains, in Rust: the coin
+//! `sidestr-wallet`: a wallet for sidestr sidechains, in Rust: the coin
 //! set for a script, the reference coin selection, taproot key-path spends,
-//! peg-out burns and EVM deposits signed behind a signer port, the
-//! parent-side peg-in transaction shape, and delivery as a `POST /tx` body
-//! or a kind-23500 event.
+//! peg-out burns, record-bearing spends, issued-asset transfers and EVM
+//! deposits signed behind a signer port, the parent-side peg-in transaction
+//! shape, and delivery as a `POST /tx` body or a kind-23500 event.
 //!
 //! A wallet needs a chain id and a relay, and nothing of the producer's
 //! (SPEC 11). It learns the chain from a mirror's `chain.json`, held to the
@@ -17,11 +17,12 @@
 //!
 //! This crate is a port of **siding**, the reference implementation by
 //! Melvin Carvalho (<https://github.com/sidestr/spec>, AGPL-3.0), ported from
-//! commit `2de40bdac4cba01be0864156a553d8287c22e279` and brought to SPEC 0.0.4
-//! (`@sidestr/spec` 0.0.6) at `fa86dac83d47b8f70195132e91e9dc083e1d9228` (`lib/txsign.mjs`) — `siding/lib/spend.mjs`,
+//! commit `2de40bdac4cba01be0864156a553d8287c22e279` and brought through
+//! `fe689e9c723f9bf43393d2dd5b6f924a701c8a18` (`lib/spend.mjs`,
+//! `lib/txsign.mjs`), including `siding/lib/spend.mjs`,
 //! `lib/address.mjs`, the construction halves of `lib/parent.mjs` and
 //! `lib/checkpoint.mjs`, and the `send` and `faucet` commands of
-//! `bin/siding.mjs` — and carries the same licence, AGPL-3.0-only. `SPEC.md`
+//! `bin/siding.mjs`. It carries the same licence, AGPL-3.0-only. `SPEC.md`
 //! in that repository is the design; section numbers below are its. Where a
 //! function ports a siding function its documentation names it. Consensus
 //! types, the markers, addresses and the document come from
@@ -36,14 +37,17 @@
 //! | [`spend`] | a key-path spend to an address or script, fee at `minFeeRate`, signed, as hex | 11 | `spend.mjs buildSpend`, `resolveTo`; `siding send` |
 //! | [`burn`] | a peg-out: `OP_RETURN pegout:<parent script hex>`, at least `pegoutMin` | 7 | `spend.mjs` (`--pegout`) |
 //! | [`deposit`] | an EVM deposit: the reserve paid, then `OP_RETURN evmin:<address>` | proposals/evm.md | `spend.mjs` (`--evm`) |
+//! | [`compose`] | named outputs, records and change in the fixed order that lets records name outputs | 12.1 | `spend.mjs`, `records.mjs` |
+//! | [`asset`] | issue and transfer assets while preserving carried amounts and leaving unrelated carriers unspent | 12 | `spend.mjs`, `overlays/assets.mjs` |
+//! | [`external`] | build with witness placeholders, then accept a browser signer's answer only when it is the same transaction and every input verifies | proposals/browser-signer.md | none |
 //! | [`pegin`] | the parent side: peg output + `pegin:<chain id>:<script>` marker; the peg-out payment and checkpoint shapes; scanning | 6, 7, 11 | `parent.mjs`, `checkpoint.mjs` |
 //! | [`deliver`] | `POST /tx`, `/coins`, `/tip`, `/chain.json` as data; kind 23500 / 23501 templates; HTTP behind feature `client` | 11 | `spend.mjs deliver`, `bin/siding.mjs` routes |
 //! | [`key`] | the [`SpendSigner`] port, a plain key, pubkey → `5120` script → bech32m, ADR-2101 spend-key derivation | 3 | `sign.mjs`, `address.mjs` |
-//! | [`policy`] | the [`SpendPolicy`] hook every builder consults; [`Permissive`] | — | (ADR-2100) |
+//! | [`policy`] | the [`SpendPolicy`] hook every builder consults; [`Permissive`] | none | ADR-2100 |
 //!
 //! # A payment, end to end
 //!
-//! Against a chain held in memory — the same calls work against a
+//! Against a chain held in memory. The same calls work against a
 //! producer's `/coins` and `/tip` (see [`deliver`]).
 //!
 //! ```
@@ -107,7 +111,7 @@
 //!   and input count before signing. [`Permissive`] says yes; the authority
 //!   gate (ADR-2100) is the caller's implementation.
 //! - **The fee is `minFeeRate × vsize`, exactly**, sized with the 65-byte
-//!   witness the signer will produce, unless the caller fixes one — and a
+//!   witness the signer will produce, unless the caller fixes one. A
 //!   fixed fee under the rate is refused here rather than by the producer.
 //! - **No I/O by default.** `deliver` returns URLs, bodies and event
 //!   templates; feature `client` adds the HTTP calls over `ureq`. Nothing

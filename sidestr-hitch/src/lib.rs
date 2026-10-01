@@ -1,5 +1,5 @@
-//! Lightning-shaped payment-channel transactions for Bitcoin BLAKE2b
-//! testnet4.
+//! Lightning-shaped payment-channel transactions for sidestr and
+//! Bitcoin-family testnets.
 //!
 //! This is an attributed Rust port of `lib/channel.mjs` in Melvin Carvalho's
 //! [Hitch](https://github.com/bitcoin-blake/hitch), pinned initially at
@@ -11,9 +11,10 @@
 //!
 //! The transaction builders are paired with a pure peer state machine in
 //! [`protocol`] and the one-hop invoice decisions in [`route`]. Hosts provide
-//! relay transport, atomic snapshot storage, chain watches and broadcasting.
-//! Every builder supports both ordinary BIP 341 sighashes and Bitcoin Knots'
-//! unified sighash used by `txbt4`.
+//! relay transport, wallet funding, atomic snapshot storage, chain watches
+//! and broadcasting. Every builder supports both ordinary BIP 341 sighashes
+//! and Bitcoin Knots' unified sighash used by `txbt4`. This is a channel
+//! kernel, not a Lightning node, and it does not speak to Lightning peers.
 //!
 //! ```
 //! use bitcoin::hashes::Hash;

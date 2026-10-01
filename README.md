@@ -63,6 +63,9 @@ depends on `sidestr-header`, nor on the EVM: revm and alloy stay in
 
 Reference commit
 [`fe689e9`](https://github.com/sidestr/spec/commit/fe689e9c723f9bf43393d2dd5b6f924a701c8a18).
+The 2026-10-01 parity release is repository commit `2bdee2d`: seven crates
+are published, the workspace documentation builds with warnings denied, and
+CI regenerates the reference-oracle fixtures before accepting the release.
 Ported since 0.0.2:
 
 - the peg output is the taproot output the peg holders own, at any position (0.0.3);
@@ -177,6 +180,10 @@ install`. CI runs both ways ([`.github/workflows/ci.yml`](.github/workflows/ci.y
 - mirror: <https://dreamlab-ai.github.io/sidestr-dreamlab>, holding
   `chain.json`, `blocks.dat` and `blocks.json`.
 
+Agentbox currently runs the upstream JavaScript `siding` producer and owns
+the chain instance. The Rust workspace is the validated library component;
+deploying a Rust producer for this chain remains separate work.
+
 On 2026-09-23 it ran its first full economic loop:
 
 - a peg-in from testnet4;
@@ -185,6 +192,11 @@ On 2026-09-23 it ran its first full economic loop:
 - a peg-out paid back on testnet4.
 
 That loop found the two issues SPEC 0.0.3 fixes.
+
+An isolated BLAKE2b testnet4 parent pair also runs on a Dell staging host:
+Bitcoin Knots 29.4.2 and rbitcoin 0.7.99, with rbitcoin pinned only to the
+Knots peer and public seed discovery disabled. It is parent-node staging,
+not a deployed sidestr chain. No mainnet daemon or wallet was changed.
 
 ## In the DreamLab estate
 

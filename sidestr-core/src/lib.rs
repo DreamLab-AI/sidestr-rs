@@ -1,7 +1,8 @@
-//! `sidestr-core` — user-activated sidechains beside a Bitcoin-family parent,
+//! `sidestr-core`: user-activated sidechains beside a Bitcoin-family parent,
 //! in Rust: the chain document, the parents table, signed blocks in either
-//! header family, the peg-in claim and peg-out burn rules, the block file and
-//! an in-memory validating chain.
+//! header family, the peg-in claim and peg-out burn rules, activated asset,
+//! pool and prediction-market rules, the block file and an in-memory
+//! validating chain.
 //!
 //! A sidestr chain runs beside a Bitcoin-family chain with Bitcoin's
 //! transaction rules, blocks that are valid because they are *signed* rather
@@ -20,8 +21,8 @@
 //! `fe689e9c723f9bf43393d2dd5b6f924a701c8a18` (the peg output is the one the peg
 //! holders own, or pays the script the signer announces; signatures follow
 //! the parent's family), together with the parts of
-//! the engine it loads — `bitcoin-desktop/schema` (the block, header and
-//! spending checks) and `bitcoin-blake/blaketestnode` (the block file) — and
+//! the engine it loads: `bitcoin-desktop/schema` (the block, header and
+//! spending checks) and `bitcoin-blake/blaketestnode` (the block file). It
 //! carries the same licence, AGPL-3.0-only. `SPEC.md` in that repository is
 //! the design; section numbers below are its. Where a function ports a
 //! siding function its documentation names it, so the two can be read side
@@ -38,6 +39,11 @@
 //! | [`parent`] | the parent chain behind [`parent::ParentRpc`] / [`parent::PegWallet`]: peg-ins found in decoded blocks, peg status, what to claim and lock, the burn payment and checkpoint as `send` outputs, reconciliation; Bitcoin Core's JSON-RPC behind feature `rpc` | 6, 7, 11 | `siding/lib/parent.mjs`, `checkpoint.mjs`, `bin/siding.mjs produce` |
 //! | [`federation`] | level 2, the pure parts: the NUMS internal key, the `multi_a(k, …)` leaf, output key and control block, partial signatures, witness assembly, sealing, and the verifier for exactly that leaf | level-2 | `siding/lib/federation.mjs`; `schema/codec/interpreter.js` (tapscript) |
 //! | [`marker`] | the `OP_RETURN` grammar: `pegin:`, `claim:`, `pegout:`, `ckpt:`, and text records | 6, 7, 11 | `siding/lib/marker.mjs`, `overlay.mjs`, `parent.mjs`, `checkpoint.mjs`, `records.mjs` |
+//! | [`records`] | classify SPEC 12 `asset:`, `tally:`, `pool:` and market records without applying policy | 12 | `siding/lib/records.mjs` |
+//! | [`assets`] | issued-asset definitions, carried amounts, mint policy and the applied asset view | 12.1–12.2 | `siding/lib/overlays/assets.mjs` |
+//! | [`pool`] | the integer constant-product pool, its `OP_TRUE` coin and liquidity-share asset | 12.3 | `siding/lib/overlays/pool.mjs` |
+//! | [`markets`] | binary markets: open, split, merge, resolve, redeem and refund | proposals/markets | `siding/lib/overlays/markets.mjs` |
+//! | [`overlays`] | install and order assets, pools and markets, including mempool sequencing without retaining a rejected candidate's effects | 12 | `siding/lib/overlays/index.mjs` |
 //! | [`rules`] | the rules in phases with the sidestr overlay: zero subsidy, the signature challenge, the claim rule, the burn rule; the family's own rules; the extension point for more ([`rules::BlockRule`]: a document's rules, their coinbase allowance, their state committed on apply) | 4, 6, 7, 12 | `schema/codec/blocks.js`, `headers.js`; `siding/lib/overlay.mjs` |
 //! | [`state`] | the chain in memory, generic over the family ([`StateOf`], [`State`] for stock): headers, UTXO set, the overlay's records, a mempool with the producer's policy, block production | 4, 5, 11 | `siding/lib/chain.mjs`, `blaketestnode/lib/node.mjs` |
 //! | [`blockfile`] | `[u32 height][u32 size][block]` with a JSON index (feature `std`) | 11 | `blaketestnode/lib/blockfile.mjs` |
@@ -61,6 +67,12 @@
 //! - **Transactions** reach a producer and are included when they validate
 //!   ([`state::State::submit`]): the mempool's policy is the document's
 //!   `minFeeRate` and `pegoutMin`, published so a wallet can compute it.
+//!   Production rechecks candidates against the complete block context and
+//!   evicts an exact rejected transaction while continuing with the rest.
+//! - **Optional rules** activate at the height in the document. Assets keep
+//!   the shared carry ledger; pools and markets consume that trace in a fixed
+//!   order. [`overlays::OverlayRules`] gives a producer the same ordering used
+//!   during block validation.
 //! - **Tips and relays** are not in this crate: the tip announcement (kind
 //!   33333) and transactions as events (kind 23500) are `sidestr-nostr`'s.
 //!
@@ -130,7 +142,7 @@
 //!   document derives its challenge from `signers` and `threshold`
 //!   ([`federation::Federation`]); any `k` partial signatures seal a block
 //!   ([`federation::seal_federated`]), and [`block::template_id`] is the
-//!   identity they authorise, which sealing does not change — the sealed
+//!   identity they authorise, which sealing does not change; the sealed
 //!   hash does. The co-signing round itself (`round.mjs`, `pegoutround.mjs`)
 //!   is not here: it is `sidestr-round`, a pure state machine over this
 //!   crate's federation and `sidestr-nostr`'s envelopes, with upstream's
@@ -138,7 +150,8 @@
 //!   off (the ADR-2101 review found it unsafe); the Byzantine-tolerant
 //!   protocol above the signature is a later crate still.
 //! - **Nothing in the rules does I/O.** [`document`], [`block`], [`marker`],
-//!   [`rules`], [`state`] and [`address`] take bytes and return verdicts; the
+//!   [`records`], [`assets`], [`pool`], [`markets`], [`overlays`], [`rules`],
+//!   [`state`] and [`address`] take bytes and return verdicts; the
 //!   filesystem and the clock are behind feature `std` in [`blockfile`] and
 //!   [`chain`]. The crate is not `no_std`; `std` names what touches the
 //!   operating system.
@@ -154,15 +167,15 @@
 //!   applies block 0 on its hash alone: if it matches the document's
 //!   `genesisHash` (or the mirror's index) it is the chain's base, signed or
 //!   not. [`StateOf::from_genesis`] runs every rule that applies at height 0
-//!   first — the family's header rules, `sidestr:rule-block-signature` against
+//!   first: the family's header rules, `sidestr:rule-block-signature` against
 //!   the challenge, the block-context rules with the pegs as the one subsidy,
 //!   and `sidestr:rule-genesis-document` (the block's signed data is that of
 //!   [`StateOf::build_genesis_for`] and its `bits` the document's `powLimit`)
-//!   — and only then holds the hash to the pin. A hash pin says which block 0
+//!   and only then holds the hash to the pin. A hash pin says which block 0
 //!   you hold, not that it is well-formed; there is no trusted import. Shown
 //!   to pass on the vendored fixtures, the two live reference chains
 //!   (`sidestr:txbt4-siding`, `sidestr:melchain`) and the estate's sealed
-//!   `sidestr:dreamlab` genesis — not asserted for every genesis the
+//!   `sidestr:dreamlab` genesis. This is not asserted for every genesis the
 //!   reference has ever produced. Kept deliberately stricter than the
 //!   reference; the self-contained `tests/audit_regressions.rs` holds it.
 //! - **A stock header with version bit 31 set is refused everywhere.** The
@@ -182,8 +195,8 @@
 //! - **Script verification fails closed.** The reference kernel verifies every
 //!   script type and reports a witness version it does not know as
 //!   "unverifiable", which lets the block through. This crate verifies
-//!   taproot key-path spends — the only spends a level-1 chain with a `5120…`
-//!   challenge and bech32m wallets makes — and *refuses* anything else
+//!   taproot key-path spends, the only spends a level-1 chain with a `5120…`
+//!   challenge and bech32m wallets makes, and *refuses* anything else
 //!   ([`sighash::verify_taproot_key_path`]). A block spending by script path
 //!   is invalid here and valid there; there is no general interpreter.
 //! - **The solution's witness decoder is strict.** `decodeWitness` reads what
@@ -203,7 +216,7 @@
 //!   it.** `overlay.mjs opReturnData` takes `6a`, an optional `4c`, one
 //!   length byte and that many bytes: the byte is a length whatever opcode it
 //!   is to Bitcoin, and an `OP_PUSHDATA1` prefix is accepted for any length.
-//!   [`marker::op_return_data`] does exactly that — it is the burn rule's
+//!   [`marker::op_return_data`] does exactly that. It is the burn rule's
 //!   grammar, so a burn a reference wallet wrote as `6a 57 …` (`OP_7` to an
 //!   interpreter: `pegoutMarker` writes a bare length byte even above 75) is
 //!   recorded here as it is there. What this crate *writes* differs:
@@ -216,8 +229,8 @@
 //!   `OP_PUSHDATA1` burn was accepted where the reference refuses the block;
 //!   0.2.1 changed recognition and the burn-loop guard, pinned against the
 //!   reference in `tests/audit_regressions.rs`.
-//! - **A marker's text is decoded as the reference decodes it** — not a
-//!   departure, but easy to get wrong: siding text-decodes with a WHATWG
+//! - **A marker's text is decoded as the reference decodes it.** This is not
+//!   a departure, but it is easy to get wrong: siding text-decodes with a WHATWG
 //!   `TextDecoder`, whose default drops one leading UTF-8 byte-order mark,
 //!   so `EF BB BF pegout:abcd` names `abcd` there. [`marker::parse_pegout`],
 //!   [`marker::looks_like_pegout`], [`marker::parse_claims`], the hex-form
