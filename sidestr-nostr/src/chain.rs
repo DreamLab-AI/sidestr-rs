@@ -54,6 +54,17 @@
 //! `legacy: true`: that is how the live `sidestr:dreamlab` resolves until its
 //! signer publishes its document as an event.
 //!
+//! # A sidestr chain as a parent (SPEC 3.1)
+//!
+//! [`resolve_nested_parent`] resolves a document's `parent` when it is a
+//! sidestr chain's hash: the chain event with that id is fetched, verified
+//! and read back, and its own `parent` followed down to a row of the SPEC
+//! 3.2 table, whose header family every level inherits
+//! ([`sidestr_core::parents::resolve_parent_with`]). The reference's
+//! `parents.mjs` at `e8deb63` refuses such a parent: this is a departure
+//! from it, following the SPEC's prose (ADR-0001 D4), and an alias resolves
+//! exactly as there.
+//!
 //! ```
 //! use sidestr_nostr::chain::{parse_chain_event, sign_chain_event, KIND_CHAIN_DOCUMENT};
 //! use sidestr_nostr::event::{SecretKeySigner, Signer};
@@ -77,6 +88,7 @@ use std::collections::HashMap;
 
 use serde_json::{Map, Number, Value};
 use sidestr_core::document::ChainDocument;
+use sidestr_core::parents::{resolve_parent_with, ParentRef};
 
 use crate::error::{Error, Result};
 use crate::event::{sign, Event, Signer, UnsignedEvent};
@@ -491,6 +503,77 @@ pub fn resolve_chain(
         mirrors: tip.as_ref().map(|t| t.mirrors.clone()).unwrap_or_default(),
         tip,
         legacy: false,
+    })
+}
+
+/// Resolve a document's `parent` (SPEC 3, 3.1): an alias or long id
+/// through the SPEC 3.2 table, exactly as
+/// [`sidestr_core::parents::resolve_parent`] (and `parents.mjs`) resolve it
+/// and without asking for any event; a sidestr chain's hash through that
+/// chain's kind-3500 event.
+///
+/// `get_event(id)` answers the event with this id, unverified, from a relay
+/// ([`crate::relay::fetch_event`]) or a mirror's `chain-event.json`. Each
+/// one is held to [`parse_chain_event`] (its id is the hash of its content
+/// and its signature the author's) and must be the event asked for; its
+/// document's `parent` is then followed the same way, so a chain nested
+/// under a nested chain resolves too, down to the table row whose header
+/// family, proof of work and key encodings every level inherits.
+///
+/// A departure from `siding/lib/parents.mjs` at `e8deb63`, which refuses a
+/// hash as an unknown parent (ADR-0001 D4; `sidestr-core`'s
+/// `tests/nested_parent.rs` holds the reference to that refusal).
+///
+/// ```
+/// use sidestr_core::parents::Family;
+/// use sidestr_nostr::chain::{resolve_nested_parent, sign_chain_event};
+/// use sidestr_nostr::event::{SecretKeySigner, Signer};
+///
+/// let key = SecretKeySigner::from_hex(&"07".repeat(32)).unwrap();
+/// let me = key.pubkey_hex().unwrap();
+/// let siding = format!(r#"{{"id":"sidestr:siding","name":"siding","parent":"txbt4",
+///   "challenge":"5120{me}","powLimit":"7f{}","addressPrefix":"sdg",
+///   "signer":"{me}","genesisTime":1790000000}}"#, "ff".repeat(31));
+/// let ev = sign_chain_event(&key, &siding, 1_790_100_000).unwrap();
+///
+/// // a child whose document says "parent": <the siding's hash>
+/// let p = resolve_nested_parent(&ev.id, |id| (id == ev.id).then(|| ev.clone())).unwrap();
+/// assert_eq!(p.family(), Family::Blake2b);
+/// assert_eq!(p.chain_hash(), Some(ev.id.as_str()));
+/// assert!(resolve_nested_parent(&"00".repeat(32), |_| None).is_err());
+/// ```
+pub fn resolve_nested_parent(
+    parent: &str,
+    mut get_event: impl FnMut(&str) -> Option<Event>,
+) -> Result<ParentRef> {
+    let mut failure: Option<Error> = None;
+    let resolved = resolve_parent_with(parent, |hash| {
+        let found = get_event(hash)
+            .ok_or_else(|| {
+                Error::Chain(format!(
+                    "the parent chain's event {}… was not found",
+                    short(hash, 16)
+                ))
+            })
+            .and_then(|ev| parse_chain_event(&ev))
+            .and_then(|parsed| {
+                if parsed.hash != hash {
+                    return Err(Error::Chain(
+                        "the event found is not the one asked for".into(),
+                    ));
+                }
+                parsed.document()
+            });
+        found.map_err(|e| {
+            let message = e.to_string();
+            failure = Some(e);
+            sidestr_core::error::Error::Document(message)
+        })
+    });
+    resolved.map_err(|e| {
+        failure
+            .take()
+            .unwrap_or_else(|| Error::Chain(e.to_string()))
     })
 }
 
@@ -1140,6 +1223,79 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(e, Error::NoMirror { .. }), "{e}");
+    }
+
+    /// A chain event for `doc()` with `parent` and `id` replaced.
+    fn chain_beside(parent: &str, name: &str) -> Event {
+        let mut v: Value = serde_json::from_str(&doc()).unwrap();
+        v["parent"] = parent.into();
+        v["id"] = format!("sidestr:{name}").into();
+        v["name"] = name.into();
+        sign_chain_event(&key(), &v.to_string(), AT).unwrap()
+    }
+
+    // SPEC 3.1 prose; parents.mjs at e8deb63 refuses the hash (sidestr-core tests/nested_parent.rs)
+    #[test]
+    fn a_nested_parent_resolves_its_family_through_the_parent_s_chain_event() {
+        use sidestr_core::parents::{resolve_parent, Family};
+        let siding = chain_beside("txbt4", "siding");
+        let middle = chain_beside(&siding.id, "middle");
+        let events = [siding.clone(), middle.clone()];
+        let by_id = |id: &str| events.iter().find(|e| e.id == id).cloned();
+
+        // one level: the siding's family is txbt4's
+        let p = resolve_nested_parent(&siding.id, by_id).unwrap();
+        assert_eq!(p.family(), Family::Blake2b);
+        assert_eq!(p.depth(), 1);
+        let ParentRef::Chain(n) = &p else { panic!() };
+        assert_eq!(n.alias, "sidestr:siding");
+        // two levels: through the middle chain's event to the siding's
+        let q = resolve_nested_parent(&middle.id, by_id).unwrap();
+        assert_eq!(q.family(), Family::Blake2b);
+        assert_eq!(q.depth(), 2);
+        let ParentRef::Chain(n) = &q else { panic!() };
+        assert_eq!(n.path, vec![middle.id.clone(), siding.id.clone()]);
+        // a stock root
+        let stock = cev();
+        let r = resolve_nested_parent(&stock.id, |_| Some(stock.clone())).unwrap();
+        assert_eq!(r.family(), Family::Stock);
+        // an alias answers as the table, asking for nothing
+        assert_eq!(
+            resolve_nested_parent("txbt4", |_| panic!("no event for an alias")).unwrap(),
+            ParentRef::Table(resolve_parent("txbt4").unwrap())
+        );
+        // the child document validates only through the events
+        let child = ChainDocument {
+            parent: middle.id.clone(),
+            ..parse_chain_event(&siding).unwrap().document().unwrap()
+        };
+        assert!(child.validate().is_err());
+        child
+            .validate_nested(&[], |h| {
+                parse_chain_event(&by_id(h).unwrap())
+                    .unwrap()
+                    .document()
+                    .map_err(|e| sidestr_core::error::Error::Document(e.to_string()))
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn a_nested_parent_s_event_must_verify_and_be_the_one_asked_for() {
+        let siding = chain_beside("txbt4", "siding");
+        let e = resolve_nested_parent(&siding.id, |_| None).unwrap_err();
+        assert!(e.to_string().contains("was not found"), "{e}");
+        let mut forged = siding.clone();
+        forged.content = forged.content.replace("txbt4", "tbtc4");
+        let e = resolve_nested_parent(&siding.id, |_| Some(forged.clone())).unwrap_err();
+        assert!(matches!(e, Error::Signature(_)), "{e}");
+        let other = chain_beside("tbtc4", "other");
+        let e = resolve_nested_parent(&siding.id, |_| Some(other.clone())).unwrap_err();
+        assert!(e.to_string().contains("not the one asked for"), "{e}");
+        // a root the table reserves
+        let ltc = chain_beside("ltc", "lite");
+        let e = resolve_nested_parent(&ltc.id, |_| Some(ltc.clone())).unwrap_err();
+        assert!(e.to_string().contains("reserved"), "{e}");
     }
 
     #[test]

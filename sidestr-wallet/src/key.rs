@@ -176,6 +176,34 @@ pub fn derive_subkey(root: &SecretKey, tag: &str) -> Result<SecretKey> {
 /// namespace carries the protocol version, the genesis (so a chain name
 /// reused for a new genesis never reuses a key) and the epoch (rotation
 /// without touching the root).
+///
+/// # The v1 tag is frozen
+///
+/// Every byte of this tag decides a key, and a key decides the address its
+/// coins sit at. The bytes are pinned by known answers computed outside
+/// Rust (`tests::spend_key_v1_known_answers`); a change to the prefix, the
+/// separator, the case of the genesis or the spelling of the epoch fails
+/// them. A different derivation is a new namespace (`sidestr/v2/…`) beside
+/// this one, never a reinterpretation of `v1`: keys already derived, and
+/// whatever they hold, must keep deriving.
+///
+/// # A departure, recorded (ADR-0001 D4)
+///
+/// This derivation is the estate's (ADR-2101 D3), not siding's, and gives a
+/// key no reference function gives:
+///
+/// - siding at `e8deb63` holds one raw key that is at once identity,
+///   spending and sealing key (`siding/lib/sign.mjs`); its `keys.mjs`
+///   derives a chain of keys by **additive** tagged tweaks (`d + t`,
+///   `P + t·G`), which anyone holding the public point can follow. ADR-2101
+///   D3 prohibits an additive tweak for a role key, since one leaked role
+///   key and the public tweak give back the root; this HMAC is one-way.
+/// - agentbox's payment rail does not use it for agents either: since
+///   ADR-2097 D3 as amended 2026-10-02, `management-api/lib/sidestr-spend-key.js`
+///   mints an agent's `k_spend` from an independent random seed. Both kinds
+///   of spend key are bound to the identity the same way, by a kind-38420
+///   binding (`sidestr-nostr`'s `estate` module), so a payer never needs to
+///   know which one it is paying.
 pub fn spend_tag(genesis_hash: &str, epoch: u32) -> String {
     format!(
         "sidestr/v1/spend/{}/{epoch}",
@@ -225,6 +253,60 @@ mod tests {
         assert_eq!(sig, k.sign_key_path(&digest).unwrap());
         assert!(!format!("{k:?}").contains("0707"));
         assert_eq!(k.script().as_bytes()[..2], [0x51, 0x20]);
+    }
+
+    /// The v1 derivation, pinned: each answer was computed with Node.js
+    /// (`crypto.createHmac('sha256', Buffer.from(root, 'hex')).update(tag,
+    /// 'utf8').digest('hex')`, and the public key with nostr-tools
+    /// `getPublicKey`), never by this crate. A change to any byte of the
+    /// tag fails here.
+    #[test]
+    fn spend_key_v1_known_answers() {
+        // the tag's exact bytes: "sidestr/v1/spend/" ‖ lower-hex genesis ‖ "/" ‖ decimal epoch
+        const PREFIX_HEX: &str = "736964657374722f76312f7370656e642f";
+        let dreamlab = "4db37517728bd509c0cb96ee5a2e3e2a77f9e965a092e9f67948b413d453dbc0";
+        let tag = spend_tag(&dreamlab.to_uppercase(), 7);
+        assert_eq!(
+            hex::encode(tag.as_bytes()),
+            format!("{PREFIX_HEX}{}2f37", hex::encode(dreamlab.as_bytes()))
+        );
+        assert_eq!(tag, format!("sidestr/v1/spend/{dreamlab}/7"));
+
+        // (seed, genesis hash, epoch) -> spend secret, x-only spend pubkey
+        let cases: [(u8, &str, u32, &str, &str); 3] = [
+            (
+                0x11,
+                "0bdfdb3194f067d15b7a1cfa865de391b7ac00e1970863946d143e7329784402",
+                0,
+                "7ad4dc2caa20894f8e07dde385b293b8de7fe8b858d520239f5946ee567849f5",
+                "a00244208bb28dc03ccc31bd4854017be3d4efdce80643d47f2ed2320a6d11b3",
+            ),
+            (
+                0x42,
+                dreamlab,
+                7,
+                "aacf814dcb4c2a3a20a8da1f5b6ee95d1e09f8946f08640387dbc6cce0e5ed78",
+                "b81330f4106e959b337c761897fee6f49f84930ac84c927f8d2adadc0047b05c",
+            ),
+            (
+                0x42,
+                dreamlab,
+                u32::MAX,
+                "86196f4fd57bf53623108cc034380eac239690d9b8e2ad469620cb7df8be1aed",
+                "",
+            ),
+        ];
+        for (seed, genesis, epoch, secret, pubkey) in cases {
+            let root = SecretKey::from_slice(&[seed; 32]).unwrap();
+            let k = derive_spend_key(&root, genesis, epoch).unwrap();
+            assert_eq!(hex::encode(k.secret_bytes()), secret, "{seed:#x} {epoch}");
+            // the same answer through the bare HMAC over the literal tag bytes
+            let tag = format!("sidestr/v1/spend/{genesis}/{epoch}");
+            assert_eq!(derive_subkey(&root, &tag).unwrap(), k);
+            if !pubkey.is_empty() {
+                assert_eq!(PlainKey::new(k).pubkey().to_string(), pubkey);
+            }
+        }
     }
 
     #[test]
