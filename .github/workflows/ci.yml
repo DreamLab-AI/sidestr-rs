@@ -23,8 +23,10 @@ env:
   # Reef's BIP 21 parser is the oracle for sidestr-wallet's payment requests
   # (2bd3cb8: the parent coinbase maturity on txbt4, 6,705; parser unchanged).
   REEF_REF: 2bd3cb8d41e88c12b22a9d6ba2470b5b21f7c9d5
-  # The teller (solidpayorg/teller) is the oracle for webledgers-teller; its
-  # suite loads siding's keys.mjs, so it needs SIDESTR_SPEC_REF at bd1d692 or later.
+  # The teller (solidpayorg/teller) is the oracle for webledgers-teller (its
+  # suite loads siding's keys.mjs, so it needs SIDESTR_SPEC_REF at bd1d692 or
+  # later) and its JCS (lib/teller.mjs `jcs`) is the RFC 8785 oracle for
+  # sidestr-reserve's canonical attestation bytes.
   TELLER_REF: 7c00ceac4dc37e0526eccd5ae62e1680ac88ec2a
 
 jobs:

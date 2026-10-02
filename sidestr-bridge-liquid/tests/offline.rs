@@ -272,18 +272,21 @@ fn credits_are_keyed_by_outpoint() {
 #[test]
 fn attestation_canonical_bytes_are_golden() {
     let a = attest(&snapshot(), &reserve_asset(), TIME).unwrap();
-    assert_eq!(a.canonical_json(), GOLDEN_JSON);
+    assert_eq!(a.canonical_json().unwrap(), GOLDEN_JSON);
 }
 
 #[test]
 fn attestation_digest_is_stable() {
     let a = attest(&snapshot(), &reserve_asset(), TIME).unwrap();
-    // sha256 of GOLDEN_JSON, computed independently with coreutils sha256sum.
-    assert_eq!(a.digest().to_string(), GOLDEN_DIGEST);
+    // The tagged hash of GOLDEN_JSON, computed independently with Python.
+    assert_eq!(a.digest().unwrap().to_string(), GOLDEN_DIGEST);
 }
 
-/// `printf %s "$GOLDEN_JSON" | sha256sum`.
-const GOLDEN_DIGEST: &str = "17764cf0c39adfea3e2244fed84fcdd11c7a471cd5a552695513017112a4f83e";
+/// The `sidestr-reserve` tagged digest of [`GOLDEN_JSON`], computed outside
+/// Rust with Python's `hashlib`: `t = sha256(b"sidestr-reserve/attestation/v1")`,
+/// `sha256(t + t + GOLDEN_JSON)`. (0.2.0 had the plain SHA-256,
+/// `17764cf0…a4f83e`; the bytes are unchanged.)
+const GOLDEN_DIGEST: &str = "79080cc3e8a2d6ff0b848ccfdc914141f16d6b79eb5d45fa90a05f4ef5c1199e";
 
 #[test]
 fn attestation_is_independent_of_utxo_order() {
@@ -292,14 +295,17 @@ fn attestation_is_independent_of_utxo_order() {
     reversed.utxos.reverse();
     let backward = attest(&reversed, &reserve_asset(), TIME).unwrap();
     assert_eq!(forward, backward);
-    assert_eq!(forward.canonical_json(), backward.canonical_json());
-    assert_eq!(forward.digest(), backward.digest());
+    assert_eq!(
+        forward.canonical_json().unwrap(),
+        backward.canonical_json().unwrap()
+    );
+    assert_eq!(forward.digest().unwrap(), backward.digest().unwrap());
 }
 
 #[test]
 fn every_liquid_reading_changes_the_digest() {
     let base = snapshot();
-    let digest = |s: &ReserveSnapshot| attest(s, &reserve_asset(), TIME).unwrap().digest();
+    let digest = |s: &ReserveSnapshot| attest(s, &reserve_asset(), TIME).unwrap().digest().unwrap();
     let mut variants = Vec::new();
     let mut s = base.clone();
     s.utxos[0].value += 1;
@@ -320,7 +326,10 @@ fn every_liquid_reading_changes_the_digest() {
         assert_ne!(digest(v), digest(&base));
     }
     assert_ne!(
-        attest(&base, &reserve_asset(), TIME + 1).unwrap().digest(),
+        attest(&base, &reserve_asset(), TIME + 1)
+            .unwrap()
+            .digest()
+            .unwrap(),
         digest(&base)
     );
 }
@@ -332,7 +341,7 @@ fn an_empty_reserve_attests_zero() {
     let a = attest(&state, &reserve_asset(), TIME).unwrap();
     assert_eq!(a.amount, 0);
     assert!(a.credits.is_empty());
-    assert!(a.canonical_json().contains(r#""credits":[]"#));
+    assert!(a.canonical_json().unwrap().contains(r#""credits":[]"#));
 }
 
 #[test]
@@ -362,6 +371,7 @@ fn a_total_beyond_u64_is_carried_exactly() {
     assert_eq!(a.amount, u128::from(u64::MAX) + 1);
     assert!(a
         .canonical_json()
+        .unwrap()
         .contains(r#""amount":"18446744073709551616""#));
 }
 
@@ -389,7 +399,7 @@ fn a_signed_liquid_attestation_verifies_and_tampering_breaks_it() {
 
     let mut reissued = signed;
     reissued.attestation.amount += 1;
-    reissued.digest = reissued.attestation.digest();
+    reissued.digest = reissued.attestation.digest().unwrap();
     assert!(matches!(
         reissued.verify(),
         Err(sidestr_reserve::Error::BadSignature)

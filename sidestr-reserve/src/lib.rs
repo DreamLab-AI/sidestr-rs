@@ -17,7 +17,9 @@
 //! | [`Origin`] | which reserve: the network, the asset on it, its decimals |
 //! | [`Tip`] | the origin block the reading is final at |
 //! | [`Credit`] | one inbound credit the reserve holds, under the id the rule keys replays by |
-//! | [`attest()`], [`ReserveAttestation`] | the statement, canonical JSON and its SHA-256 |
+//! | [`attest()`], [`ReserveAttestation`] | the statement, its canonical JSON and its tagged digest |
+//! | [`canonicalize`] | RFC 8785 (JCS) over the subset the format uses, refusing everything else |
+//! | [`tagged_hash`], [`DIGEST_TAG`] | the BIP-340-style tagged SHA-256 the digest is |
 //! | [`AttestationSigner`], [`SignedAttestation`] | the BIP-340 signing hook and its verification |
 //!
 //! # What an adapter must supply
@@ -36,6 +38,34 @@
 //! How funds leave the reserve (the release) is the adapter's too, behind
 //! the ADR-2100 authority gate; this crate only states holdings.
 //!
+//! # Canonical form and digest
+//!
+//! The canonical bytes are the RFC 8785 JSON Canonicalization Scheme (JCS)
+//! serialisation of the statement, restricted to a subset on which every
+//! JCS implementation agrees without having to get escaping or number
+//! formatting right ([`canonicalize`]):
+//!
+//! - **strings and object keys** are escape-free printable ASCII, bytes
+//!   `0x20` to `0x7e` other than `"` and `\`, so they are written verbatim
+//!   between quotes and sort the same by UTF-16 code unit (JCS) as by byte;
+//! - **numbers** are integers of magnitude at most 2⁵³ − 1
+//!   ([`MAX_SAFE_INTEGER`]), written in plain decimal; amounts that may be
+//!   larger travel as decimal strings;
+//! - `null`, `true`, `false`, arrays and objects as JCS writes them, with
+//!   object keys in ascending order at every level and no whitespace.
+//!
+//! Anything outside the subset (a float, a non-ASCII or escaped character,
+//! an integer at or beyond 2⁵³) is refused with [`Error::Canonical`], never
+//! canonicalised one way here and another way elsewhere. The bytes agree
+//! with `serde_jcs` and with the JCS of solidpayorg/teller `7c00cea`
+//! (`lib/teller.mjs` `jcs`); `tests/jcs.rs` holds them to both.
+//!
+//! The digest the key signs is the BIP-340 tagged hash of those bytes under
+//! [`DIGEST_TAG`]: `SHA-256(SHA-256(tag) ‖ SHA-256(tag) ‖ bytes)`, the
+//! construction sidestr/spec `keys.mjs` `taggedScalar` and BIP 340/341
+//! use, so a signature over an attestation can never be replayed as a
+//! signature over any other SHA-256 the same key signs.
+//!
 //! ```
 //! use sidestr_reserve::{attest, Credit, Origin, Tip};
 //!
@@ -47,7 +77,7 @@
 //! ];
 //! let a = attest(origin, tip, &credits, "https://blockstream.info/liquid/api", 1_790_000_000)?;
 //! assert_eq!(a.amount, 25_0000_0000);
-//! assert!(a.canonical_json().starts_with(r#"{"amount":"2500000000","asset":"#));
+//! assert!(a.canonical_json()?.starts_with(r#"{"amount":"2500000000","asset":"#));
 //! # Ok::<(), sidestr_reserve::Error>(())
 //! ```
 //!
@@ -57,7 +87,7 @@
 
 #![deny(missing_docs)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt;
 
 use secp256k1::{schnorr, Keypair, Message, Secp256k1, XOnlyPublicKey};
@@ -65,11 +95,16 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 pub use secp256k1;
+pub use serde_json;
 
-/// The `type` field of every attestation: names the format and its version,
-/// and, because it is inside the digested bytes, separates this digest from
-/// any other SHA-256 the same key might sign.
+/// The `type` field of every attestation: names the format and its version
+/// inside the canonical bytes.
 pub const ATTESTATION_TYPE: &str = "sidestr-reserve/attestation/v1";
+
+/// The tag the attestation digest is a [`tagged_hash`] under. Fixed: it is
+/// the format's name and version, so a signature over an attestation cannot
+/// stand for a signature over anything else the same key signs.
+pub const DIGEST_TAG: &str = "sidestr-reserve/attestation/v1";
 
 /// The largest integer a JSON number carries exactly in every
 /// implementation (2⁵³ − 1). Heights above it are refused.
@@ -101,6 +136,16 @@ pub enum Error {
     /// A signed attestation does not verify against its public key.
     #[error("attestation signature does not verify")]
     BadSignature,
+
+    /// A JSON value is outside the canonical subset [`canonicalize`]
+    /// accepts, so it has no single canonical form here.
+    #[error("not canonical at {path}: {reason}")]
+    Canonical {
+        /// Where in the value, as `$`, `$.key` and `$[index]` steps.
+        path: String,
+        /// What is outside the subset.
+        reason: String,
+    },
 }
 
 /// The crate's result type.
@@ -127,6 +172,172 @@ fn check_ident(name: &'static str, s: &str) -> Result<()> {
         return Err(field(name, format!("{s:?} is not lower-case [a-z0-9:._-]")));
     }
     Ok(())
+}
+
+/// A string the canonical JSON writes verbatim between quotes: printable
+/// ASCII (`0x20` to `0x7e`) other than `"` and `\`: ASCII that RFC 8785
+/// writes without an escape.
+fn escape_free(s: &str) -> bool {
+    s.bytes()
+        .all(|b| (0x20..=0x7e).contains(&b) && b != b'"' && b != b'\\')
+}
+
+fn check_source(source: &str) -> Result<()> {
+    if source.is_empty()
+        || source.len() > 256
+        || !source.bytes().all(|b| b.is_ascii_graphic())
+        || !escape_free(source)
+    {
+        return Err(field(
+            "source",
+            "must be 1 to 256 printable ASCII bytes, no spaces, quotes or backslashes",
+        ));
+    }
+    Ok(())
+}
+
+fn check_time(time: u64) -> Result<()> {
+    if time > MAX_SAFE_INTEGER {
+        return Err(field("time", "above 2^53 - 1"));
+    }
+    Ok(())
+}
+
+fn canonical(path: &str, reason: impl Into<String>) -> Error {
+    Error::Canonical {
+        path: path.to_owned(),
+        reason: reason.into(),
+    }
+}
+
+/// RFC 8785 (JCS) canonical JSON of `value`, over the subset every JCS
+/// implementation writes identically, refusing anything outside it.
+///
+/// Accepted: `null`, `true`, `false`; integers of magnitude at most
+/// [`MAX_SAFE_INTEGER`]; strings and object keys of escape-free printable
+/// ASCII (`0x20` to `0x7e`, not `"` or `\`); arrays and objects of those.
+/// Written as JCS writes them: no whitespace, object keys ascending at every
+/// level (byte order, which for this alphabet is JCS's UTF-16 order),
+/// integers in plain decimal.
+///
+/// Refused with [`Error::Canonical`]: any float (including `1.0`), an
+/// integer beyond 2⁵³ − 1 either way, and any string or key holding a
+/// control character, `"`, `\`, DEL or a non-ASCII character. JCS has an
+/// answer for each of these, but it is one an implementation can get wrong
+/// (ECMAScript number formatting, escape spelling, UTF-16 key order), and a
+/// signed format should not depend on that.
+///
+/// ```
+/// use serde_json::json;
+/// use sidestr_reserve::canonicalize;
+///
+/// let v = json!({ "b": 1, "a": { "d": "x", "c": [2, { "f": 0, "e": null }] } });
+/// assert_eq!(canonicalize(&v)?, r#"{"a":{"c":[2,{"e":null,"f":0}],"d":"x"},"b":1}"#);
+/// assert!(canonicalize(&json!({ "x": 0.5 })).is_err());
+/// assert!(canonicalize(&json!({ "caf\u{e9}": 1 })).is_err());
+/// # Ok::<(), sidestr_reserve::Error>(())
+/// ```
+pub fn canonicalize(value: &Value) -> Result<String> {
+    let mut out = String::new();
+    write_canonical(value, "$", &mut out)?;
+    Ok(out)
+}
+
+fn write_canonical(value: &Value, path: &str, out: &mut String) -> Result<()> {
+    match value {
+        Value::Null => out.push_str("null"),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::Number(n) => {
+            if let Some(u) = n.as_u64() {
+                if u > MAX_SAFE_INTEGER {
+                    return Err(canonical(path, format!("{u} is above 2^53 - 1")));
+                }
+                out.push_str(&u.to_string());
+            } else if let Some(i) = n.as_i64() {
+                if i.unsigned_abs() > MAX_SAFE_INTEGER {
+                    return Err(canonical(path, format!("{i} is below -(2^53 - 1)")));
+                }
+                out.push_str(&i.to_string());
+            } else {
+                return Err(canonical(path, format!("{n} is not an integer")));
+            }
+        }
+        Value::String(s) => {
+            if !escape_free(s) {
+                return Err(canonical(
+                    path,
+                    format!("{s:?} is not escape-free printable ASCII"),
+                ));
+            }
+            out.push('"');
+            out.push_str(s);
+            out.push('"');
+        }
+        Value::Array(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_canonical(item, &format!("{path}[{i}]"), out)?;
+            }
+            out.push(']');
+        }
+        Value::Object(map) => {
+            let mut entries: Vec<(&String, &Value)> = map.iter().collect();
+            for (k, _) in &entries {
+                if !escape_free(k) {
+                    return Err(canonical(
+                        path,
+                        format!("key {k:?} is not escape-free printable ASCII"),
+                    ));
+                }
+            }
+            entries.sort_unstable_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+            out.push('{');
+            for (i, (k, v)) in entries.into_iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push('"');
+                out.push_str(k);
+                out.push_str("\":");
+                write_canonical(v, &format!("{path}.{k}"), out)?;
+            }
+            out.push('}');
+        }
+    }
+    Ok(())
+}
+
+/// The BIP-340 tagged hash: `SHA-256(SHA-256(tag) ‖ SHA-256(tag) ‖ msg)`.
+///
+/// The construction BIP 340 and BIP 341 use (`BIP0340/challenge`,
+/// `TapTweak`, `TapLeaf`) and sidestr/spec `keys.mjs` builds its
+/// `taggedScalar` on. SHA-256 is `sha2`'s; nothing is implemented here but
+/// the concatenation. The attestation digest is this under [`DIGEST_TAG`].
+///
+/// ```
+/// use sha2::{Digest, Sha256};
+/// use sidestr_reserve::tagged_hash;
+///
+/// let t = Sha256::digest(b"TapLeaf");
+/// let expected: [u8; 32] = Sha256::new()
+///     .chain_update(t)
+///     .chain_update(t)
+///     .chain_update([0xc0, 0x01, 0x51])
+///     .finalize()
+///     .into();
+/// assert_eq!(tagged_hash("TapLeaf", &[0xc0, 0x01, 0x51]), expected);
+/// ```
+pub fn tagged_hash(tag: &str, msg: &[u8]) -> [u8; 32] {
+    let t = Sha256::digest(tag.as_bytes());
+    Sha256::new()
+        .chain_update(t)
+        .chain_update(t)
+        .chain_update(msg)
+        .finalize()
+        .into()
 }
 
 /// Which reserve: the network it sits on, the asset on that network, and
@@ -280,8 +491,9 @@ pub struct ReserveAttestation {
 /// whatever the order of `credits`. The adapter has already kept only final
 /// credits of the reserve asset. A credit id listed twice is refused, as is
 /// a total that overflows `u128`, a `time` above [`MAX_SAFE_INTEGER`] and
-/// an empty or multi-line `source`. A zero reserve is a valid statement;
-/// the `bridge` rule is what refuses to mint against it.
+/// a `source` that is empty, longer than 256 bytes, or holds anything but
+/// printable ASCII other than space, `"` and `\`. A zero reserve is a
+/// valid statement; the `bridge` rule is what refuses to mint against it.
 ///
 /// `time` is a parameter, not read from the clock, to keep this pure.
 pub fn attest(
@@ -291,15 +503,8 @@ pub fn attest(
     source: &str,
     time: u64,
 ) -> Result<ReserveAttestation> {
-    if source.is_empty() || source.len() > 256 || !source.bytes().all(|b| b.is_ascii_graphic()) {
-        return Err(field(
-            "source",
-            "must be 1 to 256 printable ASCII bytes, no spaces",
-        ));
-    }
-    if time > MAX_SAFE_INTEGER {
-        return Err(field("time", "above 2^53 - 1"));
-    }
+    check_source(source)?;
+    check_time(time)?;
     let mut ids = BTreeSet::new();
     let mut amount = 0u128;
     for c in credits {
@@ -321,41 +526,71 @@ pub fn attest(
 }
 
 impl ReserveAttestation {
-    /// The canonical serialisation: compact JSON, keys in byte order,
-    /// `amount` and `time` as decimal strings, credits sorted.
-    ///
-    /// Keys: `amount`, `asset`, `credits`, `decimals`, `network`, `source`,
-    /// `time`, `tip_hash`, `tip_height`, `type`. Every value is a string of
-    /// printable ASCII needing no escape, a number below 2⁵³ or an array of
-    /// such strings, so any JSON implementation reproduces the bytes.
-    pub fn canonical_json(&self) -> String {
-        let mut map: BTreeMap<&str, Value> = BTreeMap::new();
-        map.insert("amount", Value::String(self.amount.to_string()));
-        map.insert("asset", Value::String(self.origin.asset.clone()));
-        let mut credits = self.credits.clone();
-        credits.sort();
-        map.insert(
-            "credits",
-            Value::Array(credits.into_iter().map(Value::String).collect()),
-        );
-        map.insert("decimals", Value::from(self.origin.decimals));
-        map.insert("network", Value::String(self.origin.network.clone()));
-        map.insert("source", Value::String(self.source.clone()));
-        map.insert("time", Value::String(self.time.to_string()));
-        map.insert("tip_hash", Value::String(self.tip.hash.clone()));
-        map.insert("tip_height", Value::from(self.tip.height));
-        map.insert("type", Value::String(ATTESTATION_TYPE.into()));
-        // A BTreeMap serialises in key order whatever serde_json's features.
-        serde_json::to_string(&map).expect("a map of strings and numbers serialises")
+    /// Re-checks the public fields against the rules [`attest`] applies,
+    /// since they can be changed after it: `source` and `time` as there,
+    /// every credit id in the canonical alphabet, no id twice. The origin
+    /// and tip are checked on construction and cannot be changed.
+    pub fn check(&self) -> Result<()> {
+        check_source(&self.source)?;
+        check_time(self.time)?;
+        let mut ids = BTreeSet::new();
+        for id in &self.credits {
+            check_ident("credit id", id)?;
+            if !ids.insert(id.as_str()) {
+                return Err(Error::Credits(format!("{id} is listed twice")));
+            }
+        }
+        Ok(())
     }
 
-    /// SHA-256 of [`canonical_json`](Self::canonical_json)'s UTF-8 bytes.
-    pub fn digest(&self) -> AttestationDigest {
-        AttestationDigest(Sha256::digest(self.canonical_json().as_bytes()).into())
+    /// The statement as a JSON value: `amount` and `time` as decimal
+    /// strings, credits sorted. [`canonical_json`](Self::canonical_json) is
+    /// its canonical form.
+    pub fn to_value(&self) -> Result<Value> {
+        self.check()?;
+        let mut credits = self.credits.clone();
+        credits.sort();
+        let mut map = serde_json::Map::new();
+        map.insert("amount".into(), Value::String(self.amount.to_string()));
+        map.insert("asset".into(), Value::String(self.origin.asset.clone()));
+        map.insert(
+            "credits".into(),
+            Value::Array(credits.into_iter().map(Value::String).collect()),
+        );
+        map.insert("decimals".into(), Value::from(self.origin.decimals));
+        map.insert("network".into(), Value::String(self.origin.network.clone()));
+        map.insert("source".into(), Value::String(self.source.clone()));
+        map.insert("time".into(), Value::String(self.time.to_string()));
+        map.insert("tip_hash".into(), Value::String(self.tip.hash.clone()));
+        map.insert("tip_height".into(), Value::from(self.tip.height));
+        map.insert("type".into(), Value::String(ATTESTATION_TYPE.into()));
+        Ok(Value::Object(map))
+    }
+
+    /// The canonical serialisation: [`canonicalize`] (RFC 8785 JCS over its
+    /// escape-free, safe-integer subset) of [`to_value`](Self::to_value).
+    ///
+    /// Keys: `amount`, `asset`, `credits`, `decimals`, `network`, `source`,
+    /// `time`, `tip_hash`, `tip_height`, `type`. Refused, rather than
+    /// written some other way, when a field changed after [`attest`] no
+    /// longer passes [`check`](Self::check).
+    pub fn canonical_json(&self) -> Result<String> {
+        canonicalize(&self.to_value()?)
+    }
+
+    /// The digest a key signs: [`tagged_hash`] under [`DIGEST_TAG`] of
+    /// [`canonical_json`](Self::canonical_json)'s bytes,
+    /// `SHA-256(SHA-256(tag) ‖ SHA-256(tag) ‖ bytes)`.
+    pub fn digest(&self) -> Result<AttestationDigest> {
+        Ok(AttestationDigest(tagged_hash(
+            DIGEST_TAG,
+            self.canonical_json()?.as_bytes(),
+        )))
     }
 }
 
-/// The 32-byte SHA-256 digest of an attestation's canonical bytes.
+/// The 32-byte digest of an attestation: the [`tagged_hash`] of its
+/// canonical bytes under [`DIGEST_TAG`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AttestationDigest(pub [u8; 32]);
 
@@ -367,7 +602,7 @@ impl fmt::Display for AttestationDigest {
 
 /// The signing hook: whatever holds the attestation key.
 ///
-/// The signature is BIP-340 Schnorr over the 32-byte digest, the scheme
+/// The signature is BIP-340 Schnorr over the 32-byte tagged digest, the scheme
 /// sidestr's taproot keys and Nostr events already use, so the key can be
 /// the authority-coin key pinned in the chain document (ADR-2117 decision 4).
 /// The key signs attestations for every origin the chain pins; the
@@ -433,7 +668,7 @@ impl SignedAttestation {
     /// Signs `attestation` with `signer`, and checks the signature before
     /// returning it, so a faulty signer cannot hand back a dud.
     pub fn sign(attestation: ReserveAttestation, signer: &dyn AttestationSigner) -> Result<Self> {
-        let digest = attestation.digest();
+        let digest = attestation.digest()?;
         let signed = Self {
             signature: signer.sign_digest(&digest)?,
             public_key: signer.x_only_public_key(),
@@ -446,10 +681,12 @@ impl SignedAttestation {
         Ok(signed)
     }
 
-    /// Verifies: the digest is the attestation's digest, and the signature
-    /// is a valid BIP-340 signature over it by `public_key`.
+    /// Verifies: the attestation is canonical, the digest is its digest,
+    /// and the signature is a valid BIP-340 signature over it by
+    /// `public_key`. An attestation with no canonical form is
+    /// [`Error::BadSignature`] too: nothing can have been signed for it.
     pub fn verify(&self) -> Result<()> {
-        if self.attestation.digest() != self.digest {
+        if self.attestation.digest().map_err(|_| Error::BadSignature)? != self.digest {
             return Err(Error::BadSignature);
         }
         verify_digest(&self.digest, &self.signature, &self.public_key)

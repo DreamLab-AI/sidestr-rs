@@ -2,6 +2,15 @@
 
 All notable changes to `sidestr-bridge-liquid`. Unpublished (`publish = false`).
 
+## Unreleased
+
+- **Breaking (through `sidestr-reserve`):** the attestation digest is now the
+  tagged hash of the unchanged canonical bytes under
+  `sidestr-reserve/attestation/v1`, and `canonical_json` / `digest` return
+  `Result`. Nothing had been signed under the plain SHA-256. The golden
+  digest of the offline tests moves accordingly, and `usd-reserve attest`
+  prints `digest` where it printed `sha256`.
+
 ## 0.2.0 — 2026-09-26 (not live)
 
 The attestation is now origin-neutral (ADR-2117 amendment of 2026-09-26).

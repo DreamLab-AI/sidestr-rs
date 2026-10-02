@@ -177,8 +177,8 @@ fn run(cli: Cli) -> Result<()> {
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
             let attestation = attest(&wallet.snapshot()?, &reserve_asset(), time)?;
-            println!("{}", attestation.canonical_json());
-            println!("sha256 {}", attestation.digest());
+            println!("{}", attestation.canonical_json()?);
+            println!("digest {}", attestation.digest()?);
         }
         Command::CheckAsset => {
             let entry = fetch_registry_entry()?;
