@@ -22,6 +22,9 @@ env:
   HITCH_REF: 62f8e390b8acbbf1e534ee48cf2d519e0b859586
   # Reef's BIP 21 parser is the oracle for sidestr-wallet's payment requests.
   REEF_REF: 648487ac8bd98d854ec705e9d2e47f54435a4cc6
+  # The teller (solidpayorg/teller) is the oracle for webledgers-teller; its
+  # suite loads siding's keys.mjs, so it needs SIDESTR_SPEC_REF at bd1d692 or later.
+  TELLER_REF: 7c00ceac4dc37e0526eccd5ae62e1680ac88ec2a
 
 jobs:
   gate:
@@ -131,6 +134,13 @@ jobs:
           ref: ${{ env.REEF_REF }}
           path: reference/reef
 
+      - name: Check out solidpayorg/teller
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: solidpayorg/teller
+          ref: ${{ env.TELLER_REF }}
+          path: reference/teller
+
       # siding wants Node 22 or later (WebSocket built in); so does the
       # sidestr-evm fixture generator's ethereumjs.
       - name: Set up Node
@@ -197,3 +207,4 @@ jobs:
           BLAKETESTNODE: ${{ github.workspace }}/reference/blaketestnode
           HITCH: ${{ github.workspace }}/reference/hitch
           REEF: ${{ github.workspace }}/reference/reef
+          TELLER: ${{ github.workspace }}/reference/teller

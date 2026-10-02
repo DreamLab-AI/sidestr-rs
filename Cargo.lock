@@ -5824,6 +5824,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "webledgers-teller"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sidestr-core",
+ "sidestr-nostr",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "webpki-roots"
 version = "0.26.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"

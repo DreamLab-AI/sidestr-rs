@@ -37,6 +37,10 @@ members = [
     # amendment): an LWK reserve wallet, public-Esplora sync, and the Liquid
     # reading of the reserve as a sidestr-reserve attestation. Unpublished, not live.
     "sidestr-bridge-liquid",
+    # A teller for Web Ledgers on txbt4 (solidpayorg/teller, AGPL-3.0-or-later): the
+    # ledger and its genesis hash, deposit addresses by additive tweak, signed kind-3700
+    # requests, payouts signed per input. Pure; publishable.
+    "webledgers-teller",
 ]
 
 [workspace.package]
