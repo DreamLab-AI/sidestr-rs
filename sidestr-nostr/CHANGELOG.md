@@ -2,6 +2,48 @@
 
 All notable changes to `sidestr-nostr`. The crate follows semantic versioning.
 
+## Unreleased
+
+### Added: estate kinds 38420–38425 name their chain by hash
+
+The agentbox registry (amended 2026-10-02 for SPEC 0.0.5) has the account
+binding and the five domain events carry the chain hash, never the alias.
+Additive; nothing already signed changes.
+
+- `estate::BindingForm` (`Hash`, `Genesis`, `Alias`), `ParsedBinding`,
+  `parse_binding`, `account_binding_event_as`, `sign_account_binding_as`,
+  `check_binding_chain`, `TAG_ALIAS`, `TAG_LEGACY`, `LEGACY_PRE_005`. The
+  hash form (`d` = `<chain hash>:<did>`, tags `alias`, `genesis`, `chain` =
+  hash, `alt`) and the genesis form for a pre-0.0.5 chain (`d` =
+  `<genesis>:<did>`, `legacy` = `pre-0.0.5`) are agentbox's
+  `management-api/lib/sidestr-spend-key.js` `buildBinding` byte for byte:
+  `tests/binding_forms.rs` makes its known-answer binding (`2235e3d8…`) to
+  the same id, with nostr-tools' signature verifying on the Rust template.
+  `check_binding_chain` holds a binding to the chain event: the hash, the
+  alias, and `genesis` against the document's `genesisHash` as a
+  cross-check.
+- The alias form this crate wrote through 0.5.0 (`d` =
+  `sidestr:<name>:<did>`) is still what `account_binding_event` and
+  `sign_account_binding` write, byte for byte
+  (`fixtures/binding-dreamlab-legacy.json`, captured at `41df9c7f`), and
+  reads back flagged legacy. `parse_account_binding` now reads all three
+  forms; a 64-hex `d` prefix is read as a hash or genesis, with the alias
+  from the `alias` tag, where it used to come back as the chain id.
+- `estate::domain_event_on`, `sign_domain_event_on`,
+  `parse_domain_event_of`, `ParsedDomainEvent`, `check_domain_event_chain`:
+  the five domain events with `chain` = the chain hash and `alias` = the
+  alias; content unchanged. The alias-only form reads as before, flagged
+  legacy.
+
+### Added: nested parents through chain events
+
+- `chain::resolve_nested_parent(parent, get_event)`: a document's
+  `parent` as a sidestr chain's hash, resolved through the chain events
+  (each verified, each the one asked for) to the table row whose family
+  every level inherits; an alias resolves as `parents.mjs` resolves it. A
+  departure from `parents.mjs` at `e8deb63` (sidestr-core
+  `parents::resolve_parent_with`).
+
 ## 0.5.0 (2026-10-02)
 
 ### Tests
