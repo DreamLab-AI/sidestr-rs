@@ -28,7 +28,8 @@ default = ["std"]
 std = []
 # Test-only: Bitcoin Core's script interpreter (libbitcoinconsensus, Core
 # 26.0 lineage) as a differential oracle for the multi_a verifier
-# (`tests/consensus_oracle.rs`). Needs a C++ toolchain; adds nothing to the
+# (`tests/consensus_oracle.rs`) and the Hitch channel leaves
+# (`tests/channel_oracle.rs`). Needs a C++ toolchain; adds nothing to the
 # library.
 consensus-oracle = ["dep:bitcoinconsensus"]
 # The parent view's one JSON-RPC client: Bitcoin Core over HTTP with a cookie

@@ -60,6 +60,7 @@ fn checked_output_sum(tx: &Transaction) -> Option<u64> {
 /// `powLimit` in compact form (SPEC 5; the difficulty rule has no previous
 /// header to hold it to at height 0).
 pub const RULE_GENESIS_DOCUMENT: &str = "sidestr:rule-genesis-document";
+use crate::channel::earliest_height;
 use crate::sighash::verify_supported_input;
 
 /// The tip: height, hash and header time.
@@ -623,7 +624,15 @@ impl<F: HeaderFamily> StateOf<F> {
     /// order: the transaction rules; every input an unspent, unreserved,
     /// mature coin; outputs at most inputs; a burn well-formed and at least
     /// `pegoutMin` (SPEC 7); the fee at least `minFeeRate` sat/vB; every
-    /// input's signature under the sighash rules the next block is judged by.
+    /// input's signature under the sighash rules the next block is judged by;
+    /// every input's BIP 68 relative lock and the transaction's `nLockTime`
+    /// satisfied at the next height ([`crate::channel::earliest_height`]).
+    ///
+    /// The last check is stricter than the reference at `fa86dac`, whose
+    /// mempool admits a transaction whose locks have not matured: its block
+    /// rules then refuse every block that carries it. Here such a
+    /// transaction never enters the mempool, so production is never asked to
+    /// evict it, and it can be submitted again once its height arrives.
     pub fn submit(&mut self, tx: Transaction) -> Result<Submitted> {
         let txid = tx.compute_txid();
         if self.mempool.iter().any(|(id, _)| *id == txid) {
@@ -648,6 +657,7 @@ impl<F: HeaderFamily> StateOf<F> {
             return refuse(format!("transaction: {}", v.failed().join(", ")));
         }
         let mut prevouts = Vec::with_capacity(tx.input.len());
+        let mut coin_heights = Vec::with_capacity(tx.input.len());
         let mut in_sum = 0u64;
         for i in &tx.input {
             let key = i.previous_output;
@@ -661,6 +671,7 @@ impl<F: HeaderFamily> StateOf<F> {
                 return refuse(format!("input {key} is an immature coinbase"));
             }
             prevouts.push(c.output.clone());
+            coin_heights.push(c.height);
             in_sum = in_sum.saturating_add(c.output.value.to_sat());
         }
         let Some(out_sum) = checked_output_sum(&tx) else {
@@ -701,6 +712,18 @@ impl<F: HeaderFamily> StateOf<F> {
         for i in 0..tx.input.len() {
             if let Err(e) = verify_supported_input(&tx, i, &prevouts, sighash) {
                 return refuse(format!("input {i}: {e}"));
+            }
+        }
+        // BIP 68 and nLockTime against the next height: the block rules would refuse it there, so a
+        // channel sweep or HTLC refund made early is turned away here rather than evicted from a block
+        let next = self.height().saturating_add(1);
+        for (i, coin_height) in coin_heights.iter().enumerate() {
+            if let Some(from) = earliest_height(&tx, i, *coin_height) {
+                if next < from {
+                    return refuse(format!(
+                        "input {i}: locked until height {from} (BIP 68 relative lock or nLockTime); the next block is {next}"
+                    ));
+                }
             }
         }
         for i in &tx.input {

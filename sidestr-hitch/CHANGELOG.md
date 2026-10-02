@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- `tests/chain_consensus.rs`: five channels opened by one funding
+  transaction on a sidestr chain beside `tbtc4`, then a cooperative close, a
+  force-close swept after the CSV delay, a revoked commitment taken by the
+  penalty, and HTLCs claimed with the preimage and refunded after expiry on
+  both owners' commitments — all seven leaf templates — built by this
+  crate's kernel and validated by `sidestr-core`'s `Chain`. With
+  `SIDESTR_SIDING`, `SCHEMA` and `BLAKETESTNODE` set, siding replays the
+  directory to the same tip hash and refuses the same early, mistimed and
+  malformed spends; with feature `consensus-oracle` Bitcoin Core 26.0 judges
+  every channel input. A probe records what the reference's mempool does
+  with an early `to_local` sweep. `tests/chaincheck.mjs` drives siding.
+- Feature `consensus-oracle` (test-only, optional `bitcoinconsensus`
+  0.106).
+- Each Hitch builder's leaf is checked to be exactly the matching
+  `sidestr_core::channel::ChannelLeaf`, and each spend under Knots' unified
+  sighash and BIP 341 against the family rules `sidestr-core` applies.
+
 ## 0.2.0 - 2026-10-01
 
 Parity with Hitch at commit `62f8e39` (`lib/channel.mjs`, `lib/peer.mjs`,

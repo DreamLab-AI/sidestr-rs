@@ -4916,6 +4916,7 @@ name = "sidestr-hitch"
 version = "0.2.0"
 dependencies = [
  "bitcoin",
+ "bitcoinconsensus",
  "hex",
  "serde",
  "serde_json",

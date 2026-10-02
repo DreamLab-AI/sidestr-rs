@@ -360,10 +360,18 @@ pub fn verify_taproot_key_path(
 
 /// Verify one input under the script templates this crate carries.
 ///
-/// Besides taproot key-path spends, the pool and markets rules deliberately
-/// use a bare `OP_TRUE` collateral coin. The reference-generated spend of
-/// that coin has an empty `scriptSig` and witness; that exact form succeeds
-/// here. Other script templates remain unsupported and fail closed.
+/// Three forms, and nothing else:
+///
+/// - a taproot **key-path** spend ([`verify_taproot_key_path`]): one
+///   signature, plus an annex;
+/// - a taproot **script-path** spend of one of Hitch's seven channel leaves
+///   ([`crate::channel::verify_channel_input`]): BIP 341 says a witness is a
+///   script path when two or more items remain after the annex, and such a
+///   witness is judged as a channel leaf or refused;
+/// - the bare `OP_TRUE` collateral coin the pool and markets rules use,
+///   spent with an empty `scriptSig` and witness, as the reference writes it.
+///
+/// Every other script type and every other leaf fails closed.
 pub fn verify_supported_input(
     tx: &Transaction,
     index: usize,
@@ -379,7 +387,31 @@ pub fn verify_supported_input(
             Err("an OP_TRUE collateral spend has empty scriptSig and witness".into())
         };
     }
+    if is_script_path(tx, index, prevout) {
+        return crate::channel::verify_channel_input(tx, index, prevouts, rules)
+            .map(|_| ())
+            .map_err(|e| format!("taproot script path: {e}"));
+    }
     verify_taproot_key_path(tx, index, prevouts, rules).map_err(str::to_owned)
+}
+
+/// BIP 341's split: a taproot input whose witness keeps two or more items
+/// once an annex (a last item starting `0x50`, with at least two items) is
+/// set aside spends by script path.
+fn is_script_path(tx: &Transaction, index: usize, prevout: &TxOut) -> bool {
+    let Some(input) = tx.input.get(index) else {
+        return false;
+    };
+    if !prevout.script_pubkey.is_p2tr() {
+        return false;
+    }
+    let n = input.witness.len();
+    let annex = n >= 2
+        && input
+            .witness
+            .last()
+            .is_some_and(|a| a.first() == Some(&0x50));
+    n - usize::from(annex) >= 2
 }
 
 /// The signature-hash rules a chain inherits from its parent's family (SPEC

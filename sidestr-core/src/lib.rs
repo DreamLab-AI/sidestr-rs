@@ -37,7 +37,8 @@
 //! | [`parents`] | the parents a chain can sit beside: alias, long id, header family, genesis and fork block | 3.2 | `siding/lib/parents.mjs` |
 //! | [`document`] | the chain document: alias (`id`) and `name`, parent, challenge, prefix, peg and fee parameters, pegs, `genesisHash`, a level-2 `signers`/`threshold`; the magic `siding new` derives. Its hash, as a kind-3500 event (0.0.5), is `sidestr-nostr`'s | 3, 5 | `siding/bin/siding.mjs new`, `lib/engine.mjs`, `lib/overlay.mjs checkFederation` |
 //! | [`block`] | the header family boundary ([`HeaderFamily`], [`Stock`], [`FamilyBlock`]); building a block; the signed block data (BIP 325 over this chain's header); the solution push in the coinbase; the BIP 34 height; sign, seal, verify | 3.2, 4 | `siding/lib/block.mjs` |
-//! | [`sighash`] | the signature hashes a spend is judged by: BIP 341, and Knots' unified opt-in sighash beside a BLAKE2b parent; the taproot key-path verifier | 3 | `schema/codec/interpreter.js` |
+//! | [`sighash`] | the signature hashes a spend is judged by: BIP 341, and Knots' unified opt-in sighash beside a BLAKE2b parent; the taproot key-path verifier and the one entry point for every transaction input | 3 | `schema/codec/interpreter.js` |
+//! | [`channel`] | the seven tapscript leaves of a Hitch payment channel (funding 2-of-2, revocation, `to_local` CSV, HTLC success and timeout), matched byte for byte and verified on transaction inputs; the BIP 68 / `nLockTime` height a spend is allowed from | — | `hitch/lib/channel.mjs`; `schema/codec/interpreter.js` (tapscript, CSV, CLTV) |
 //! | [`parent`] | the parent chain behind [`parent::ParentRpc`] / [`parent::PegWallet`]: peg-ins found in decoded blocks, peg status, what to claim and lock, the burn payment and checkpoint as `send` outputs, reconciliation; Bitcoin Core's JSON-RPC behind feature `rpc` | 6, 7, 11 | `siding/lib/parent.mjs`, `checkpoint.mjs`, `bin/siding.mjs produce` |
 //! | [`federation`] | level 2, the pure parts: the NUMS internal key, the `multi_a(k, …)` leaf, output key and control block, partial signatures, witness assembly, sealing, and the verifier for exactly that leaf | level-2 | `siding/lib/federation.mjs`; `schema/codec/interpreter.js` (tapscript) |
 //! | [`marker`] | the `OP_RETURN` grammar: `pegin:`, `claim:`, `pegout:`, `ckpt:`, and text records | 6, 7, 11 | `siding/lib/marker.mjs`, `overlay.mjs`, `parent.mjs`, `checkpoint.mjs`, `records.mjs` |
@@ -203,23 +204,42 @@
 //! - **Script verification fails closed.** The reference kernel verifies every
 //!   script type and reports a witness version it does not know as
 //!   "unverifiable", which lets the block through. This crate verifies
-//!   taproot key-path spends, the only spends a level-1 chain with a `5120…`
-//!   challenge and bech32m wallets makes, and *refuses* anything else
-//!   ([`sighash::verify_taproot_key_path`]). A block spending by script path
-//!   is invalid here and valid there; there is no general interpreter.
+//!   taproot key-path spends, the spends a level-1 chain with a `5120…`
+//!   challenge and bech32m wallets make; taproot script-path spends of
+//!   exactly the seven leaves a Hitch payment channel writes
+//!   ([`channel::ChannelLeaf`]), so a channel's cooperative close,
+//!   force-close, sweep, penalty and HTLC claims replay here as they do
+//!   there; and the pool's bare `OP_TRUE` coin
+//!   ([`sighash::verify_supported_input`]). It *refuses* anything else. A
+//!   block spending any other leaf is invalid here and valid there; there
+//!   is no general interpreter. Within the channel templates the two engines
+//!   and Bitcoin Core agree case for case (`tests/channel_oracle.rs`, and
+//!   sidestr-hitch's `tests/chain_consensus.rs` for whole chains).
+//! - **A channel spend made before its lock is turned away at admission.**
+//!   The reference at `fa86dac` admits to its mempool a transaction whose
+//!   BIP 68 relative lock or `nLockTime` has not matured, and its block
+//!   rules then refuse every block carrying it, so production stops until
+//!   the transaction leaves the mempool (sidestr/spec issue 13, fixed in
+//!   `c3b9e7a` by eviction). [`state::StateOf::submit`] judges both locks
+//!   against the next height first ([`channel::earliest_height`]). The block
+//!   rules, `btc:rule-blockctx-sequence-locks` and
+//!   `btc:rule-blockctx-finality`, are the same in both engines.
 //! - **The solution's witness decoder is strict.** `decodeWitness` reads what
 //!   it can and ignores the rest; [`block::decode_witness`] refuses a
 //!   truncated item, trailing bytes, a non-minimal CompactSize and more than
 //!   256 items, since the solution is consensus data.
-//! - **The script path is one template, verified exactly.** The reference
-//!   executes any tapscript; this crate verifies the taproot commitment,
-//!   the leaf version and then exactly the `multi_a(k, pk_1 … pk_n)` leaf
-//!   under BIP 342 ([`federation::verify_multi_a_input`]), refusing any
-//!   other leaf by name ([`federation::ScriptPathError::NotMultiA`]) and an
-//!   unknown leaf version too ([`federation::ScriptPathError::LeafVersion`]),
-//!   where the kernel and Bitcoin Core treat the latter as a success. Within
-//!   that template the two agree case for case (`tests/consensus_oracle.rs`,
-//!   Core's interpreter behind the `consensus-oracle` feature).
+//! - **A block's script path is one template, verified exactly.** The
+//!   reference executes any tapscript; for a federated block's solution this
+//!   crate verifies the taproot commitment, the leaf version and then exactly
+//!   the `multi_a(k, pk_1 … pk_n)` leaf under BIP 342
+//!   ([`federation::verify_multi_a_input`]), refusing any other leaf by name
+//!   ([`federation::ScriptPathError::NotMultiA`]) and an unknown leaf version
+//!   too ([`federation::ScriptPathError::LeafVersion`]), where the kernel and
+//!   Bitcoin Core treat the latter as a success. Within that template the two
+//!   agree case for case (`tests/consensus_oracle.rs`, Core's interpreter
+//!   behind the `consensus-oracle` feature). On a transaction input the
+//!   templates are the channel's ([`channel`]); a federation's `k`-of-`n`
+//!   leaf there is refused unless it is the 2-of-2 the funding leaf shares.
 //! - **A marker's push is written canonically and read as the reference reads
 //!   it.** `overlay.mjs opReturnData` takes `6a`, an optional `4c`, one
 //!   length byte and that many bytes: the byte is a length whatever opcode it
@@ -293,6 +313,7 @@ pub mod block;
 pub mod blockfile;
 #[cfg(feature = "std")]
 pub mod chain;
+pub mod channel;
 pub mod document;
 pub mod error;
 pub mod federation;

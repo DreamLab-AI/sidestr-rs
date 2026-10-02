@@ -9,6 +9,43 @@ Parity with sidestr/spec `keys.mjs` (`bd1d692`) and `pegtweak.mjs`
 known answers (bitcoin-blake/fidsigner `2c4057c`), and Reef's parent
 coinbase maturity (bitcoin-blake/reef `2bd3cb8`). Additive.
 
+### Changed (consensus): Hitch channel leaves on transaction inputs
+
+A Hitch channel's every close spends its funding output by taproot script
+path. The reference producer accepts such a block; this crate refused it,
+so the first channel close on an estate chain would have frozen every Rust
+validator, the forum's member wallets among them, at the block before it.
+Owner decision 2026-10-02, SC6: cooperative and force-close both.
+
+- `channel` (new module): `ChannelLeaf`, exactly the seven leaves Hitch
+  `62f8e39` / sidestr-hitch 0.2.0 writes — the 2-of-2 funding `multi_a`,
+  revocation `pk CHECKSIG`, `to_local` `<d> CSV DROP pk CHECKSIG`, and the
+  HTLC success (`SHA256 <h> EQUALVERIFY [<d> CSV DROP] pk CHECKSIG`) and
+  timeout (`<e> CLTV DROP [<d> CSV DROP] pk CHECKSIG`) leaves — parsed and
+  rendered byte for byte (`parse`, `to_script`; numbers only in Hitch's
+  minimal `pushNum` form, a delay at most `0xffff` blocks, an expiry a
+  height). `verify_channel_input` checks a script-path spend of one of
+  them: annex, control block and its commitment to the output key (rust-
+  bitcoin's `ControlBlock`), leaf version `0xc0`, exact witness items, then
+  the preimage, BIP 65, BIP 112 and each BIP 340 signature under BIP 341
+  or, where the family's rules and the hash type say so, Knots' unified
+  sighash; `ChannelError` names each refusal. `earliest_height` gives the
+  height an input's BIP 68 lock and its transaction's `nLockTime` allow.
+- `sighash::verify_supported_input` judges a taproot witness with two or
+  more items after the annex (BIP 341's script path) as a channel leaf, and
+  still refuses every other leaf. Its error for a script path now names the
+  `ChannelError` (`taproot script path: …`).
+- `state::StateOf::submit` refuses a transaction whose BIP 68 relative lock
+  or `nLockTime` is not satisfied at the next height ("locked until height
+  …"). The block rules were already in force and are unchanged; the
+  reference at `fa86dac` admits such a transaction and then cannot produce
+  until it leaves the mempool.
+- `tests/channel_oracle.rs` (feature `consensus-oracle`): Bitcoin Core
+  26.0's interpreter and this crate agree on 436 spends of the seven leaves
+  under both parities, and six narrowings (unknown leaf version, four
+  non-template scripts, CSV in a negative-version transaction) are asserted
+  as such.
+
 ### Added
 
 - `keys`: a port of `siding/lib/keys.mjs`, keys as group elements with the
