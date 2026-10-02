@@ -25,11 +25,32 @@ another crate producing the same statement, and the rule would not change.
 | `source` | whose view of the origin the reading came from: a public server or an own node |
 | `type` | `sidestr-reserve/attestation/v1` |
 
-The canonical form is compact JSON with keys in byte order. Every string is
-restricted to printable ASCII that needs no escaping, and every number stays
-below 2⁵³, so any JSON implementation reproduces the bytes. The digest is the
-SHA-256 of those bytes, and the signature is BIP-340 Schnorr over the digest
-(libsecp256k1 through `secp256k1` 0.29; nothing cryptographic is implemented
+## Canonical form and digest
+
+The canonical bytes are RFC 8785 (JCS) over a subset every JCS
+implementation writes identically:
+
+- strings and object keys are escape-free printable ASCII (`0x20` to `0x7e`,
+  not `"` or `\`), so they are written verbatim and sort the same by byte as
+  by UTF-16 code unit;
+- numbers are integers of magnitude at most 2⁵³ − 1, in plain decimal; the
+  amount and time travel as decimal strings;
+- `null`, booleans, arrays and objects as JCS writes them: keys ascending at
+  every level, no whitespace.
+
+`canonicalize` refuses anything outside the subset (a float, a non-ASCII or
+escaped character, an integer at or beyond 2⁵³) instead of choosing one of the
+answers implementations disagree on, and `canonical_json` refuses an
+attestation whose public fields were changed out of the alphabet after
+`attest`.
+
+The digest is the BIP-340 tagged hash of those bytes under the fixed tag
+`sidestr-reserve/attestation/v1`:
+`SHA-256(SHA-256(tag) ‖ SHA-256(tag) ‖ bytes)`, the construction sidestr/spec
+`keys.mjs` `taggedScalar` builds on, so a signature over an attestation
+cannot stand for a signature over any other SHA-256 the key signs. The
+signature is BIP-340 Schnorr over the digest (libsecp256k1 through
+`secp256k1` 0.29; SHA-256 is `sha2`'s; nothing cryptographic is implemented
 here).
 
 ## What an adapter owes
@@ -47,10 +68,16 @@ here).
 
 ```text
 cargo test -p sidestr-reserve
+TELLER=<teller checkout> cargo test -p sidestr-reserve --test jcs
 ```
 
-Golden canonical bytes, with a digest computed independently with
-`sha256sum`, for an account-origin example. Every field changes the digest,
+Golden canonical bytes, with a tagged digest computed independently with
+Python's `hashlib`, for an account-origin example; the tagged hash against
+rust-bitcoin's `TapLeaf` hash. Five attestations whose canonical bytes equal
+`serde_jcs`'s for the same document with its keys reversed, and, with
+`TELLER` naming a checkout of solidpayorg/teller, the teller's `jcs` at
+`7c00cea` too (`tests/jcs.rs`, through `tests/xcheck-jcs.mjs`). Floats,
+non-ASCII keys, escapes and integers beyond 2⁵³ are refused. Every field changes the digest,
 and the same holdings under two origins give two digests. Malformed
 identifiers, tips, sources and times are refused, as are duplicated credits
 and an overflowing total. BIP-340 test vectors 0 (signing) and 1

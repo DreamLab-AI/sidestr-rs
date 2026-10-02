@@ -18,7 +18,7 @@
 //! | [`RESERVE_ASSET_ID`], [`verify_registry_entry`] | the reserve asset, pinned from primary sources and checked against its issuance contract |
 //! | [`attest()`], [`credits`], [`origin`] | the Liquid reading of the reserve: which outputs count, keyed by outpoint, as a [`ReserveAttestation`] |
 //!
-//! The attestation itself (canonical JSON, SHA-256 digest, the BIP-340
+//! The attestation itself (canonical JSON, tagged SHA-256 digest, the BIP-340
 //! [`AttestationSigner`] hook and [`SignedAttestation`]) is the
 //! origin-neutral [`sidestr_reserve`] crate's, re-exported here: a `bridge`
 //! rule checks the same statement whichever network holds the reserve, and
@@ -66,7 +66,7 @@
 //! let attestation = attest(&state, &reserve_asset(), 1_790_000_000)?;
 //! assert_eq!(attestation.amount, 25_0000_0000);
 //! assert_eq!(attestation.origin.network(), "liquid");
-//! assert_eq!(attestation.digest(), attest(&state, &reserve_asset(), 1_790_000_000)?.digest());
+//! assert_eq!(attestation.digest()?, attest(&state, &reserve_asset(), 1_790_000_000)?.digest()?);
 //! # Ok::<(), sidestr_bridge_liquid::Error>(())
 //! ```
 //!

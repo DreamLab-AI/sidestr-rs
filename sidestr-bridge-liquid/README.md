@@ -30,8 +30,9 @@ this crate is the reserve half of that check.
   asset at or below the tip, keyed by outpoint (`txid:vout`), under the
   origin `liquid` / `RESERVE_ASSET_ID` / 8 decimals. The statement itself
   belongs to the origin-neutral `sidestr-reserve` crate: total, credits, tip
-  height and hash, time and source in canonical sorted-key JSON, its SHA-256,
-  and the `AttestationSigner` hook (BIP-340 Schnorr over the digest). A
+  height and hash, time and source in canonical JSON (RFC 8785 over an
+  escape-free, safe-integer subset), its tagged SHA-256 digest under
+  `sidestr-reserve/attestation/v1`, and the `AttestationSigner` hook (BIP-340 Schnorr over the digest). A
   `bridge` rule checks the same statement whichever network holds the
   reserve, so a TRON or EVM adapter would be a sibling of this crate, not a
   change to it. No real key is wired: the binary never signs.
@@ -44,7 +45,7 @@ usd-reserve address     --key-file <path> [--index N]  # offline; default index 
 usd-reserve address     --key-file <path> --next       # sync, then the first unused address
 usd-reserve descriptor  --key-file <path>              # CT descriptor (sensitive for privacy)
 usd-reserve balance     --key-file <path>              # sync, tip, balance per asset
-usd-reserve attest      --key-file <path>              # sync, unsigned attestation + sha256
+usd-reserve attest      --key-file <path>              # sync, unsigned attestation + digest
 usd-reserve check-asset                                # fetch the registry entry, verify the pin
 # global: --esplora-url <url>  --proxy <socks5h://…|http://…>
 ```
@@ -121,8 +122,9 @@ The offline tests cover these vectors:
   0.19's own mainnet vector.
 - **Addresses.** Its first two addresses are regression values.
 - **Attestation.** Golden canonical bytes for the Liquid reading, with a
-  digest computed independently with `sha256sum`. The format's own vectors
-  (BIP-340 test vectors 0 and 1, field checks) are `sidestr-reserve`'s.
+  tagged digest computed independently with Python's `hashlib`. The format's
+  own vectors (RFC 8785 cross-checks, BIP-340 test vectors 0 and 1, field
+  checks) are `sidestr-reserve`'s.
 
 The live test is read-only. It derives a fresh wallet in a temporary
 directory, syncs it, expects an empty balance and a current tip, and fetches

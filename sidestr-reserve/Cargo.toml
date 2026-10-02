@@ -23,3 +23,11 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+# RFC 8785 cross-check for the canonical bytes, run on every test pass (the
+# teller's JCS is the gated JavaScript oracle beside it).
+serde_jcs = "0.2"
+# rust-bitcoin's sha256t TapLeaf hash, an independent BIP-340 tagged hash
+# to hold `tagged_hash` to.
+bitcoin = { workspace = true }

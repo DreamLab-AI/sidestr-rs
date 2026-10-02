@@ -1,12 +1,16 @@
-//! The origin-neutral attestation: canonical bytes, field checks, origin
-//! separation, BIP-340 signing. No network, no origin library.
+//! The origin-neutral attestation: canonical bytes, the tagged digest, field
+//! checks, origin separation, BIP-340 signing. No network, no origin
+//! library. The canonical bytes against RFC 8785 implementations are
+//! `tests/jcs.rs`.
 
 use std::str::FromStr;
 
-use sidestr_reserve::secp256k1::{schnorr, Keypair, Secp256k1, SecretKey, XOnlyPublicKey};
+use sha2::{Digest, Sha256};
+use sidestr_reserve::secp256k1::{schnorr, Keypair, Message, Secp256k1, SecretKey, XOnlyPublicKey};
 use sidestr_reserve::{
-    attest, verify_digest, AttestationDigest, AttestationSigner, Credit, Error, KeypairSigner,
-    Origin, ReserveAttestation, SignedAttestation, Tip, ATTESTATION_TYPE, MAX_SAFE_INTEGER,
+    attest, tagged_hash, verify_digest, AttestationDigest, AttestationSigner, Credit, Error,
+    KeypairSigner, Origin, ReserveAttestation, SignedAttestation, Tip, ATTESTATION_TYPE,
+    DIGEST_TAG, MAX_SAFE_INTEGER,
 };
 
 const TIME: u64 = 1_790_000_000;
@@ -42,26 +46,77 @@ fn attestation() -> ReserveAttestation {
 /// why `aa…:12` sits between `aa…:0` and `cc…:3`.
 const GOLDEN_JSON: &str = r#"{"amount":"10000001","asset":"41a614f803b6fd780986a42c78ec9c7f77e6ded13c","credits":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:12","cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:3"],"decimals":6,"network":"tron","source":"https://api.trongrid.io","time":"1790000000","tip_hash":"0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f","tip_height":75000000,"type":"sidestr-reserve/attestation/v1"}"#;
 
-/// `printf %s "$GOLDEN_JSON" | sha256sum`.
-const GOLDEN_DIGEST: &str = "a2c255da688be7c9d3b01451b374386a6e205b3b52ad26bc737ca69cea12059c";
+/// The tagged digest of [`GOLDEN_JSON`], computed outside Rust with
+/// Python's `hashlib`: `t = sha256(b"sidestr-reserve/attestation/v1")`,
+/// `sha256(t + t + GOLDEN_JSON)`.
+const GOLDEN_DIGEST: &str = "3c0bcffad22416404c8fec19136f49d7ec27943316eee0cc52b5270f9aa608dd";
+
+/// `printf %s "$GOLDEN_JSON" | sha256sum`: the untagged digest 0.1.0
+/// signed, which the tagged one replaces.
+const UNTAGGED_SHA256: &str = "a2c255da688be7c9d3b01451b374386a6e205b3b52ad26bc737ca69cea12059c";
 
 // ------------------------------------------------------------- canonical form
 
 #[test]
 fn canonical_bytes_are_golden() {
-    assert_eq!(attestation().canonical_json(), GOLDEN_JSON);
+    assert_eq!(attestation().canonical_json().unwrap(), GOLDEN_JSON);
+    // The bytes themselves are unchanged from 0.1.0; only the digest moved.
+    assert_eq!(
+        hex::encode(Sha256::digest(GOLDEN_JSON.as_bytes())),
+        UNTAGGED_SHA256
+    );
 }
 
 #[test]
-fn digest_is_the_sha256_of_the_golden_bytes() {
-    assert_eq!(attestation().digest().to_string(), GOLDEN_DIGEST);
+fn digest_is_the_tagged_hash_of_the_golden_bytes_under_the_fixed_tag() {
+    assert_eq!(DIGEST_TAG, "sidestr-reserve/attestation/v1");
+    let digest = attestation().digest().unwrap();
+    assert_eq!(digest.to_string(), GOLDEN_DIGEST);
+
+    // sha256(sha256(tag) || sha256(tag) || bytes), spelled out with sha2.
+    let t = Sha256::digest(DIGEST_TAG.as_bytes());
+    let mut h = Sha256::new();
+    h.update(t);
+    h.update(t);
+    h.update(GOLDEN_JSON.as_bytes());
+    assert_eq!(digest.0, <[u8; 32]>::from(h.finalize()));
+    assert_eq!(digest.0, tagged_hash(DIGEST_TAG, GOLDEN_JSON.as_bytes()));
+
+    // Domain-separated: neither the plain SHA-256 nor another tag.
+    assert_ne!(digest.to_string(), UNTAGGED_SHA256);
+    assert_ne!(
+        digest.0,
+        tagged_hash("sidestr-reserve/attestation/v2", GOLDEN_JSON.as_bytes())
+    );
+}
+
+#[test]
+fn tagged_hash_is_bip340s_as_rust_bitcoin_computes_it() {
+    // TapLeaf: tagged_hash("TapLeaf", leaf_version || compact_size(len) ||
+    // script), against rust-bitcoin's sha256t implementation.
+    use bitcoin::hashes::Hash;
+    use bitcoin::taproot::{LeafVersion, TapLeafHash};
+    use bitcoin::ScriptBuf;
+    for script in [
+        vec![0x51],
+        hex::decode("20d85a959b0290bf19bb89ed43c916be835475d013da4b362117393e25a48229b8ac")
+            .unwrap(),
+    ] {
+        let theirs = TapLeafHash::from_script(
+            &ScriptBuf::from_bytes(script.clone()),
+            LeafVersion::TapScript,
+        );
+        let mut msg = vec![0xc0, u8::try_from(script.len()).unwrap()];
+        msg.extend_from_slice(&script);
+        assert_eq!(tagged_hash("TapLeaf", &msg), theirs.to_byte_array());
+    }
 }
 
 #[test]
 fn canonical_keys_are_sorted_and_complete() {
     // serde_json keeps document order in this workspace (preserve_order).
     let parsed: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(&attestation().canonical_json()).unwrap();
+        serde_json::from_str(&attestation().canonical_json().unwrap()).unwrap();
     let keys: Vec<&str> = parsed.keys().map(String::as_str).collect();
     assert_eq!(
         keys,
@@ -87,7 +142,7 @@ fn credit_order_does_not_matter() {
     reversed.reverse();
     let backward = attest(tron(), tip(), &reversed, "https://api.trongrid.io", TIME).unwrap();
     assert_eq!(attestation(), backward);
-    assert_eq!(attestation().digest(), backward.digest());
+    assert_eq!(attestation().digest().unwrap(), backward.digest().unwrap());
 }
 
 #[test]
@@ -116,7 +171,7 @@ fn every_field_changes_the_digest() {
     a.origin = Origin::new("tron", "41a614f803b6fd780986a42c78ec9c7f77e6ded13c", 8).unwrap();
     variants.push(a);
     for v in variants {
-        assert_ne!(v.digest(), base.digest());
+        assert_ne!(v.digest().unwrap(), base.digest().unwrap());
     }
 }
 
@@ -127,14 +182,14 @@ fn the_same_holdings_on_two_origins_are_two_statements() {
     let evm = Origin::new("arbitrum", "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9", 6).unwrap();
     let on_evm = attest(evm, tip(), &credits(), "https://api.trongrid.io", TIME).unwrap();
     assert_eq!(on_evm.amount, attestation().amount);
-    assert_ne!(on_evm.digest(), attestation().digest());
+    assert_ne!(on_evm.digest().unwrap(), attestation().digest().unwrap());
 }
 
 #[test]
 fn an_empty_reserve_attests_zero() {
     let a = attest(tron(), tip(), &[], "https://api.trongrid.io", TIME).unwrap();
     assert_eq!(a.amount, 0);
-    assert!(a.canonical_json().contains(r#""credits":[]"#));
+    assert!(a.canonical_json().unwrap().contains(r#""credits":[]"#));
 }
 
 #[test]
@@ -147,6 +202,7 @@ fn amounts_beyond_u64_are_stated_exactly() {
     let a = attest(tron(), tip(), &big, "https://api.trongrid.io", TIME).unwrap();
     assert!(a
         .canonical_json()
+        .unwrap()
         .contains(r#""amount":"18446744073709551616""#));
 }
 
@@ -202,13 +258,62 @@ fn tips_must_be_lower_case_hex_and_safe_heights() {
 
 #[test]
 fn sources_and_times_are_checked() {
-    for source in ["", "has space", "line\nbreak"] {
+    for source in [
+        "",
+        "has space",
+        "line\nbreak",
+        "quo\"te",
+        "back\\slash",
+        "caf\u{e9}",
+        &"x".repeat(257),
+    ] {
         assert!(
             attest(tron(), tip(), &[], source, TIME).is_err(),
             "{source:?}"
         );
     }
     assert!(attest(tron(), tip(), &[], "x", MAX_SAFE_INTEGER + 1).is_err());
+}
+
+#[test]
+fn fields_changed_after_attest_are_refused_not_canonicalised() {
+    // The fields are public; canonical_json re-checks them rather than
+    // escape or round them into some form a validator might not share.
+    let mut a = attestation();
+    a.source = "caf\u{e9}".into();
+    assert!(matches!(
+        a.canonical_json(),
+        Err(Error::Field {
+            field: "source",
+            ..
+        })
+    ));
+    assert!(a.digest().is_err());
+
+    let mut a = attestation();
+    a.source = "a\"b".into();
+    assert!(a.canonical_json().is_err());
+
+    let mut a = attestation();
+    a.time = MAX_SAFE_INTEGER + 1;
+    assert!(matches!(
+        a.canonical_json(),
+        Err(Error::Field { field: "time", .. })
+    ));
+
+    let mut a = attestation();
+    a.credits.push("BAD:0".into());
+    assert!(matches!(a.canonical_json(), Err(Error::Field { .. })));
+
+    let mut a = attestation();
+    a.credits.push(a.credits[0].clone());
+    assert!(matches!(a.canonical_json(), Err(Error::Credits(_))));
+
+    // A signed attestation whose fields no longer have a canonical form does
+    // not verify.
+    let mut signed = SignedAttestation::sign(attestation(), &test_signer()).unwrap();
+    signed.attestation.source = "caf\u{e9}".into();
+    assert!(matches!(signed.verify(), Err(Error::BadSignature)));
 }
 
 // ----------------------------------------------------------------- signing
@@ -262,6 +367,32 @@ fn verification_accepts_bip340_test_vector_1() {
 }
 
 #[test]
+fn bip340_signature_over_the_tagged_digest_round_trips() {
+    let a = attestation();
+    let signer = test_signer();
+    let digest = a.digest().unwrap();
+    let sig = signer.sign_digest(&digest).unwrap();
+    let pk = signer.x_only_public_key();
+
+    // libsecp256k1 directly, not through this crate's verify.
+    let secp = Secp256k1::verification_only();
+    secp.verify_schnorr(&sig, &Message::from_digest(digest.0), &pk)
+        .unwrap();
+    // Not a signature over the untagged SHA-256 of the same bytes.
+    let untagged: [u8; 32] = Sha256::digest(a.canonical_json().unwrap().as_bytes()).into();
+    assert!(secp
+        .verify_schnorr(&sig, &Message::from_digest(untagged), &pk)
+        .is_err());
+
+    // And through SignedAttestation: the same deterministic signature.
+    let signed = SignedAttestation::sign(a, &signer).unwrap();
+    assert_eq!(signed.digest, digest);
+    assert_eq!(signed.signature, sig);
+    signed.verify().unwrap();
+    verify_digest(&signed.digest, &signed.signature, &signed.public_key).unwrap();
+}
+
+#[test]
 fn a_signed_attestation_verifies_and_tampering_breaks_it() {
     let signed = SignedAttestation::sign(attestation(), &test_signer()).unwrap();
     signed.verify().unwrap();
@@ -272,7 +403,7 @@ fn a_signed_attestation_verifies_and_tampering_breaks_it() {
 
     let mut reissued = signed.clone();
     reissued.attestation.amount += 1;
-    reissued.digest = reissued.attestation.digest();
+    reissued.digest = reissued.attestation.digest().unwrap();
     assert!(matches!(reissued.verify(), Err(Error::BadSignature)));
 
     let mut moved = signed.clone();
