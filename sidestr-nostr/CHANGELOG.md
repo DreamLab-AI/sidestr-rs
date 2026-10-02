@@ -31,6 +31,48 @@ All notable changes to `sidestr-nostr`. The crate follows semantic versioning.
   opaque JSON; `sidestr-hitch` owns the messages. `kinds::KIND_HITCH_MESSAGE`
   and a 20th `REGISTRY` row (external, ephemeral, ported).
 
+### Added: the domain events by chain hash, legacy bindings read, chains held
+
+Over the 38420 shape above, additive:
+
+- `estate::domain_event_on`, `sign_domain_event_on`: the five domain
+  events 38421–38425 with `chain` = the chain hash and `alias` = the alias,
+  content unchanged (ADR-2098 as amended: "38420–38425 carry the chain
+  hash, never the alias"). `parse_domain_event_of` returns
+  `ParsedDomainEvent` (the event and its chain hash, `legacy()` when there
+  is none); a 64-hex `chain` tag is read as the hash, an `alias` tag must
+  agree with the content. `parse_domain_event` now reads both forms; the
+  alias-only form (`domain_event`, `sign_domain_event`) reads as before.
+  `check_domain_event_chain` holds an event to the chain's verified
+  kind-3500 event.
+- `estate::parse_binding`, `ParsedBinding`, `BindingForm` (`Hash`,
+  `Genesis`, `Alias`): a 38420 in any form this crate has written, with its
+  form. The keyed forms go through `parse_account_binding` unchanged; the
+  alias-in-`d` form this crate wrote through 0.5.0 (`d` =
+  `sidestr:<name>:<did>`, which `parse_account_binding` refuses) is read
+  as 0.5.0 read it and flagged legacy. `legacy_alias_binding_event` and
+  `sign_legacy_alias_binding` make such a binding again byte for byte, for
+  re-publishing at its own address only: `tests/binding_forms.rs` holds
+  the live `sidestr:dreamlab` binding (captured at `41df9c7f`) to the same
+  bytes.
+- `estate::check_binding_chain`: a binding held to the chain's verified
+  kind-3500 event: its chain hash the event's id, its alias the document's
+  `id`, its genesis the document's `genesisHash` when present.
+- `chain::resolve_nested_parent(parent, get_event)`: a document's
+  `parent` as a sidestr chain's hash, resolved through the chain events
+  (each verified, each the one asked for) to the table row whose family
+  every level inherits; an alias resolves as `parents.mjs` resolves it. A
+  departure from `parents.mjs` at `e8deb63` (sidestr-core
+  `parents::resolve_parent_with`).
+
+### Tests
+
+- `tests/binding_forms.rs`: agentbox `buildBinding`'s genesis-form binding
+  for `sidestr:dreamlab` (`2235e3d8…`, nostr-tools signature) and the hash
+  form's nostr-tools id (`e55eb681…`), both remade by
+  `account_binding_event` to the same id: the codec crate's own external
+  vectors, the hash form's the first.
+
 ## 0.5.0 (2026-10-02)
 
 ### Tests
