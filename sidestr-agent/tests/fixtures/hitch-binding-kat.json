@@ -1,0 +1,12 @@
+{
+ "about": "ADR-2101 D3 known answer, ADR-2098 38420 as amended: k_id = 0x01*32 signs the binding naming k_spend = 0x02*32 on sidestr:dreamlab-txbt4 (pre-0.0.5, keyed by genesis, tagged legacy). The event id is agentbox's own mint's (management-api/lib/sidestr-spend-key.js buildBinding, nostr-tools); the signature is BIP-340 with zero auxiliary randomness, verified by nostr-tools verifyEvent and agentbox verifyBinding.",
+ "identitySecret": "0101010101010101010101010101010101010101010101010101010101010101",
+ "spendSecret": "0202020202020202020202020202020202020202020202020202020202020202",
+ "identity": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+ "spend": "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
+ "chain": "sidestr:dreamlab-txbt4",
+ "genesis": "1009aa2984d5c699fe61ef1e5905afe472a49d67551542045726828c8b82d108",
+ "createdAt": 1790200000,
+ "eventId": "b5f532ff434dad15ab09d2045b1a21826706ba7e68df5e3c8eb0f2f84a739771",
+ "sig": "e4fed75cc42fe77275d3799f99967560799ac5e2065c6d3dc929272d64ed6752ec2e0e8434efe27500d61aad8d2dc127e7af4af5c9c40372a0602cf0dbf4ee98"
+}

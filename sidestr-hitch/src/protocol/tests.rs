@@ -659,3 +659,112 @@ fn bound_follows_an_htlc_output_of_a_close_until_it_settles() {
         .unwrap();
     assert!(output.offered_by_me);
 }
+
+/// A `synced` carrying secrets survives the trip through the untagged
+/// `PeerMessage`, the type a host reads from the relay. Its keys are JSON
+/// strings, which the untagged buffering used to refuse.
+#[test]
+fn a_synced_with_reveals_round_trips_through_peer_message() {
+    let synced = SyncMessage {
+        t: SyncTag::Synced,
+        id: ChannelId([0x56; 8]),
+        n: 4,
+        status: Some("open".into()),
+        pending_n: None,
+        reveal: None,
+        missing: vec![],
+        reveals: Some(BTreeMap::from([
+            (2, Bytes32([7; 32])),
+            (3, Bytes32([9; 32])),
+        ])),
+    };
+    let text = serde_json::to_string(&PeerMessage::Sync(synced.clone())).unwrap();
+    assert!(text.contains(r#""reveals":{"2":"#), "{text}");
+    let back: PeerMessage = serde_json::from_str(&text).unwrap();
+    assert_eq!(back, PeerMessage::Sync(synced.clone()));
+    let direct: SyncMessage = serde_json::from_str(&text).unwrap();
+    assert_eq!(direct, synced);
+    for bad in ["\"02\"", "\"-1\"", "\"x\"", "\"\""] {
+        let t = text.replacen("\"2\"", bad, 1);
+        assert!(serde_json::from_str::<PeerMessage>(&t).is_err(), "{bad}");
+    }
+}
+
+/// A rebroadcast is signed afresh: the same txid, another witness, still
+/// valid under `sidestr-core`'s channel rules. For a commitment, a delayed
+/// sweep and a penalty.
+#[test]
+fn a_rebroadcast_is_signed_again_with_a_fresh_witness() {
+    use sidestr_core::sighash::verify_supported_input;
+    let rules = SighashRules::KnotsUnified;
+    let fresh =
+        |tx: &bitcoin::Transaction, again: &bitcoin::Transaction, prevouts: &[bitcoin::TxOut]| {
+            assert_eq!(again.compute_txid(), tx.compute_txid(), "same transaction");
+            assert_ne!(again.compute_wtxid(), tx.compute_wtxid(), "another witness");
+            verify_supported_input(again, 0, prevouts, rules).unwrap();
+            verify_supported_input(tx, 0, prevouts, rules).unwrap();
+        };
+
+    // a forced close of A's, and its sweep after the delay
+    let (mut a, mut b, _, _) = open_pair(20_000);
+    pay(&mut a, &mut b, 1_000, 0x60);
+    let close = a.force_close(None, "forced", &ctx(H)).unwrap().tx;
+    let funding = [a.channel().funding_prevout()];
+    let again = a.resign(&close, &funding, &[0xa5; 32]).unwrap();
+    fresh(&close, &again, &funding);
+    let destination = crate::to_remote_script(public(&key(0x11)));
+    a.on_spend(
+        ChainSpend {
+            txid: close.compute_txid(),
+            height: H + 1,
+        },
+        &destination,
+        &ctx(H + 1),
+        |_, _| OutputLookup::Unspent,
+    )
+    .unwrap();
+    let sweeps = a.after_close(&destination, &ctx(H + 1 + u32::from(a.delay())), |_, _| {
+        OutputLookup::Unspent
+    });
+    let sweep = &sweeps
+        .iter()
+        .find(|b| b.label == "sweep of to_local")
+        .expect("a sweep after the delay")
+        .tx;
+    let vout = sweep.input[0].previous_output.vout as usize;
+    let prevouts = [close.output[vout].clone()];
+    fresh(
+        sweep,
+        &a.resign(sweep, &prevouts, &[0xa6; 32]).unwrap(),
+        &prevouts,
+    );
+
+    // a penalty against B's revoked state 0
+    let (mut a, mut b, _, _) = open_pair(20_000);
+    let old = b.signed_commitment(0, &[0; 32]).unwrap();
+    pay(&mut a, &mut b, 1_000, 0x61);
+    let outcome = a
+        .on_spend(
+            ChainSpend {
+                txid: old.compute_txid(),
+                height: H + 1,
+            },
+            &destination,
+            &ctx(H + 1),
+            |_, _| OutputLookup::Unspent,
+        )
+        .unwrap();
+    let penalty = &outcome.broadcasts[0].tx;
+    let vout = penalty.input[0].previous_output.vout as usize;
+    let prevouts = [old.output[vout].clone()];
+    fresh(
+        penalty,
+        &a.resign(penalty, &prevouts, &[0xa7; 32]).unwrap(),
+        &prevouts,
+    );
+
+    // anything else is refused, not signed
+    let mut stranger = penalty.clone();
+    stranger.output[0].value = bitcoin::Amount::from_sat(1);
+    assert!(a.resign(&stranger, &prevouts, &[9; 32]).is_err());
+}

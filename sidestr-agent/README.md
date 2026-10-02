@@ -100,6 +100,65 @@ rule (the rule is `sidestr-evm`'s, and unpublished). It still reads the
 block file, without validating it (`read_assets`), and leaves every coin
 that carries an asset alone.
 
+## Hitch channels
+
+`sidestr-agent hitch` hosts [`sidestr-hitch`](https://docs.rs/sidestr-hitch)
+payment channels for the agent. It covers the parts the pure kernel leaves
+to a host: relay transport (kind 23600), funding from the wallet, the chain
+watch, durable `0600` snapshots, and broadcast (`POST /tx`, with kind 23500
+when the producer cannot be reached). Testnet and research chains only.
+
+```sh
+# once: a spend key apart from the identity, and the identity's binding of it
+sidestr-agent hitch bind --identity-file ~/.agent/identity.key --publish
+
+# the host: answers peers, follows the chain, punishes, sweeps, refunds
+sidestr-agent hitch watch --accept-from did:nostr:<peer identity>
+
+# in another shell (sent to the running host)
+sidestr-agent hitch open --peer did:nostr:<peer identity> --amount 50000
+sidestr-agent hitch pay --channel <id> --amount 7000
+sidestr-agent hitch invoice --amount 5000            # payee: prints the invoice
+sidestr-agent hitch pay --invoice @invoice.json       # payer: an HTLC
+sidestr-agent hitch close --channel <id>              # cooperative, final at 6 blocks
+sidestr-agent hitch force-close --channel <id>        # own output swept after the delay
+sidestr-agent hitch status
+```
+
+An account minted by agentbox (`sidestr-spend-key.js`) is adopted without
+its identity key:
+
+```sh
+sidestr-agent hitch bind --key-file <spend key> --import <spend key>.binding.json
+```
+
+The spend key is minted from OS entropy and is never derived from the
+identity key (agentbox ADR-2101 D3). The identity signs a kind-38420
+`sidestr-account-binding` naming it, and every channel command refuses
+the identity key. A peer named by `did:nostr` is reached through that
+binding.
+
+Everything lives in the state directory (`--state`, default
+`~/.sidestr/hitch/<chain name>`, mode `0700`). Each file is `0600` and
+written atomically:
+
+| file | holds |
+|---|---|
+| `spend.key` | `k_spend`, 64 hex |
+| `binding.json` | the signed kind-38420 event |
+| `channels/<id>.json` | the kernel's snapshot (secrets) and the host's notes |
+| `openings/<id>.json` | a handshake in progress, enough to rebuild it |
+| `invoices/<hash>.json` | an invoice and its preimage |
+| `journal.jsonl` | every message, broadcast, spend and reorganisation, with event ids, txids and heights |
+| `status.json` | the running host's last view (no secrets) |
+| `lock`, `control.sock` | one host per directory; the command socket |
+
+The chain watch checks each block's hash, link and signer's solution. It
+does not validate the transactions in them; that is `sidestr-core`'s, which
+judges every Hitch leaf, and a wallet that must not trust the producer
+replays the block file with it. Both header families are followed: stock, and BLAKE2b v2 beside
+`txbt4` (`sidestr:dreamlab-txbt4`).
+
 ## As a library
 
 ```toml

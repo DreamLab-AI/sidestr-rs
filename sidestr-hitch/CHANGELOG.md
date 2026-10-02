@@ -19,6 +19,29 @@
   `sidestr_core::channel::ChannelLeaf`, and each spend under Knots' unified
   sighash and BIP 341 against the family rules `sidestr-core` applies.
 
+### Added
+
+- `ChannelMachine::resign`: one of this peer's transactions signed again
+  with fresh randomness, so the txid is the same and the witness differs.
+  It covers a commitment or the cooperative close (this peer's funding
+  signature is made again; the other side's is read from the witness and
+  checked) and any of this peer's claims, a penalty included (re-signed
+  with the punished state's two-party revocation key). Siding from
+  `c3b9e7a` refuses, for the rest of its session, bytes it once refused or
+  evicted, so a host rebroadcasts these instead. Test
+  `a_rebroadcast_is_signed_again_with_a_fresh_witness` checks a forced
+  close, its sweep and a penalty against `sidestr-core`'s channel rules.
+
+### Fixed
+
+- A `synced` message carrying `reveals` no longer fails to parse as
+  `PeerMessage`. The map's keys are JSON strings, and the untagged enum's
+  buffering refused them as `u64`, so a host lost every secret a resync
+  sent back. They are now read as canonical decimal strings, whether the
+  message is read as `PeerMessage` or as `SyncMessage`. Found by the
+  `sidestr-agent hitch` loopback tests (stream S2). Regression test
+  `a_synced_with_reveals_round_trips_through_peer_message`.
+
 ## 0.2.0 - 2026-10-01
 
 Parity with Hitch at commit `62f8e39` (`lib/channel.mjs`, `lib/peer.mjs`,

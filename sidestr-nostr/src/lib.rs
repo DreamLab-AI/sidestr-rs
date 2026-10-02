@@ -34,6 +34,7 @@
 //! |---|---|---|---|---|
 //! | [`chain`] | the chain document as an event (its id is the chain's hash), read back verified; resolving a chain by its alias or its hash, the pre-0.0.5 way included | 3500 | 3, 11, App. A (0.0.5) | `siding/lib/announce.mjs chainEvent`, `parseChainEvent`, `resolveChain` |
 //! | [`event`] | the NIP-01 event, its id (SHA-256), BIP-340 verify, the sealed [`Signer`] port, an in-memory key | — | 11 | `siding/lib/relay.mjs makeEvents`, `schema/codec/nostr.js verifyNostrEvent`, `siding/lib/schnorr.mjs` |
+//! | [`hitch`] | a Hitch channel message as an event: `chain`, `p`, `ch`, content the message JSON, signed by the sender's channel key | 23600 | — | `hitch/hitch.js send`, `bin/hub.mjs send` |
 //! | [`kinds`] | every kind with owner (external / estate), storage class, `d` grammar and conformance | all | App. A | `docs/PROTOCOL-registry.md`, ADR-2098 |
 //! | [`tags`] | the tag grammar, the `chain` check a relay cannot do, outpoints | — | 11 | `siding/lib/relay.mjs subscribe` |
 //! | [`tip`] | the announcement: build, parse (both header families), the peg script (0.0.4), the chain hash (`e`, 0.0.5), the mirror trust rule, judging a mirror, the newest | 33333 | 11 | `siding/lib/announce.mjs` |
@@ -171,6 +172,7 @@ pub mod chain;
 pub mod error;
 pub mod estate;
 pub mod event;
+pub mod hitch;
 pub mod kinds;
 pub mod record;
 pub mod relay;

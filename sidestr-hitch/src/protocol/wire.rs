@@ -585,8 +585,13 @@ pub struct SyncMessage {
     /// State numbers for which the sender lacks our secret.
     #[serde(default)]
     pub missing: Vec<u64>,
-    /// Requested historical secrets, present on a `synced` response.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Requested historical secrets, present on a `synced` response. On
+    /// the wire the state numbers are JSON object keys, so strings.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reveals"
+    )]
     pub reveals: Option<BTreeMap<u64, Bytes32>>,
 }
 
@@ -805,6 +810,33 @@ fn lower_hex(text: &str, len: usize) -> bool {
 
 fn serialize_txid<S: Serializer>(txid: &Txid, serializer: S) -> Result<S::Ok, S::Error> {
     serializer.serialize_str(&txid.to_string())
+}
+
+/// The `reveals` map with its keys read as decimal strings. A JSON object's
+/// keys are strings. `serde_json` turns them into integers when it reads a
+/// `SyncMessage` directly, but not inside the untagged [`PeerMessage`],
+/// which buffers its content first. Without this, every `synced` that
+/// carries a secret was dropped by a host reading `PeerMessage`.
+fn deserialize_reveals<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<BTreeMap<u64, Bytes32>>, D::Error> {
+    let Some(raw) = Option::<BTreeMap<String, Bytes32>>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    raw.into_iter()
+        .map(|(k, v)| {
+            let canonical = !k.is_empty()
+                && k.bytes().all(|b| b.is_ascii_digit())
+                && (k == "0" || !k.starts_with('0'));
+            if !canonical {
+                return Err(serde::de::Error::custom("bad reveals key"));
+            }
+            k.parse::<u64>()
+                .map(|n| (n, v))
+                .map_err(|_| serde::de::Error::custom("bad reveals key"))
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()
+        .map(Some)
 }
 
 fn deserialize_txid<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Txid, D::Error> {

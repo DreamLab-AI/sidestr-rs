@@ -2,6 +2,35 @@
 
 All notable changes to `sidestr-nostr`. The crate follows semantic versioning.
 
+## Unreleased
+
+### Changed (breaking): the 38420 account binding as ADR-2098 amended
+
+- `estate::AccountBinding` now has the shape agentbox's mint writes
+  (`management-api/lib/sidestr-spend-key.js buildBinding`), tag for tag:
+  `d` = `<chain hash>:<did hex>`, or the genesis hash for a chain sealed
+  before SPEC 0.0.5; `alias`; `genesis`; `chain` = the hash, or `legacy` =
+  `pre-0.0.5`; `alt`. ADR-2098 as amended: "38420–38425 carry the chain
+  hash, never the alias". Fields: `alias` (was `chain_id`) and a new
+  `chain_hash: Option<String>`; `AccountBinding::chain_key`; `LEGACY`,
+  `TAG_ALIAS`, `TAG_LEGACY`. `binding_address` takes the chain key, and
+  `parse_binding_address` requires two 64-hex halves. `parse_account_binding`
+  refuses a `d` key that is not the `chain` tag's hash (or the genesis under
+  `legacy`), and an event carrying both or neither. The id of the same
+  binding equals agentbox's own (known-answer test in `sidestr-agent`).
+  Registry row: `d` = "chain hash : did hex".
+
+### Added (Hitch host, stream S2)
+
+- `hitch`: Hitch's channel message as an event, kind 23600 (`hitch.js
+  send`, `bin/hub.mjs send` at Hitch `62f8e39`). `message_event` and
+  `sign_message` build it with the tags `chain`, `p` = the recipient and
+  `ch` = the channel id, and the message JSON as content. The event is
+  signed by the sender's channel key, not encrypted. `parse_message` reads
+  the envelope back, checked against the expected chain. The content stays
+  opaque JSON; `sidestr-hitch` owns the messages. `kinds::KIND_HITCH_MESSAGE`
+  and a 20th `REGISTRY` row (external, ephemeral, ported).
+
 ## 0.5.0 (2026-10-02)
 
 ### Tests

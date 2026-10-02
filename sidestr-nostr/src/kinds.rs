@@ -40,6 +40,10 @@ pub const KIND_FAUCET_REQUEST: u32 = 23501;
 /// hex, tagged like a transaction; a producer with a parent node broadcasts it
 /// if and only if the node's own mempool policy accepts it (SPEC 11, 0.0.4).
 pub const KIND_PARENT_TRANSACTION: u32 = 23503;
+/// A Hitch channel message (Melvin Carvalho's Hitch, `hitch.js send`):
+/// `chain`, `p` = the recipient, `ch` = the channel id, content the message
+/// JSON, signed by the sender's channel key ([`crate::hitch`]).
+pub const KIND_HITCH_MESSAGE: u32 = 23600;
 /// Level-2 block proposal: content the block hex without its solution (SPEC 9.1).
 pub const KIND_BLOCK_PROPOSAL: u32 = 23510;
 /// Level-2 partial block signature, `e` = the proposal (SPEC 9.1).
@@ -131,7 +135,7 @@ pub struct KindInfo {
 /// The registry, in kind order. The `d_tag` texts say "chain id" where SPEC
 /// 0.0.5 says "chain alias": the same value, `sidestr:<name>`; the rows are
 /// kept as they were published.
-pub const REGISTRY: [KindInfo; 19] = [
+pub const REGISTRY: [KindInfo; 20] = [
     KindInfo {
         kind: KIND_CHAIN_DOCUMENT,
         name: "chain document",
@@ -223,6 +227,16 @@ pub const REGISTRY: [KindInfo; 19] = [
         source: "siding/lib/round.mjs maybeSeal",
     },
     KindInfo {
+        kind: KIND_HITCH_MESSAGE,
+        name: "hitch message",
+        owner: Owner::External,
+        class: Class::Ephemeral,
+        d_tag: None,
+        conformance: Conformance::Ported,
+        spec: "Hitch lib/peer.mjs (62f8e39)",
+        source: "hitch/hitch.js send, bin/hub.mjs send",
+    },
+    KindInfo {
         kind: KIND_TIP,
         name: "tip",
         owner: Owner::External,
@@ -267,7 +281,7 @@ pub const REGISTRY: [KindInfo; 19] = [
         name: "sidestr-account-binding",
         owner: Owner::Estate,
         class: Class::Addressable,
-        d_tag: Some("chain id : did hex"),
+        d_tag: Some("chain hash : did hex"),
         conformance: Conformance::Estate,
         spec: "ADR-2098 D2, ADR-2101 D4",
         source: "docs/PROTOCOL-registry.md",

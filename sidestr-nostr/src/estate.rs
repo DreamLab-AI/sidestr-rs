@@ -4,14 +4,25 @@
 //!
 //! # The account binding, 38420
 //!
-//! `sidestr-account-binding`: addressable, `d` = `<chain id>:<did hex>`,
-//! content = the derived spend pubkey, **signed by the identity key**. The
-//! binding says "on this chain, this principal spends with this key"; because
-//! the identity key signs it, the `did hex` in `d` must be the event's author
-//! ([`parse_account_binding`] refuses otherwise), and because "a name is
-//! never monetary identity" (ADR-2098 amendment) it pins the genesis hash in a
-//! `genesis` tag. Re-sealing a chain under the same name is a different
-//! genesis, so a binding to the old one does not carry over.
+//! `sidestr-account-binding`: addressable, **signed by the identity key**,
+//! content the spend pubkey. It says "on this chain, this principal spends
+//! with this key". The shape follows ADR-2098 as amended for SPEC 0.0.5
+//! ("38420–38425 carry the chain hash, never the alias") and the estate's
+//! own mint (agentbox `management-api/lib/sidestr-spend-key.js`
+//! `buildBinding`), tag for tag:
+//!
+//! | tag | value |
+//! |---|---|
+//! | `d` | `<chain key>:<did hex>`: the chain key is the chain's hash (its kind-3500 event id), or its genesis hash for a chain sealed before 0.0.5 |
+//! | `alias` | the chain's alias, `sidestr:<name>`, a name for people only |
+//! | `genesis` | the genesis hash |
+//! | `chain` or `legacy` | the chain hash, or `legacy` = `pre-0.0.5` when there is none |
+//! | `alt` | NIP-31 text |
+//!
+//! The DID in `d` must be the event's author ([`parse_account_binding`]
+//! refuses otherwise). A name is never monetary identity: a chain re-sealed
+//! under the same alias has another genesis and another hash, so a binding
+//! to the old one does not carry over.
 //!
 //! # The domain events, 38421–38425
 //!
@@ -37,13 +48,15 @@
 //!
 //! let identity = SecretKeySigner::from_bytes(&[11u8; 32]).unwrap();
 //! let b = AccountBinding {
-//!     chain_id: "sidestr:dreamlab".into(),
-//!     genesis_hash: "4d".repeat(32),
+//!     alias: "sidestr:dreamlab-txbt4".into(),
+//!     chain_hash: None, // sealed before 0.0.5: keyed by its genesis
+//!     genesis_hash: "1009aa2984d5c699fe61ef1e5905afe472a49d67551542045726828c8b82d108".into(),
 //!     did_hex: identity.pubkey_hex().unwrap(),
 //!     spend_pubkey: "ab".repeat(32),
 //! };
 //! let ev = sign_account_binding(&identity, &b, 1_790_100_000).unwrap();
-//! assert_eq!(ev.tags[0][1], format!("sidestr:dreamlab:{}", b.did_hex));
+//! assert_eq!(ev.tags[0][1], format!("{}:{}", b.genesis_hash, b.did_hex));
+//! assert_eq!(ev.tags[3], vec!["legacy", "pre-0.0.5"]);
 //! assert_eq!(parse_account_binding(&ev).unwrap(), b);
 //! ```
 
@@ -55,7 +68,7 @@ use crate::kinds::{
     expect_kind, KIND_ACCOUNT_BINDING, KIND_CHAIN_TOMBSTONED, KIND_CHILD_CHAIN_CLOSING,
     KIND_CHILD_CHAIN_OPENED, KIND_PEGOUT_DEFAULTED, KIND_SETTLEMENT_RECORDED,
 };
-use crate::tags::{first, required, tag, Outpoint, TAG_CHAIN, TAG_D, TAG_GENESIS};
+use crate::tags::{first, required, tag, Outpoint, TAG_ALT, TAG_CHAIN, TAG_D, TAG_GENESIS};
 
 /// An `urn:agentbox:` identifier minted elsewhere (ADR-013). This crate
 /// never composes one; it checks the prefix and carries the string.
@@ -102,54 +115,82 @@ impl core::fmt::Display for Urn {
 /// The 38420 binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountBinding {
-    /// The chain, `sidestr:<name>`.
-    pub chain_id: String,
-    /// The chain's genesis hash, 64 hex: the monetary identity the name alone is not.
+    /// The chain's alias, `sidestr:<name>` (`alias` tag): a name, not the key.
+    pub alias: String,
+    /// The chain's hash, its kind-3500 event id (`chain` tag), 64 hex; `None`
+    /// for a chain sealed before SPEC 0.0.5 (`legacy` tag), which is keyed by
+    /// its genesis hash instead.
+    pub chain_hash: Option<String>,
+    /// The chain's genesis hash, 64 hex.
     pub genesis_hash: String,
     /// The principal's identity pubkey, 64 hex — the event's author.
     pub did_hex: String,
-    /// The derived spend pubkey on this chain, 64 hex (ADR-2101 D3: never the identity key).
+    /// The spend pubkey on this chain, 64 hex (ADR-2101 D3: never the identity key).
     pub spend_pubkey: String,
 }
 
-/// The `d` value of a binding: `<chain id>:<did hex>`.
-pub fn binding_address(chain_id: &str, did_hex: &str) -> String {
-    format!("{chain_id}:{did_hex}")
-}
-
-/// Split a binding `d`. The chain id contains a colon, so the DID is what
-/// follows the last one and must be 64 hex.
-pub fn parse_binding_address(d: &str) -> Result<(String, String)> {
-    let (chain, did) = d.rsplit_once(':').ok_or_else(|| Error::Tag {
-        tag: TAG_D,
-        reason: format!("{d:?} is not <chain id>:<did hex>"),
-    })?;
-    if chain.is_empty() {
-        return Err(Error::Tag {
-            tag: TAG_D,
-            reason: format!("{d:?} names no chain"),
-        });
+impl AccountBinding {
+    /// The chain key the `d` tag carries: the chain hash, else the genesis hash.
+    pub fn chain_key(&self) -> &str {
+        self.chain_hash.as_deref().unwrap_or(&self.genesis_hash)
     }
-    let did = hex_of("did hex", did, 32).map_err(|e| Error::Tag {
-        tag: TAG_D,
-        reason: e.to_string(),
-    })?;
-    Ok((chain.to_string(), did))
 }
 
-/// The unsigned 38420: `d`, `chain`, `genesis`; content the spend pubkey.
+/// The value of `legacy` on a binding to a chain without a chain hash.
+pub const LEGACY: &str = "pre-0.0.5";
+/// The tag naming the chain's alias.
+pub const TAG_ALIAS: &str = "alias";
+/// The tag a binding to a pre-0.0.5 chain carries instead of `chain`.
+pub const TAG_LEGACY: &str = "legacy";
+
+/// The `d` value of a binding: `<chain key>:<did hex>`, where the chain key
+/// is the chain hash, or the genesis hash for a pre-0.0.5 chain
+/// (agentbox `pay402.js sidestrBindingD`).
+pub fn binding_address(chain_key: &str, did_hex: &str) -> String {
+    format!("{chain_key}:{did_hex}")
+}
+
+/// Split a binding `d` into its chain key and DID, both 64 hex.
+pub fn parse_binding_address(d: &str) -> Result<(String, String)> {
+    let bad = |reason: String| Error::Tag { tag: TAG_D, reason };
+    let (key, did) = d
+        .split_once(':')
+        .ok_or_else(|| bad(format!("{d:?} is not <chain key>:<did hex>")))?;
+    let key = hex_of("chain key", key, 32).map_err(|e| bad(e.to_string()))?;
+    let did = hex_of("did hex", did, 32).map_err(|e| bad(e.to_string()))?;
+    Ok((key, did))
+}
+
+/// The unsigned 38420, in the estate mint's tag order: `d`, `alias`,
+/// `genesis`, `chain` or `legacy`, `alt`; content the spend pubkey.
 pub fn account_binding_event(b: &AccountBinding, created_at: u64) -> Result<UnsignedEvent> {
+    let did = hex_of("did hex", &b.did_hex, 32)?;
+    let genesis = hex_of("genesis hash", &b.genesis_hash, 32)?;
+    let chain = b
+        .chain_hash
+        .as_deref()
+        .map(|h| hex_of("chain hash", h, 32))
+        .transpose()?;
+    let key = chain.clone().unwrap_or_else(|| genesis.clone());
     Ok(UnsignedEvent {
-        pubkey: hex_of("did hex", &b.did_hex, 32)?,
+        pubkey: did.clone(),
         created_at,
         kind: KIND_ACCOUNT_BINDING,
         tags: vec![
+            tag(TAG_D, binding_address(&key, &did)),
+            tag(TAG_ALIAS, &b.alias),
+            tag(TAG_GENESIS, genesis),
+            match chain {
+                Some(h) => tag(TAG_CHAIN, h),
+                None => tag(TAG_LEGACY, LEGACY),
+            },
             tag(
-                TAG_D,
-                binding_address(&b.chain_id, &b.did_hex.to_ascii_lowercase()),
+                TAG_ALT,
+                format!(
+                    "sidestr account binding: the spend key of did:nostr:{did} on {}",
+                    b.alias
+                ),
             ),
-            tag(TAG_CHAIN, &b.chain_id),
-            tag(TAG_GENESIS, hex_of("genesis hash", &b.genesis_hash, 32)?),
         ],
         content: hex_of("spend pubkey", &b.spend_pubkey, 32)?,
     })
@@ -171,29 +212,43 @@ pub fn sign_account_binding(
     sign(signer, account_binding_event(b, created_at)?)
 }
 
-/// Decode a 38420. The `d` DID must be the author. Does not verify the
-/// signature.
+/// Decode a 38420. The `d` DID must be the author, and the `d` chain key
+/// must be the `chain` tag's hash, or the genesis hash under `legacy`. Does
+/// not verify the signature.
 pub fn parse_account_binding(ev: &Event) -> Result<AccountBinding> {
     expect_kind(ev.kind, KIND_ACCOUNT_BINDING, "sidestr-account-binding")?;
-    let (chain_id, did_hex) = parse_binding_address(required(&ev.tags, TAG_D)?)?;
+    let (key, did_hex) = parse_binding_address(required(&ev.tags, TAG_D)?)?;
     if !ev.pubkey.eq_ignore_ascii_case(&did_hex) {
         return Err(Error::Chain(format!(
             "binding for {did_hex} is signed by {}: not the identity key",
             ev.pubkey
         )));
     }
-    if let Some(c) = first(&ev.tags, TAG_CHAIN) {
-        if c != chain_id {
-            return Err(Error::Disagree {
-                tag: TAG_CHAIN,
-                tag_value: c.to_string(),
-                content_value: chain_id,
-            });
+    let genesis_hash = hex_of("genesis hash", required(&ev.tags, TAG_GENESIS)?, 32)?;
+    let chain_hash = first(&ev.tags, TAG_CHAIN)
+        .map(|h| hex_of("chain hash", h, 32))
+        .transpose()?;
+    let expected = match (&chain_hash, first(&ev.tags, TAG_LEGACY)) {
+        (Some(h), None) => h.clone(),
+        (None, Some(_)) => genesis_hash.clone(),
+        (Some(_), Some(_)) => {
+            return Err(Error::Content(
+                "a binding carries a chain hash or legacy, not both".into(),
+            ))
         }
+        (None, None) => return Err(Error::MissingTag(TAG_CHAIN)),
+    };
+    if key != expected {
+        return Err(Error::Disagree {
+            tag: TAG_D,
+            tag_value: key,
+            content_value: expected,
+        });
     }
     Ok(AccountBinding {
-        chain_id,
-        genesis_hash: hex_of("genesis hash", required(&ev.tags, TAG_GENESIS)?, 32)?,
+        alias: required(&ev.tags, TAG_ALIAS)?.to_string(),
+        chain_hash,
+        genesis_hash,
         did_hex,
         spend_pubkey: hex_of("spend pubkey", &ev.content, 32)?,
     })
@@ -434,7 +489,8 @@ mod tests {
     }
     fn binding() -> AccountBinding {
         AccountBinding {
-            chain_id: "sidestr:dreamlab".into(),
+            alias: "sidestr:dreamlab".into(),
+            chain_hash: Some("cd".repeat(32)),
             genesis_hash: "4D".repeat(32),
             did_hex: identity().pubkey_hex().unwrap(),
             spend_pubkey: "ab".repeat(32),
@@ -462,14 +518,31 @@ mod tests {
     fn binding_round_trip() {
         let ev = sign_account_binding(&identity(), &binding(), 1).unwrap();
         assert_eq!(ev.kind, 38420);
+        let did = identity().pubkey_hex().unwrap();
+        assert_eq!(
+            ev.tags[0],
+            vec!["d".to_string(), format!("{}:{did}", "cd".repeat(32))]
+        );
+        assert_eq!(ev.tags[1], vec!["alias", "sidestr:dreamlab"]);
         assert_eq!(ev.tags[2], vec!["genesis", &"4d".repeat(32)]);
+        assert_eq!(ev.tags[3], vec!["chain", &"cd".repeat(32)]);
+        assert_eq!(ev.tags[4][0], "alt");
         let b = parse_account_binding(&ev).unwrap();
         assert_eq!(b.genesis_hash, "4d".repeat(32));
-        assert_eq!(b.chain_id, "sidestr:dreamlab");
+        assert_eq!(b.chain_key(), "cd".repeat(32));
+        assert_eq!(b.alias, "sidestr:dreamlab");
+        // a pre-0.0.5 chain is keyed by its genesis and tagged legacy
+        let legacy = AccountBinding {
+            chain_hash: None,
+            ..binding()
+        };
+        let ev = sign_account_binding(&identity(), &legacy, 1).unwrap();
         assert_eq!(
             parse_binding_address(&ev.tags[0][1]).unwrap().0,
-            "sidestr:dreamlab"
+            "4d".repeat(32)
         );
+        assert_eq!(ev.tags[3], vec!["legacy", "pre-0.0.5"]);
+        assert_eq!(parse_account_binding(&ev).unwrap().chain_hash, None);
     }
 
     #[test]
@@ -479,7 +552,6 @@ mod tests {
             sign_account_binding(&other, &binding(), 1),
             Err(Error::Key(_))
         ));
-        // an event whose d names a DID other than its author
         let mut b = binding();
         b.did_hex = other.pubkey_hex().unwrap();
         let ev = sign_account_binding(&other, &b, 1).unwrap();
@@ -489,14 +561,27 @@ mod tests {
             parse_account_binding(&forged),
             Err(Error::Chain(_))
         ));
-        let mut chain = ev.clone();
-        chain.tags[1][1] = "sidestr:other".into();
+        // d keyed by something other than the chain tag's hash
+        let mut moved = ev.clone();
+        moved.tags[3][1] = "ef".repeat(32);
         assert!(matches!(
-            parse_account_binding(&chain),
-            Err(Error::Disagree { tag: "chain", .. })
+            parse_account_binding(&moved),
+            Err(Error::Disagree { tag: "d", .. })
+        ));
+        let mut both = ev.clone();
+        both.tags.push(vec!["legacy".into(), LEGACY.into()]);
+        assert!(matches!(
+            parse_account_binding(&both),
+            Err(Error::Content(_))
+        ));
+        let mut neither = ev.clone();
+        neither.tags.remove(3);
+        assert!(matches!(
+            parse_account_binding(&neither),
+            Err(Error::MissingTag("chain"))
         ));
         let mut nog = ev.clone();
-        nog.tags.pop();
+        nog.tags.remove(2);
         assert!(matches!(
             parse_account_binding(&nog),
             Err(Error::MissingTag("genesis"))
@@ -507,7 +592,8 @@ mod tests {
             parse_account_binding(&short),
             Err(Error::Hex { .. })
         ));
-        assert!(parse_binding_address("sidestr:x:zz").is_err());
+        // the alias is never a chain key
+        assert!(parse_binding_address(&format!("sidestr:x:{}", "ab".repeat(32))).is_err());
         assert!(parse_binding_address(&format!(":{}", "ab".repeat(32))).is_err());
         assert!(account_binding_event(
             &AccountBinding {

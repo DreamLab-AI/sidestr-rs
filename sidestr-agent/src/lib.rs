@@ -31,6 +31,7 @@
 //! | [`pegin_plan`] | what a parent wallet pays to peg in: the peg address (and its refund descriptor), the marker |
 //! | [`pegin_tweak_plan`] | opt-in: the peg-in tweak form, one output committing to the chain hash and script, its descriptor and reveal |
 //! | [`chain`] | the chain document as a kind-3500 event, signed by the chain's signer (its id is the chain's hash, SPEC 0.0.5); finding a chain by its alias or its hash |
+//! | [`hitch`] | a host for Hitch payment channels: the spend key bound to the identity (ADR-2101 D3), kind-23600 transport, the chain watch, `0600` atomic snapshots and (feature `cli`) the engine behind `sidestr-agent hitch` |
 //!
 //! It is a port in the AGPL sense: it builds on `sidestr-core`,
 //! `sidestr-wallet` and `sidestr-nostr`, which port **siding**, the
@@ -84,6 +85,7 @@
 )]
 
 pub mod chain;
+pub mod hitch;
 
 use std::str::FromStr;
 
@@ -250,6 +252,13 @@ impl AgentKey {
     /// The key as the wallet's spend signer.
     pub fn spend_signer(&self) -> PlainKey {
         PlainKey::new(self.secret)
+    }
+
+    /// The secret key itself, for the channel kernel (a Hitch channel key is
+    /// the spend key). Crate-internal: the secret never leaves through the
+    /// public API.
+    pub(crate) fn secret_key(&self) -> SecretKey {
+        self.secret
     }
 
     /// The key as a Nostr event signer.

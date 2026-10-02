@@ -1,0 +1,30 @@
+{
+ "kind": 38420,
+ "created_at": 1790974203,
+ "tags": [
+  [
+   "d",
+   "1009aa2984d5c699fe61ef1e5905afe472a49d67551542045726828c8b82d108:32029837ef5c5b23e271fac22e87e2777183e20eec9ff9c681c641b643e1315d"
+  ],
+  [
+   "alias",
+   "sidestr:dreamlab-txbt4"
+  ],
+  [
+   "genesis",
+   "1009aa2984d5c699fe61ef1e5905afe472a49d67551542045726828c8b82d108"
+  ],
+  [
+   "legacy",
+   "pre-0.0.5"
+  ],
+  [
+   "alt",
+   "sidestr account binding: the spend key of did:nostr:32029837ef5c5b23e271fac22e87e2777183e20eec9ff9c681c641b643e1315d on sidestr:dreamlab-txbt4"
+  ]
+ ],
+ "content": "add2bae7782fe93369b6a8f5ba0d732fcc74bd665250dc111d7e4b349f0a05e7",
+ "pubkey": "32029837ef5c5b23e271fac22e87e2777183e20eec9ff9c681c641b643e1315d",
+ "id": "194ddea7869de31eece2aa3d55aa0f669a5fad11716c63ffc3536e6325ca880b",
+ "sig": "b900d8eb21c854f44ebabfdbe76649e54755ee4da21c17f9662bf4143c51dae48e1e9a1f5283c4206b493f1b184c0427276541780388b2f03c6c6e36acee320b"
+}

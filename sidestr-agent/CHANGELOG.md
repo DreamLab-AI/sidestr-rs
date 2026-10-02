@@ -2,6 +2,78 @@
 
 All notable changes to `sidestr-agent`. The crate follows semantic versioning.
 
+## Unreleased
+
+### Added: the Hitch host (stream S2, TODO N-10)
+
+- `hitch` subcommands host `sidestr-hitch` 0.2 channels for an agent:
+  `bind`, `open`, `invoice`, `pay`, `close`, `force-close`, `watch` and
+  `status`, plus a hidden developer `cheat` (`SIDESTR_HITCH_DEVELOPER=1`).
+  A command goes to the running `watch` daemon over `<state>/control.sock`.
+  With no daemon running, it takes the state lock and runs the host itself
+  until its outcome: open, payment final, close settled at `CLOSE_DEPTH`.
+- ADR-2101 D3 (research stage): `hitch bind` mints the spend key `k_spend`
+  from OS entropy, never from `k_id`, and has `k_id` sign the kind-38420
+  binding that names it (`hitch::binding`). Every channel command checks
+  its key against the binding and refuses the identity key ("k_id never
+  spends") before it touches the network. A peer named by `did:nostr` is
+  resolved through its binding. The known-answer test pins
+  `tests/fixtures/hitch-binding-kat.json`, computed independently by
+  siding's BIP-340 code.
+- `hitch::envelope`: kind-23600 transport over the shared relay pool. A
+  message is taken only when it is addressed here and tagged with this
+  chain, its signature verifies, and its `ch` tag agrees with its content.
+- `hitch::follow`: the chain watch over `blocks.json` and ranged
+  `blocks.dat` from the producer, or the mirror when the producer is down.
+  Each block's hash, link and solution are checked, for stock headers and
+  for BLAKE2b v2 headers beside `txbt4` (`sidestr:dreamlab-txbt4`, its
+  live genesis pinned as a fixture). Reorganisations are
+  found and measured, and the transactions they undid are listed.
+- `hitch::store`: `0600` files written atomically (exclusive temporary
+  file, `fsync`, rename, directory `fsync`) in a `0700` directory. A
+  secret file readable by others is refused.
+- `hitch::host` (feature `cli`, Unix): saves the snapshot before anything is
+  sent, and restores it if the save fails. Funding comes from the spend
+  key's plain coins. Broadcasts go to `POST /tx`, with a kind-23500
+  fallback when the producer cannot be reached. The watch loop confirms
+  funding at `MIN_CONF` and publishes the penalty against a revoked
+  commitment at once. It sweeps after the CSV delay and refunds HTLCs after
+  expiry. Reorganisations are handled: a spend they undo is taken back, and
+  this host's undone transactions are published again once their locks
+  allow. Everything is journalled in `journal.jsonl` with event ids, txids
+  and heights.
+- Integration tests on a loopback siding at 2-second blocks, with two
+  processes and two key pairs: cooperative close, force-close by either
+  side, the penalty, a reorganisation during a close, and an HTLC refunded
+  after its expiry. The cooperative close runs on both header families,
+  stock and BLAKE2b v2 beside `txbt4`. Every run ends with `sidestr-core`
+  replaying the producer's block file to the producer's tip hash (stream
+  S1's leaves), so a Rust validator agrees about every channel spend.
+- Never early, never the same bytes twice (S1's findings on siding
+  `fa86dac` and `c3b9e7a`). Before every `POST /tx`, the host checks each
+  input's BIP 68 lock and the `nLockTime` with `sidestr-core`'s
+  `earliest_height` against the next block (`hitch::host::premature`). A
+  transaction that may not yet be mined is held back and sent when it may,
+  so the reference never admits a transaction it then cannot mine. Every
+  send is signed afresh: a channel's transactions through
+  `ChannelMachine::resign`, a funding of the spend key's own coins on the
+  key path. A refused or evicted transaction is therefore resent with the
+  same txid and a different witness. An unconfirmed funding is resent
+  every 3 blocks. The loopback test
+  `a_refused_broadcast_is_resent_with_a_fresh_witness_and_never_early` runs
+  behind a proxy that refuses each transaction's first post. The funding,
+  the commitment and the sweep are each resent with a new witness, and
+  every post is checked against its locks.
+- `hitch bind --import <binding.json> --key-file <spend key>` adopts a
+  binding agentbox minted (`<spend key>.binding.json`), verified against
+  the chain and the spend key, without reading k_id. `--chain-hash` binds
+  on a chain sealed at SPEC 0.0.5 or later. Bindings follow the amended
+  38420 shape. A binding agentbox minted for `demo-a` on
+  `sidestr:dreamlab-txbt4` is a test fixture and verifies.
+- New dependencies: `sidestr-hitch` 0.2; `sidestr-header` 0.3.1 (the
+  BLAKE2b family); `rustix` (the state lock, under
+  `cli`); tokio's `net`, `signal` and `io-util` features under `cli`.
+
 ## 0.5.0 (2026-10-02)
 
 ### Added

@@ -2,7 +2,8 @@
 //! penalties, delayed sweeps and HTLC claims, and follow every output until
 //! it is settled on the chain.
 
-use bitcoin::{OutPoint, ScriptBuf, Transaction, Txid};
+use bitcoin::taproot::{LeafVersion, TapLeafHash};
+use bitcoin::{OutPoint, ScriptBuf, Transaction, TxOut, Txid, Witness};
 use serde::{Deserialize, Serialize};
 
 use super::machine::{ChannelMachine, FundingSpend, ProtocolState};
@@ -11,8 +12,8 @@ use super::{
     WireSide, CLAIM_REBROADCAST, CLOSE_DEPTH,
 };
 use crate::{
-    claim_htlc, preimage_in, revocation_key, sweep_to_local, CommitmentHtlc, HtlcClaim,
-    HtlcClaimPath, SweepPath,
+    claim_htlc, preimage_in, revocation_key, sign_leaf, sweep_to_local, CommitmentHtlc, HtlcClaim,
+    HtlcClaimPath, LeafSignature, SweepPath,
 };
 
 type TxHex = bitcoin::consensus::serde::With<bitcoin::consensus::serde::Hex>;
@@ -661,6 +662,87 @@ impl ChannelMachine {
             }
         }
         broadcasts
+    }
+
+    /// One of this peer's own transactions signed again with fresh
+    /// randomness `aux`: the same transaction (the same txid), a different
+    /// witness. A host sends this instead of the stored bytes whenever it
+    /// broadcasts a transaction a second time: a producer that refused or
+    /// evicted the first bytes (siding from `c3b9e7a` keeps a per-session
+    /// reject map keyed on the exact bytes) judges these afresh.
+    ///
+    /// `tx` is a spend of the funding output (a commitment of this peer's or
+    /// the cooperative close): this peer's funding signature is made again
+    /// and the other side's, read from the witness and checked, is kept. Or
+    /// it is one of this peer's [`Self::claims`]: its single leaf signature is
+    /// made again with the key that made it (the channel key, or for a
+    /// penalty the two-party revocation key of the punished state).
+    /// `prevouts` are the outputs `tx` spends. Nothing in the machine
+    /// changes.
+    pub fn resign(
+        &self,
+        tx: &Transaction,
+        prevouts: &[TxOut],
+        aux: &[u8; 32],
+    ) -> Result<Transaction, ProtocolError> {
+        if tx.input.len() != 1 || prevouts.len() != 1 {
+            return Err(ProtocolError::Malformed(
+                "a channel transaction has one input",
+            ));
+        }
+        let mut unsigned = tx.clone();
+        unsigned.input[0].witness = Witness::new();
+        let mut out = tx.clone();
+        if tx.input[0].previous_output == self.channel.funding_outpoint {
+            let theirs = tx.input[0]
+                .witness
+                .iter()
+                .filter_map(|item| LeafSignature::from_slice(item).ok())
+                .find(|sig| {
+                    self.channel
+                        .verify_funding(&unsigned, &self.peer_key(), sig, self.rules)
+                })
+                .ok_or(ProtocolError::BadSignature)?;
+            let mine = self
+                .channel
+                .sign_funding(&unsigned, &self.channel_key, self.rules, aux)?;
+            out.input[0].witness =
+                self.channel
+                    .funding_witness(&std::collections::BTreeMap::from([
+                        (self.my_key(), mine),
+                        (self.peer_key(), theirs),
+                    ]))?;
+            return Ok(out);
+        }
+        let txid = tx.compute_txid();
+        let claim = self
+            .claims
+            .iter()
+            .find(|c| c.txid == txid)
+            .ok_or(ProtocolError::Malformed(
+                "not a transaction of this channel",
+            ))?;
+        let key = match claim.kind {
+            ClaimKind::PenaltyToLocal | ClaimKind::PenaltyHtlc(_) => {
+                let n = self.close_state.ok_or(ProtocolError::MissingState(0))?;
+                let theirs = self
+                    .their_revocation
+                    .get(&n)
+                    .ok_or(ProtocolError::MissingReveal(n))?;
+                revocation_key(&self.my_revocation_base, theirs)?
+            }
+            _ => self.channel_key,
+        };
+        let mut items: Vec<Vec<u8>> = tx.input[0].witness.to_vec();
+        if items.len() < 3 {
+            return Err(ProtocolError::Malformed("a claim's witness is too short"));
+        }
+        let script = ScriptBuf::from_bytes(items[items.len() - 2].clone());
+        let leaf_hash = TapLeafHash::from_script(&script, LeafVersion::TapScript);
+        let sig = sign_leaf(&unsigned, 0, prevouts, leaf_hash, &key, self.rules, aux)?;
+        items[0] = sig.as_bytes().to_vec();
+        out.input[0].witness = Witness::from_slice(&items);
+        Ok(out)
     }
 
     /// Outputs of a punished close that the other side took before the

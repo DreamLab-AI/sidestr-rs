@@ -133,3 +133,40 @@ depth.
 **Activation.** The `activation_status` above is unchanged. Recognising
 Hitch spends in the validators is what makes activation safe; it does not
 activate Hitch on the DreamLab instance.
+
+## Amendment, 2026-10-02: the Hitch host
+
+The review trigger fired: an estate chain is to run Hitch (owner decisions
+SC4 and SC6, 2026-10-02: Hitch is in scope, and force-close with penalty,
+timeout and reorganisation handling is required). Decision 3 is kept, and
+this amendment places the host it calls for.
+
+- The host lives in `sidestr-agent` (`hitch` module, `sidestr-agent hitch`
+  subcommands), not in `sidestr-hitch` and not in `sidestr-core`. The
+  kernel stays pure. The new edge is `sidestr-agent → sidestr-hitch`. The
+  graph stays acyclic and `sidestr-core` gains no channel dependency.
+- The host's I/O sits behind `sidestr-agent`'s `cli` feature and Unix:
+  relays, HTTP, the state lock and the control socket. With default
+  features off, the library keeps only the pure parts: the binding, the
+  23600 envelope and the chain follower.
+- The kind-23600 envelope is a named constructor in `sidestr-nostr`
+  (`hitch` module, an external, ephemeral registry row). That crate keeps
+  its rule that only named constructors sign.
+- The host's chain watch reads blocks without validating their
+  transactions. It checks hashes, links and the signer's solution, and
+  trusts the producer for transaction validity. It follows both header
+  families; the BLAKE2b one comes from `sidestr-header`. Validation is
+  `sidestr-core`'s (the amendment above). The loopback tests run the
+  JavaScript producer and finish every channel run by replaying its block
+  file through `sidestr_core::state::StateOf` to the producer's tip hash.
+  The host never publishes a CSV or CLTV spend before its lock, including
+  when it republishes after a reorganisation, because the reference admits
+  a lock-immature transaction and then cannot produce (the finding above).
+- Key separation follows agentbox ADR-2101 D3, research stage. The channel
+  key is a spend key minted from OS entropy. The identity key signs the
+  kind-38420 binding that names it and never spends, and the host refuses
+  it.
+
+Activation is still recorded separately: `activation_status` stays
+`inactive` until a channel has opened, paid and closed on `sidestr:dreamlab`
+with a receipt.

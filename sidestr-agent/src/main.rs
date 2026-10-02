@@ -216,6 +216,12 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Hitch payment channels (sidestr-hitch 0.2) hosted for this agent:
+    /// `bind` the spend key to the identity (ADR-2101 D3), then `open`,
+    /// `invoice`, `pay`, `close` or `force-close` a session channel, with
+    /// `watch` following the chain for penalties, sweeps, HTLC timeouts and
+    /// reorganisations; `status` shows them.
+    Hitch(hitch_cli::HitchArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -317,6 +323,7 @@ async fn main() {
 }
 
 mod faucet;
+mod hitch_cli;
 
 async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     match &cli.cmd {
@@ -640,6 +647,7 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
                 ),
             }))
         }
+        Cmd::Hitch(h) => hitch_cli::run(cli, h).await,
     }
 }
 
