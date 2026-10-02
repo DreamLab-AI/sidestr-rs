@@ -20,7 +20,49 @@
 //! assert_eq!(parent_alias("doge"), None);
 //! assert!(resolve_parent("ltc").is_err()); // reserved until a validator carries it
 //! ```
+//!
+//! # A sidestr chain as a parent (SPEC 3, 3.1): a departure
+//!
+//! SPEC 0.0.5 lets a nested chain's `parent` be a sidestr chain's **hash**,
+//! the id of its kind-3500 chain event, and says the child inherits the
+//! siding's rules as the siding inherits its parent's. The reference does
+//! not carry that yet: `parents.mjs` at `e8deb63` knows the table alone, and
+//! `resolveParent` throws "unknown parent" for a hash. [`resolve_parent`]
+//! keeps that behaviour exactly, so a validator built on it judges every
+//! document as siding does.
+//!
+//! [`resolve_parent_with`] is this port's addition, recorded as a departure
+//! under ADR-0001 D4 and tested as one (`tests/nested_parent.rs` runs
+//! `parents.mjs` on the same input and holds it to its refusal): given a
+//! hash, it asks the caller for the parent chain's document (which the caller
+//! reads from the chain event whose id is that hash, as `sidestr-nostr`'s
+//! `chain::resolve_nested_parent` does), and follows `parent` down until it
+//! reaches a row of the table. The header family, the proof of work and the
+//! key encodings are the root's ([`ParentRef`]); nothing in a document names
+//! them. It follows the SPEC's prose, which no executable reference pins yet:
+//! when upstream's `parents.mjs` learns hashes, this is held to it.
+//!
+//! ```
+//! use sidestr_core::document::ChainDocument;
+//! use sidestr_core::parents::{resolve_parent, resolve_parent_with, Family, ParentRef};
+//!
+//! // a siding beside txbt4, published as a chain event whose id is `hash`
+//! let siding = ChainDocument::from_json(include_str!("../fixtures/trial/chain.json")).unwrap();
+//! let siding = ChainDocument { parent: "txbt4".into(), ..siding };
+//! let hash = "5d".repeat(32);
+//!
+//! assert!(resolve_parent(&hash).is_err()); // the reference's answer, unchanged
+//! let p = resolve_parent_with(&hash, |h| {
+//!     assert_eq!(h, hash);
+//!     Ok(siding.clone())
+//! })
+//! .unwrap();
+//! assert_eq!(p.family(), Family::Blake2b); // inherited from txbt4 through the siding
+//! assert_eq!(p.depth(), 1);
+//! assert!(matches!(p, ParentRef::Chain(ref n) if n.alias == siding.id));
+//! ```
 
+use crate::document::ChainDocument;
 use crate::error::{Error, Result};
 
 /// The header family a chain inherits from its parent (SPEC 3): nothing in
@@ -245,6 +287,163 @@ pub fn is_blake2b(id: &str) -> Result<bool> {
     Ok(resolve_parent(id)?.family == Family::Blake2b)
 }
 
+/// How many sidestr chains [`resolve_parent_with`] follows from a child to
+/// the proof-of-work root before it gives up. SPEC 3.1 sets no bound, but
+/// trust compounds with depth ("a reason to keep value near the root"), and
+/// a lookup that never reaches a table row must not loop.
+pub const MAX_NESTING: u32 = 16;
+
+/// Whether `id` names a sidestr chain by its hash: 64 hex characters, either
+/// case, as `announce.mjs` reads a chain hash (`/^[0-9a-f]{64}$/i`). No row
+/// of the table is spelt so, so the two forms never collide.
+///
+/// ```
+/// use sidestr_core::parents::is_chain_hash_parent;
+/// assert!(is_chain_hash_parent(&"ab".repeat(32)));
+/// assert!(!is_chain_hash_parent("txbt4") && !is_chain_hash_parent(&"ab".repeat(31)));
+/// ```
+pub fn is_chain_hash_parent(id: &str) -> bool {
+    id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// A parent that is itself a sidestr chain (SPEC 3.1), resolved down to the
+/// row of the table its family comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NestedParent {
+    /// The parent chain's hash, lower-case hex: the id of its chain event.
+    pub hash: String,
+    /// The parent chain's alias, its document's `id` (a name, not a proof).
+    pub alias: String,
+    /// The hashes followed, from the parent outwards to the chain that sits
+    /// beside [`NestedParent::root`]; `path[0] == hash`.
+    pub path: Vec<String>,
+    /// The table row at the bottom: the proof-of-work chain whose header
+    /// family, proof of work and key encodings every level inherits.
+    pub root: &'static Parent,
+}
+
+/// What a document's `parent` names: a row of the table, or a sidestr chain
+/// by its hash. [`resolve_parent`] gives only the first; [`resolve_parent_with`]
+/// both.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParentRef {
+    /// A row of the SPEC 3.2 table (an alias or an accepted long id).
+    Table(&'static Parent),
+    /// A sidestr chain, named by its chain event's id (SPEC 3, 3.1). A
+    /// departure from the reference at `e8deb63`, which refuses it.
+    Chain(NestedParent),
+}
+
+impl ParentRef {
+    /// The proof-of-work chain at the bottom: the row itself, or the row a
+    /// nested parent resolved to.
+    pub fn root(&self) -> &'static Parent {
+        match self {
+            ParentRef::Table(p) => p,
+            ParentRef::Chain(n) => n.root,
+        }
+    }
+
+    /// The header family the chain inherits: always the root's (SPEC 3:
+    /// "the parent decides both", and a siding decides as its parent did).
+    pub fn family(&self) -> Family {
+        self.root().family
+    }
+
+    /// The proof of work of the root.
+    pub fn pow(&self) -> Pow {
+        self.root().pow
+    }
+
+    /// Whether keys and addresses use mainnet encodings: the root's.
+    pub fn mainnet(&self) -> bool {
+        self.root().mainnet
+    }
+
+    /// The chain's depth as the estate's documents count it: 0 beside a row
+    /// of the table, 1 beside a siding that sits beside one, and so on (the
+    /// number of sidestr chains whose signers a validator of this chain
+    /// trusts besides its own, SPEC 3.1).
+    pub fn depth(&self) -> u32 {
+        match self {
+            ParentRef::Table(_) => 0,
+            ParentRef::Chain(n) => n.path.len() as u32,
+        }
+    }
+
+    /// The parent chain's hash, for a nested parent.
+    pub fn chain_hash(&self) -> Option<&str> {
+        match self {
+            ParentRef::Table(_) => None,
+            ParentRef::Chain(n) => Some(&n.hash),
+        }
+    }
+
+    /// How deep a coin mined on the **parent** must be before it may be
+    /// spent: the table's answer for a row ([`Parent::coinbase_maturity`]),
+    /// and for a sidestr parent that chain's own coinbase rule,
+    /// [`COINBASE_MATURITY`] ([`crate::rules::Params::coinbase_maturity`]).
+    pub fn coinbase_maturity(&self) -> u32 {
+        match self {
+            ParentRef::Table(p) => p.coinbase_maturity(),
+            ParentRef::Chain(_) => COINBASE_MATURITY,
+        }
+    }
+}
+
+/// [`resolve_parent`], and a sidestr chain's hash besides (SPEC 3, 3.1).
+///
+/// An alias or long id resolves through the table exactly as
+/// [`resolve_parent`] resolves it, and `lookup` is never called. A 64-hex
+/// hash ([`is_chain_hash_parent`]) is handed, lower-cased, to `lookup`, which
+/// answers with that chain's document; the caller is trusted to have read it
+/// from the chain event **whose id is the hash** and to have verified that
+/// event (`sidestr-nostr`'s `chain::resolve_nested_parent` does both). The
+/// document's own `parent` is then followed the same way until a row of the
+/// table answers, at most [`MAX_NESTING`] chains deep.
+///
+/// Refused: an unknown or reserved root, as [`resolve_parent`] refuses it; a
+/// hash that comes round again; a chain nested deeper than [`MAX_NESTING`];
+/// and whatever `lookup` refuses.
+///
+/// This is a departure from `siding/lib/parents.mjs` at `e8deb63`, whose
+/// `resolveParent` refuses every hash (module docs; ADR-0001 D4).
+pub fn resolve_parent_with<F>(id: &str, mut lookup: F) -> Result<ParentRef>
+where
+    F: FnMut(&str) -> Result<ChainDocument>,
+{
+    if !is_chain_hash_parent(id) {
+        return resolve_parent(id).map(ParentRef::Table);
+    }
+    let hash = id.to_ascii_lowercase();
+    let mut path: Vec<String> = Vec::new();
+    let mut alias = None;
+    let mut next = hash.clone();
+    while (path.len() as u32) < MAX_NESTING {
+        if path.contains(&next) {
+            return Err(Error::Document(format!(
+                "parent chain {next} names itself among its own parents"
+            )));
+        }
+        let doc = lookup(&next)?;
+        alias.get_or_insert_with(|| doc.id.clone());
+        path.push(next);
+        if !is_chain_hash_parent(&doc.parent) {
+            let root = resolve_parent(&doc.parent)?;
+            return Ok(ParentRef::Chain(NestedParent {
+                hash,
+                alias: alias.expect("set on the first document"),
+                path,
+                root,
+            }));
+        }
+        next = doc.parent.to_ascii_lowercase();
+    }
+    Err(Error::Document(format!(
+        "parent chain {hash} is nested more than {MAX_NESTING} chains deep"
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,6 +486,108 @@ mod tests {
         for name in ["__proto__", "constructor", "toString", ""] {
             assert_eq!(parent_alias(name), None);
         }
+    }
+
+    fn doc_beside(parent: &str, name: &str) -> ChainDocument {
+        let d = ChainDocument::from_json(include_str!("../fixtures/trial/chain.json")).unwrap();
+        ChainDocument {
+            id: format!("sidestr:{name}"),
+            name: name.into(),
+            parent: parent.into(),
+            ..d
+        }
+    }
+
+    // SPEC 3.1 prose; parents.mjs at e8deb63 refuses every case here (tests/nested_parent.rs)
+    #[test]
+    fn a_chain_hash_resolves_through_the_parent_chain_s_document() {
+        let (a, b) = ("aa".repeat(32), "BB".repeat(32));
+        // b sits beside txbt4; a sits beside b; the child names a
+        let docs = |h: &str| -> Result<ChainDocument> {
+            match h {
+                x if x == "aa".repeat(32) => Ok(doc_beside(&"BB".repeat(32), "a")),
+                x if x == "bb".repeat(32) => Ok(doc_beside("btc:testnet4-blake2b", "b")),
+                other => Err(Error::Document(format!("no chain event {other}"))),
+            }
+        };
+        let p = resolve_parent_with(&a, docs).unwrap();
+        assert_eq!(p.family(), Family::Blake2b);
+        assert_eq!(p.pow(), Pow::Blake2b);
+        assert!(!p.mainnet());
+        assert_eq!(p.root().alias, "txbt4");
+        assert_eq!(p.depth(), 2);
+        assert_eq!(p.chain_hash(), Some(a.as_str()));
+        assert_eq!(p.coinbase_maturity(), COINBASE_MATURITY);
+        let ParentRef::Chain(n) = &p else { panic!() };
+        assert_eq!(n.alias, "sidestr:a");
+        assert_eq!(n.path, vec![a.clone(), b.to_ascii_lowercase()]);
+        // an upper-case hash is the same chain
+        assert_eq!(resolve_parent_with(&a.to_uppercase(), docs).unwrap(), p);
+        // a stock root hands down the stock family
+        let stock = resolve_parent_with(&a, |_| Ok(doc_beside("tbtc4", "s"))).unwrap();
+        assert_eq!(stock.family(), Family::Stock);
+        assert_eq!(stock.depth(), 1);
+        // a missing event is the lookup's refusal, carried through
+        let e = resolve_parent_with(&"cc".repeat(32), docs).unwrap_err();
+        assert!(e.to_string().contains("no chain event"), "{e}");
+    }
+
+    #[test]
+    fn a_table_parent_never_asks_the_lookup_and_answers_as_resolve_parent() {
+        for id in ["btc", "tbtc4", "xbt", "txbt4", "btc:testnet4-blake2b"] {
+            let p = resolve_parent_with(id, |_| panic!("no lookup for {id}")).unwrap();
+            assert_eq!(p, ParentRef::Table(resolve_parent(id).unwrap()));
+            assert_eq!(p.depth(), 0);
+            assert_eq!(p.chain_hash(), None);
+            assert_eq!(
+                p.coinbase_maturity(),
+                resolve_parent(id).unwrap().coinbase_maturity()
+            );
+        }
+        for id in ["ltc", "doge", "", &"ab".repeat(31)] {
+            assert_eq!(
+                resolve_parent_with(id, |_| panic!("no lookup"))
+                    .unwrap_err()
+                    .to_string(),
+                resolve_parent(id).unwrap_err().to_string()
+            );
+        }
+    }
+
+    #[test]
+    fn nesting_refuses_a_cycle_a_bad_root_and_unbounded_depth() {
+        let (a, b) = ("aa".repeat(32), "bb".repeat(32));
+        let cyc = resolve_parent_with(&a, |h| Ok(doc_beside(if h == a { &b } else { &a }, "c")))
+            .unwrap_err();
+        assert!(cyc.to_string().contains("names itself"), "{cyc}");
+        let reserved = resolve_parent_with(&a, |_| Ok(doc_beside("ltc", "l"))).unwrap_err();
+        assert!(matches!(
+            reserved,
+            Error::ReservedParent { alias: "ltc", .. }
+        ));
+        let unknown = resolve_parent_with(&a, |_| Ok(doc_beside("doge", "d"))).unwrap_err();
+        assert!(matches!(unknown, Error::UnknownParent(_)));
+        // every lookup names a fresh hash: stops at MAX_NESTING
+        let mut n = 0u32;
+        let deep = resolve_parent_with(&a, |_| {
+            n += 1;
+            Ok(doc_beside(&format!("{n:064x}"), "deep"))
+        })
+        .unwrap_err();
+        assert!(deep.to_string().contains("more than 16"), "{deep}");
+        assert_eq!(n, MAX_NESTING);
+        // exactly MAX_NESTING deep is accepted
+        let mut m = 0u32;
+        let edge = resolve_parent_with(&a, |_| {
+            m += 1;
+            Ok(if m == MAX_NESTING {
+                doc_beside("tbtc4", "edge")
+            } else {
+                doc_beside(&format!("{m:064x}"), "edge")
+            })
+        })
+        .unwrap();
+        assert_eq!(edge.depth(), MAX_NESTING);
     }
 
     // bitcoin-blake/reef test/wallet-test.mjs at 2bd3cb8, counted against the parent's fact

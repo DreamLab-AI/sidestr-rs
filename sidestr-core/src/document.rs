@@ -60,7 +60,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::federation::Federation;
-use crate::parents::{resolve_parent, Family, Parent};
+use crate::parents::{resolve_parent, resolve_parent_with, Family, Parent, ParentRef};
 
 /// One optional consensus rule named by a chain document.
 ///
@@ -162,9 +162,13 @@ pub struct ChainDocument {
     /// directory are named after it.
     pub name: String,
     /// The parent: a SPEC 3.2 alias or an accepted long id. SPEC 0.0.5 lets
-    /// a nested chain name a sidestr chain's hash here; no parents table
-    /// (here or upstream's `parents.mjs`) resolves one yet, so such a
-    /// document is refused as [`Error::UnknownParent`].
+    /// a nested chain name a sidestr chain's hash here. Upstream's
+    /// `parents.mjs` (at `e8deb63`) resolves no hash, and neither do
+    /// [`ChainDocument::parent`] and [`ChainDocument::validate`], which refuse
+    /// such a document as [`Error::UnknownParent`] as siding does;
+    /// [`ChainDocument::parent_with`] and [`ChainDocument::validate_nested`]
+    /// resolve it through the parent's chain event, a recorded departure
+    /// ([`crate::parents`]).
     pub parent: String,
     /// The challenge script (hex); a block is valid when its witness satisfies it.
     pub challenge: String,
@@ -310,8 +314,36 @@ impl ChainDocument {
     /// assert!(doc.validate_with(&["assets", "evm"]).is_ok());
     /// ```
     pub fn validate_with(&self, carried: &[&str]) -> Result<()> {
-        let bad = |m: String| Err(Error::Document(m));
         self.parent()?;
+        self.validate_fields(carried)
+    }
+
+    /// [`ChainDocument::validate_with`] for a nested chain: the parent is
+    /// resolved with [`ChainDocument::parent_with`], so a `parent` that is a
+    /// sidestr chain's hash is accepted when `lookup` answers with that
+    /// chain's document and its own parents resolve down to a row of the
+    /// table. Every other check is [`ChainDocument::validate_with`]'s. A
+    /// departure from siding at `e8deb63`, which refuses the hash
+    /// ([`crate::parents`]).
+    ///
+    /// ```
+    /// use sidestr_core::document::ChainDocument;
+    ///
+    /// let siding = ChainDocument::from_json(include_str!("../fixtures/trial/chain.json")).unwrap();
+    /// let child = ChainDocument { parent: "5d".repeat(32), ..siding.clone() };
+    /// assert!(child.validate().is_err()); // as siding refuses it
+    /// assert!(child.validate_nested(&[], |_| Ok(siding.clone())).is_ok());
+    /// ```
+    pub fn validate_nested<F>(&self, carried: &[&str], lookup: F) -> Result<()>
+    where
+        F: FnMut(&str) -> Result<ChainDocument>,
+    {
+        self.parent_with(lookup)?;
+        self.validate_fields(carried)
+    }
+
+    fn validate_fields(&self, carried: &[&str]) -> Result<()> {
+        let bad = |m: String| Err(Error::Document(m));
         if self.id.is_empty() || self.name.is_empty() {
             return bad("id and name are required".into());
         }
@@ -395,6 +427,27 @@ impl ChainDocument {
     /// The header family the chain inherits.
     pub fn family(&self) -> Result<Family> {
         Ok(self.parent()?.family)
+    }
+
+    /// The parent, a row of the table or a sidestr chain by its hash
+    /// ([`resolve_parent_with`]): `lookup` answers a hash with that chain's
+    /// document, read from its verified chain event. A departure from
+    /// siding at `e8deb63` for a hash ([`crate::parents`]); for an alias the
+    /// same answer as [`ChainDocument::parent`].
+    pub fn parent_with<F>(&self, lookup: F) -> Result<ParentRef>
+    where
+        F: FnMut(&str) -> Result<ChainDocument>,
+    {
+        resolve_parent_with(&self.parent, lookup)
+    }
+
+    /// The header family the chain inherits, through any number of nested
+    /// parents ([`ChainDocument::parent_with`]): the proof-of-work root's.
+    pub fn family_with<F>(&self, lookup: F) -> Result<Family>
+    where
+        F: FnMut(&str) -> Result<ChainDocument>,
+    {
+        Ok(self.parent_with(lookup)?.family())
     }
 
     /// The challenge as a script.
@@ -560,5 +613,50 @@ mod tests {
         assert!(with(&|v| v["powLimit"] = serde_json::json!("ff")).is_err());
         assert!(with(&|v| v["addressPrefix"] = serde_json::json!("TRL")).is_err());
         assert!(with(&|v| v["genesisHash"] = serde_json::json!("zz")).is_err());
+    }
+
+    // SPEC 3.1 prose, a departure from parents.mjs at e8deb63 (crate::parents)
+    #[test]
+    fn a_nested_document_validates_only_through_its_parent_s_document() {
+        let siding: ChainDocument = serde_json::from_str(TRIAL).unwrap();
+        let siding = ChainDocument {
+            parent: "txbt4".into(),
+            ..siding
+        };
+        let hash = "5d".repeat(32);
+        let child = ChainDocument {
+            id: "sidestr:child".into(),
+            name: "child".into(),
+            parent: hash.clone(),
+            ..siding.clone()
+        };
+        // siding's answer, unchanged
+        assert!(matches!(child.parent(), Err(Error::UnknownParent(_))));
+        assert!(matches!(child.validate(), Err(Error::UnknownParent(_))));
+        // through the parent's document
+        let lookup = |h: &str| {
+            if h == hash {
+                Ok(siding.clone())
+            } else {
+                Err(Error::Document(format!("no chain event {h}")))
+            }
+        };
+        assert_eq!(child.family_with(lookup).unwrap(), Family::Blake2b);
+        assert_eq!(child.parent_with(lookup).unwrap().depth(), 1);
+        child.validate_nested(&[], lookup).unwrap();
+        // the other checks still apply
+        let mut ruled = child.clone();
+        ruled.rules = Some(vec![RuleEntry::Name("evm".into())]);
+        assert!(ruled.validate_nested(&[], lookup).is_err());
+        assert!(ruled.validate_nested(&["assets", "evm"], lookup).is_ok());
+        let other = ChainDocument {
+            parent: "6e".repeat(32),
+            ..child.clone()
+        };
+        assert!(other.validate_nested(&[], lookup).is_err());
+        // an alias parent answers as validate_with, and never asks
+        siding
+            .validate_nested(&[], |_| panic!("no lookup for an alias"))
+            .unwrap();
     }
 }
