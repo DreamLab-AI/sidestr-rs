@@ -109,6 +109,11 @@ pub enum Error {
     /// be built ([`crate::bip21`]).
     #[error(transparent)]
     PaymentRequest(#[from] crate::bip21::RequestError),
+    /// A peg-in in the tweak form that cannot be made as asked: a chain hash
+    /// that is not a chain event's id, a key that is no point, a refund
+    /// count out of range ([`crate::pegin::build_pegin_tweak`]).
+    #[error("peg-in tweak: {0}")]
+    PegTweak(#[from] sidestr_core::pegtweak::PegError),
     /// A producer answered `{"error": …}` to a `POST /tx`.
     #[error("producer refused: {0}")]
     Refused(String),

@@ -49,6 +49,8 @@
 //! | [`blockfile`] | `[u32 height][u32 size][block]` with a JSON index (feature `std`) | 11 | `blaketestnode/lib/blockfile.mjs` |
 //! | [`chain`] | the chain on disk ([`chain::ChainOf`], [`chain::Chain`] for stock): replay, genesis when absent, every accepted block written (feature `std`) | 5, 11 | `siding/lib/chain.mjs` |
 //! | [`address`] | bech32 / bech32m both ways, any prefix | 3 | `siding/lib/address.mjs` |
+//! | [`keys`] | keys as group elements: secret → point, normalise once, did:nostr / Multikey / compressed point read and written, additive tweaks and chains on full points, tagged scalars, BIP 341's `TapTweak` | 3 | `siding/lib/keys.mjs` |
+//! | [`pegtweak`] | the peg-in tweak form: refund and commitment leaves, the BIP 341 output, control blocks, descriptor, the reveal that rebuilds it, the holders' key-path secret | 6 | `siding/lib/pegtweak.mjs` |
 //!
 //! # How the pieces talk (SPEC section 11)
 //!
@@ -151,7 +153,7 @@
 //!   protocol above the signature is a later crate still.
 //! - **Nothing in the rules does I/O.** [`document`], [`block`], [`marker`],
 //!   [`records`], [`assets`], [`pool`], [`markets`], [`overlays`], [`rules`],
-//!   [`state`] and [`address`] take bytes and return verdicts; the
+//!   [`state`], [`address`], [`keys`] and [`pegtweak`] take bytes and return verdicts; the
 //!   filesystem and the clock are behind feature `std` in [`blockfile`] and
 //!   [`chain`]. The crate is not `no_std`; `std` names what touches the
 //!   operating system.
@@ -288,12 +290,14 @@ pub mod chain;
 pub mod document;
 pub mod error;
 pub mod federation;
+pub mod keys;
 pub mod marker;
 pub mod markets;
 pub mod mirror;
 pub mod overlays;
 pub mod parent;
 pub mod parents;
+pub mod pegtweak;
 pub mod pool;
 pub mod records;
 pub mod rules;

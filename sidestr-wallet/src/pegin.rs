@@ -15,6 +15,12 @@
 //! (`and_v(v:pk(refund), older(refundBlocks))`) is the peg holders'
 //! descriptor; the wallet pays the address it is given.
 //!
+//! Beside it, the **tweak form** (sidestr/spec issue #23, `pegtweak.mjs`):
+//! [`build_pegin_tweak`] pays one output whose taproot tree commits to the
+//! chain's hash and the sidechain script, with no marker, and returns the
+//! reveal that rebuilds it. It is an option for a caller that asks for it;
+//! [`build_pegin`] and its marker are unchanged and remain the default.
+//!
 //! ```
 //! use bitcoin::consensus::encode::{deserialize, serialize};
 //! use sidestr_core::document::ChainDocument;
@@ -48,6 +54,7 @@
 
 use core::str::FromStr;
 
+use bitcoin::key::XOnlyPublicKey;
 use bitcoin::script::PushBytesBuf;
 use bitcoin::transaction::Version;
 use bitcoin::{absolute::LockTime, Address, Amount, Network, ScriptBuf, Transaction, TxIn, TxOut};
@@ -56,6 +63,7 @@ use sidestr_core::marker::{
     checkpoint_data, parse_peg_marker, peg_marker_data, pegout_marker_data,
 };
 use sidestr_core::parents::Parent;
+use sidestr_core::pegtweak::{peg_output, PegOutput, PegReveal};
 
 use crate::error::{Error, Result};
 use crate::spend::{dust_threshold, resolve_to};
@@ -185,6 +193,148 @@ pub fn build_pegin(
         },
         peg_address: address,
     })
+}
+
+/// A peg-in in the **tweak form** (sidestr/spec issue #23,
+/// `siding/lib/pegtweak.mjs`): one output, no marker. The peg output's
+/// taproot tree commits to the chain (the hash of its kind-3500 chain event)
+/// and the sidechain script, so the parent transaction carries no
+/// `OP_RETURN`; the [`reveal`](PegInTweak::reveal) is what the pegger hands
+/// the peg holders and a verifier, and rebuilds the address.
+///
+/// An option beside [`PegIn`], never the default: the marker form is what
+/// every producer scans for today, and upstream at `e8deb63` has no scanner
+/// that claims a tweak-form peg-in yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PegInTweak {
+    /// The chain the coins appear on (its alias, `sidestr:<name>`).
+    pub chain_id: String,
+    /// Sats pegged.
+    pub amount: u64,
+    /// The sidechain script the tree commits to.
+    pub side_script: ScriptBuf,
+    /// The peg output's address on the parent.
+    pub peg_address: Address,
+    /// The one output: `amount` to the peg address.
+    pub peg: TxOut,
+    /// Everything the peg output is: output key, root, leaves and control
+    /// blocks, the commitment key, the descriptor and the reveal.
+    pub output: PegOutput,
+}
+
+/// Build the tweak form (`pegtweak.mjs pegOutput`): the peg holders'
+/// `internal` key (level 1: the signer's), the pegger's `refund` key with
+/// the document's `refundBlocks`, the chain's `chain_hash` (the id of its
+/// kind-3500 chain event, 64 hex, SPEC 0.0.5; not its alias) and the
+/// sidechain script, as a script hex or an address under any prefix. The
+/// address is encoded for the document's parent network and checked as
+/// [`build_pegin`] checks a peg address; the amount must be over dust.
+///
+/// ```
+/// use sidestr_core::document::ChainDocument;
+/// use sidestr_core::pegtweak::{peg_matches, peg_output};
+/// use sidestr_wallet::pegin::build_pegin_tweak;
+///
+/// let chain = ChainDocument::from_json(r#"{"id":"sidestr:trial","name":"trial","parent":"tbtc4",
+///   "challenge":"512098b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b","powLimit":"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+///   "addressPrefix":"trl","genesisTime":1790000000,"refundBlocks":10000,"pegs":[]}"#).unwrap();
+/// let holders = "98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b".parse().unwrap();
+/// let refund = "c95b519579bda3b5e29f5dca4a0b8f9f1d04d1979d2e4c3a33483a6b34b61d88".parse().unwrap();
+/// let chain_hash = "ab".repeat(32);
+/// let p = build_pegin_tweak(&chain, &chain_hash, &holders, &refund, 250_000, &format!("5120{}", "ab".repeat(32))).unwrap();
+/// // one output, to an address the reveal rebuilds
+/// assert!(p.peg_address.to_string().starts_with("tb1p"));
+/// assert_eq!(p.transaction(vec![], None).output.len(), 1);
+/// assert!(peg_matches(&p.output.reveal, &p.peg.script_pubkey.to_hex_string()).unwrap());
+/// assert_eq!(peg_output(&p.output.reveal, "tb").unwrap().address, p.peg_address.to_string());
+/// assert_eq!(p.core_send_outputs().as_array().unwrap().len(), 1);
+/// ```
+pub fn build_pegin_tweak(
+    chain: &ChainDocument,
+    chain_hash: &str,
+    internal: &XOnlyPublicKey,
+    refund: &XOnlyPublicKey,
+    amount: u64,
+    side_script_or_address: &str,
+) -> Result<PegInTweak> {
+    let parent = chain.parent()?;
+    let network =
+        parent_network(parent).ok_or(Error::Core(sidestr_core::Error::ReservedParent {
+            alias: parent.alias,
+            label: parent.label,
+        }))?;
+    if amount == 0 {
+        return Err(Error::BadAmount);
+    }
+    let side_script = resolve_to(side_script_or_address, &chain.address_prefix)?.script;
+    let hrp = if network == Network::Bitcoin {
+        "bc"
+    } else {
+        "tb"
+    };
+    let output = peg_output(
+        &PegReveal {
+            internal: internal.to_string(),
+            refund_key: refund.to_string(),
+            refund_blocks: chain.refund_blocks,
+            chain_hash: chain_hash.to_string(),
+            script: side_script.to_hex_string(),
+            extra_leaves: vec![],
+        },
+        hrp,
+    )?;
+    let address = parent_address(parent, &output.address)?;
+    let peg_script = address.script_pubkey();
+    debug_assert_eq!(peg_script, output.script());
+    let dust = dust_threshold(&peg_script);
+    if amount < dust {
+        return Err(Error::Dust {
+            value: amount,
+            min: dust,
+            script: peg_script.to_hex_string(),
+        });
+    }
+    Ok(PegInTweak {
+        chain_id: chain.id.clone(),
+        amount,
+        side_script,
+        peg: TxOut {
+            value: Amount::from_sat(amount),
+            script_pubkey: peg_script,
+        },
+        peg_address: address,
+        output,
+    })
+}
+
+impl PegInTweak {
+    /// The reveal: what rebuilds the peg output
+    /// ([`sidestr_core::pegtweak::peg_output`]), for the peg holders and a
+    /// verifier.
+    pub fn reveal(&self) -> &PegReveal {
+        &self.output.reveal
+    }
+    /// The output descriptor, as upstream writes it (no checksum).
+    pub fn descriptor(&self) -> &str {
+        &self.output.descriptor
+    }
+    /// An unsigned parent transaction: these inputs, the peg, then `change`
+    /// if any. No marker.
+    pub fn transaction(&self, inputs: Vec<TxIn>, change: Option<TxOut>) -> Transaction {
+        let mut output = vec![self.peg.clone()];
+        output.extend(change);
+        Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: inputs,
+            output,
+        }
+    }
+    /// Bitcoin Core's `send` outputs: `[{"<address>": "<btc>"}]`, one item
+    /// and no `data`.
+    pub fn core_send_outputs(&self) -> serde_json::Value {
+        serde_json::json!([{ self.peg_address.to_string(): btc_string(self.amount) }])
+    }
 }
 
 impl PegIn {

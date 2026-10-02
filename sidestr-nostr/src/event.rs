@@ -416,4 +416,27 @@ mod tests {
         assert!(SecretKeySigner::from_hex(&format!(" {} \n", "07".repeat(32))).is_ok());
         assert!(!format!("{:?}", signer()).contains(&"07".repeat(32)));
     }
+
+    /// Fid's Nostr vector (bitcoin-blake/fidsigner `2c4057c`, `vectors.json`,
+    /// vendored as `tests/fixtures/fidsigner-vectors.json`): the same key,
+    /// template and zero auxiliary randomness give the same id and signature.
+    #[test]
+    fn fid_event_vector() {
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/fidsigner-vectors.json")).unwrap();
+        let k = SecretKeySigner::from_hex(v["key"]["priv"].as_str().unwrap()).unwrap();
+        let u = &v["nostr"]["unsigned"];
+        let template = UnsignedEvent {
+            pubkey: String::new(),
+            created_at: u["created_at"].as_u64().unwrap(),
+            kind: u["kind"].as_u64().unwrap() as u32,
+            tags: serde_json::from_value(u["tags"].clone()).unwrap(),
+            content: u["content"].as_str().unwrap().into(),
+        };
+        let ev = sign(&k, template).unwrap();
+        let want: Event = serde_json::from_value(v["nostr"]["signed"].clone()).unwrap();
+        assert_eq!(ev, want);
+        assert!(want.verify().is_ok());
+        assert_eq!(ev.pubkey, v["key"]["xonly"].as_str().unwrap());
+    }
 }

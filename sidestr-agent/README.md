@@ -63,6 +63,8 @@ sidestr-agent --key-file alice.key --chain chain.json pegin-plan --amount 50000 
   --peg-address tb1p…     # or an address the producer's peg wallet gave you
 sidestr-agent --chain chain.json pegin-plan --amount 50000 --refund npub1… --to drm1p… \
   --peg-key <hex>         # or a descriptor the peg holders import
+sidestr-agent --chain chain.json pegin-plan --amount 50000 --refund npub1… --to drm1p… \
+  --tweak --chain-hash <chain event id>   # opt-in: the tweak form, one output, a reveal
 
 # a signed parent transaction (a peg-in) with no node of your own: the parent's
 # public explorer, else a kind-23503 event a producer with a node broadcasts
@@ -126,6 +128,15 @@ sits. Who owns it depends on the level:
 
 A peg-in plan also prints the marker `pegin:<chain id>:<script>` and the `send`
 outputs for Bitcoin Core.
+
+- **`--tweak --chain-hash <hex>`, the tweak form (opt-in):** sidestr/spec
+  issue #23. One output whose taproot tree holds the refund leaf and `pk(C)`,
+  `C` committing to the chain's hash (the id of its kind-3500 chain event,
+  not its alias) and the sidechain script; no marker. The internal key is
+  `--peg-key`, else the level-1 signer's. The plan prints the checksummed
+  descriptor, the reveal that rebuilds the address, and `send` outputs with
+  one item. No producer claims this form yet (upstream at `e8deb63` scans the
+  marker form only), so it is never the default.
 
 ## Library
 

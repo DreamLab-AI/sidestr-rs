@@ -187,6 +187,111 @@ pub fn unified_taproot_sighash(
     Ok(sha(&[&tag, &tag, &msg]))
 }
 
+/// The non-taproot half of a unified message: which script type a
+/// signature in a legacy or segwit v0 input commits to (Knots
+/// `doc/unified-sighash.md`, script types 0 and 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnifiedLegacy {
+    /// Script type 0: a bare or P2SH script.
+    Base,
+    /// Script type 1: a segwit v0 program (P2WPKH, P2WSH).
+    WitnessV0,
+}
+
+/// Knots' unified sighash for a legacy or segwit v0 input (`interpreter.js
+/// sighashUnified` and fidsigner's `unified.js unifiedSighash`, script types
+/// 0 and 1): the same layout as [`unified_taproot_sighash`] with the
+/// script-type byte 0 or 1 and, where a taproot message has the annex
+/// byte, the script code with its CompactSize length. Beside it rather than
+/// folded into it, so the taproot function's signature and behaviour stay
+/// fixed.
+///
+/// Only the [`SIGHASH_UNIFIED`] bit is required: as in the reference, the
+/// output type is the low five bits, outputs are committed unless it is
+/// `NONE` (2) or `SINGLE` (3), and no other bit is refused. `prevouts` is
+/// every input's, in order. sidestr-core verifies no legacy or segwit v0
+/// spend (see the crate docs); this is the message, held to Knots' 142
+/// non-taproot known answers in `tests/fidsigner.rs`.
+///
+/// ```text
+/// 0x00 ‖ hash_type ‖ version ‖ lock_time ‖ 0x00
+/// [sha_prevouts ‖ sha_amounts ‖ sha_scriptpubkeys ‖ sha_sequences]   unless ANYONECANPAY
+/// [sha_outputs]                                                      unless NONE or SINGLE
+/// script_type (0 or 1)
+/// ANYONECANPAY ? outpoint ‖ prevout ‖ sequence : input index
+/// compact(script_code) ‖ script_code
+/// [sha(this output)]                                                 SINGLE
+/// ```
+pub fn unified_legacy_sighash(
+    tx: &Transaction,
+    index: usize,
+    prevouts: &[TxOut],
+    hash_type: u8,
+    script_type: UnifiedLegacy,
+    script_code: &[u8],
+) -> Result<[u8; 32], &'static str> {
+    if hash_type & SIGHASH_UNIFIED == 0 {
+        return Err("unified sighash without SIGHASH_UNIFIED");
+    }
+    if prevouts.len() != tx.input.len() {
+        return Err("unified sighash needs every input prevout");
+    }
+    let input = tx.input.get(index).ok_or("no such input")?;
+    let output_type = hash_type & 0x1f;
+    let anyone = hash_type & 0x80 != 0;
+    let outpoint = |i: &bitcoin::TxIn| serialize(&i.previous_output);
+    let mut msg: Vec<u8> = vec![0x00, hash_type];
+    msg.extend((tx.version.0 as u32).to_le_bytes());
+    msg.extend(tx.lock_time.to_consensus_u32().to_le_bytes());
+    msg.push(0x00);
+    if !anyone {
+        let prev: Vec<u8> = tx.input.iter().flat_map(outpoint).collect();
+        let amounts: Vec<u8> = prevouts
+            .iter()
+            .flat_map(|p| p.value.to_sat().to_le_bytes())
+            .collect();
+        let spks: Vec<u8> = prevouts
+            .iter()
+            .flat_map(|p| serialize(&p.script_pubkey))
+            .collect();
+        let seqs: Vec<u8> = tx
+            .input
+            .iter()
+            .flat_map(|i| i.sequence.0.to_le_bytes())
+            .collect();
+        msg.extend(sha(&[&prev]));
+        msg.extend(sha(&[&amounts]));
+        msg.extend(sha(&[&spks]));
+        msg.extend(sha(&[&seqs]));
+    }
+    if output_type != 2 && output_type != 3 {
+        let outs: Vec<u8> = tx.output.iter().flat_map(serialize).collect();
+        msg.extend(sha(&[&outs]));
+    }
+    msg.push(match script_type {
+        UnifiedLegacy::Base => 0,
+        UnifiedLegacy::WitnessV0 => 1,
+    });
+    if anyone {
+        msg.extend(outpoint(input));
+        msg.extend(serialize(&prevouts[index]));
+        msg.extend(input.sequence.0.to_le_bytes());
+    } else {
+        msg.extend((index as u32).to_le_bytes());
+    }
+    msg.extend(compact_size(script_code.len()));
+    msg.extend(script_code);
+    if output_type == 3 {
+        let out = tx
+            .output
+            .get(index)
+            .ok_or("sighash single without matching output")?;
+        msg.extend(sha(&[&serialize(out)]));
+    }
+    let tag = sha256::Hash::hash(b"UnifiedSighash").to_byte_array();
+    Ok(sha(&[&tag, &tag, &msg]))
+}
+
 /// Verify one input as a taproot key-path spend under `rules`: one Schnorr
 /// signature, 64 bytes for `SIGHASH_DEFAULT` or 65 with an explicit type, an
 /// annex allowed, over BIP 341's sighash — or, under

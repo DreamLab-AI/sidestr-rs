@@ -2,6 +2,14 @@
 
 All notable changes to `sidestr-nostr`. The crate follows semantic versioning.
 
+## Unreleased
+
+### Tests
+
+- Fid's Nostr vector (bitcoin-blake/fidsigner `2c4057c`, `vectors.json`,
+  vendored in `tests/fixtures/`): `SecretKeySigner` reproduces its event id
+  and signature (zero auxiliary randomness) byte for byte. No API change.
+
 ## 0.4.0 (2026-10-01)
 
 - `MirrorChain` reads level-2 `signers`; `announced_by` and `choose_mirror`

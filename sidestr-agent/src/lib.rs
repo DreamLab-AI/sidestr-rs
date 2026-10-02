@@ -29,6 +29,7 @@
 //! | [`ChainView`] | a mirror's block file replayed, with the SPEC 12 assets view: coins, plain coins, asset balances |
 //! | [`prepare_transfer`], [`prepare_issue`] | move or issue an asset (with memo records such as `tip:nostr:<event id>`), and the event |
 //! | [`pegin_plan`] | what a parent wallet pays to peg in: the peg address (and its refund descriptor), the marker |
+//! | [`pegin_tweak_plan`] | opt-in: the peg-in tweak form, one output committing to the chain hash and script, its descriptor and reveal |
 //!
 //! It is a port in the AGPL sense: it builds on `sidestr-core`,
 //! `sidestr-wallet` and `sidestr-nostr`, which port **siding**, the
@@ -96,6 +97,7 @@ use sidestr_core::block::{key_from_hex, pubkey_of};
 use sidestr_core::document::ChainDocument;
 use sidestr_core::federation::Federation;
 use sidestr_core::parent::parent_network;
+use sidestr_core::pegtweak::{PegLeaf, PegReveal};
 use sidestr_core::state::State;
 use sidestr_nostr::event::{Event, SecretKeySigner};
 use sidestr_nostr::tx::sign_transaction_event;
@@ -107,7 +109,7 @@ use sidestr_wallet::coins::from_state;
 use sidestr_wallet::coins::Coin;
 use sidestr_wallet::deposit::{build_evm_deposit, DepositRequest};
 use sidestr_wallet::key::{script_for, PlainKey};
-use sidestr_wallet::pegin::build_pegin;
+use sidestr_wallet::pegin::{build_pegin, build_pegin_tweak};
 use sidestr_wallet::spend::{build_spend, Spend, SpendRequest};
 use sidestr_wallet::Permissive;
 
@@ -669,6 +671,155 @@ pub struct PeginPlan {
     pub note: String,
 }
 
+/// What a parent wallet pays to peg in by the **tweak form** (sidestr/spec
+/// issue #23, `pegtweak.mjs`): one output whose taproot tree commits to the
+/// chain's hash and the sidechain script, and the reveal that rebuilds it.
+/// No marker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeginTweakPlan {
+    /// The chain the coins appear on (its alias).
+    pub chain: String,
+    /// Its parent's alias.
+    pub parent: String,
+    /// Always `"tweak"`: which form this plan is.
+    pub form: String,
+    /// Sats to peg.
+    pub amount: u64,
+    /// The peg output's address on the parent.
+    pub peg_address: String,
+    /// The output descriptor with checksum, the full tree spelled out:
+    /// `tr(<internal>,{and_v(v:pk(<refund>),older(<n>)),pk(<C>)})#…`,
+    /// checked to derive [`Self::peg_address`].
+    pub descriptor: String,
+    /// The chain event's id the tree commits to.
+    pub chain_hash: String,
+    /// The peg holders' key (x-only), the output's internal key.
+    pub internal_key: String,
+    /// The commitment key `C = NUMS + t·G` (x-only).
+    pub commit_key: String,
+    /// The taproot output key (x-only).
+    pub output_key: String,
+    /// Blocks after which the refund key may sweep an unclaimed peg.
+    pub refund_blocks: u32,
+    /// The refund leaf and its control block, for that sweep.
+    pub refund_leaf: PegLeaf,
+    /// The sidechain script the tree commits to, hex.
+    pub side_script: String,
+    /// What rebuilds the output ([`sidestr_core::pegtweak::peg_output`]):
+    /// hand it to the peg holders with the parent transaction.
+    pub reveal: PegReveal,
+    /// Bitcoin Core's `send` outputs: `[{"<peg address>": "<btc>"}]`, one
+    /// item and no `data`.
+    pub core_send: serde_json::Value,
+    /// What the plan means.
+    pub note: String,
+}
+
+/// Plan a peg-in in the tweak form, an **opt-in** beside [`pegin_plan`]
+/// (whose marker form stays the default): `amount` sats to a taproot output
+/// whose internal key is the peg holders' and whose tree is the refund leaf
+/// `and_v(v:pk(refund), older(refundBlocks))` and the commitment leaf
+/// `pk(C)`, `C` committing to `chain_hash` (the id of the chain's kind-3500
+/// chain event, SPEC 0.0.5, 64 hex; not the alias) and the sidechain script.
+///
+/// The internal key is `peg_key` when given, else the level-1 signer's key
+/// ([`level1_peg_key`]); a level-2 document needs `peg_key`, since the
+/// federation's tree for this form is not fixed upstream yet. Upstream at
+/// `e8deb63` has no scanner that claims a tweak-form peg-in, so the note
+/// says the reveal goes to the peg holders.
+///
+/// ```
+/// use sidestr_agent::{pegin_tweak_plan, parse_pubkey};
+/// use sidestr_core::document::ChainDocument;
+/// use sidestr_core::pegtweak::peg_matches;
+///
+/// let doc = ChainDocument::from_json(r#"{"id":"sidestr:example","name":"example","parent":"tbtc4",
+///   "challenge":"5120c95b519579bda3b5e29f5dca4a0b8f9f1d04d1979d2e4c3a33483a6b34b61d88",
+///   "powLimit":"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","addressPrefix":"ex",
+///   "genesisTime":1790000000,"refundBlocks":10000,"pegs":[]}"#).unwrap();
+/// let refund = parse_pubkey("npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg").unwrap();
+/// let side = format!("5120{}", "ab".repeat(32));
+/// let plan = pegin_tweak_plan(&doc, 50_000, &refund, &side, &"cd".repeat(32), None).unwrap();
+/// // level 1: the signer's key is the internal key; one output, no marker
+/// assert_eq!(plan.internal_key, "c95b519579bda3b5e29f5dca4a0b8f9f1d04d1979d2e4c3a33483a6b34b61d88");
+/// assert_eq!(plan.core_send.as_array().unwrap().len(), 1);
+/// assert!(plan.descriptor.starts_with("tr(c95b5195") && plan.descriptor.contains("pk("));
+/// assert!(peg_matches(&plan.reveal, &format!("5120{}", plan.output_key)).unwrap());
+/// // the chain hash is the chain event's id, not the alias
+/// assert!(pegin_tweak_plan(&doc, 50_000, &refund, &side, "sidestr:example", None).is_err());
+/// ```
+pub fn pegin_tweak_plan(
+    chain: &ChainDocument,
+    amount: u64,
+    refund: &XOnlyPublicKey,
+    side: &str,
+    chain_hash: &str,
+    peg_key: Option<XOnlyPublicKey>,
+) -> Result<PeginTweakPlan> {
+    refuse_secret(side)?;
+    let parent = chain.parent()?;
+    let network = parent_network(parent).ok_or(sidestr_core::Error::ReservedParent {
+        alias: parent.alias,
+        label: parent.label,
+    })?;
+    let side_script = destination(side)?;
+    let internal = match peg_key {
+        Some(k) => k,
+        None => level1_peg_key(chain)?.ok_or_else(|| {
+            Error::Plan(
+                "level 2: the tweak form's tree for a federation is not fixed upstream yet; \
+                 pass --peg-key for the peg holders' key"
+                    .into(),
+            )
+        })?,
+    };
+    let p = build_pegin_tweak(chain, chain_hash, &internal, refund, amount, &side_script)?;
+    let o = &p.output;
+    // the descriptor a wallet imports must derive this very address
+    let text = format!(
+        "tr({},{{and_v(v:pk({refund}),older({})),pk({})}})",
+        o.internal_key, chain.refund_blocks, o.commit_key
+    );
+    debug_assert_eq!(text, o.descriptor);
+    let d = miniscript::Descriptor::<XOnlyPublicKey>::from_str(&text)
+        .map_err(|e| Error::Plan(format!("descriptor {text}: {e}")))?;
+    d.sanity_check()
+        .map_err(|e| Error::Plan(format!("descriptor {text}: {e}")))?;
+    let derived = d
+        .address(network)
+        .map_err(|e| Error::Plan(format!("descriptor {text}: {e}")))?;
+    if derived != p.peg_address {
+        return Err(Error::Plan(format!(
+            "descriptor {text} derives {derived}, not the peg address {}",
+            p.peg_address
+        )));
+    }
+    Ok(PeginTweakPlan {
+        chain: chain.id.clone(),
+        parent: parent.alias.to_string(),
+        form: "tweak".into(),
+        amount,
+        peg_address: p.peg_address.to_string(),
+        descriptor: d.to_string(),
+        chain_hash: o.reveal.chain_hash.clone(),
+        internal_key: o.internal_key.clone(),
+        commit_key: o.commit_key.clone(),
+        output_key: o.output_key.clone(),
+        refund_blocks: chain.refund_blocks,
+        refund_leaf: o.refund.clone(),
+        side_script: p.side_script.to_hex_string(),
+        reveal: o.reveal.clone(),
+        core_send: p.core_send_outputs(),
+        note: format!(
+            "the peg-in tweak form (sidestr/spec #23): one output whose tree commits to chain {} and the sidechain script, no marker; \
+             give the reveal to the peg holders (key {}), who rebuild the address from it. No producer claims this form yet \
+             (upstream e8deb63 scans the marker form only); {refund} may sweep it after {} parent blocks unclaimed",
+            o.reveal.chain_hash, o.internal_key, chain.refund_blocks
+        ),
+    })
+}
+
 /// The parent address of the peg script a chain's signer announces with
 /// every tip (SPEC 0.0.4, the `peg` tag; [`sidestr_nostr::tip::newest_peg_script`]):
 /// what a level-1 peg-in pays when no `--peg-address` is given, as the JS
@@ -737,6 +888,42 @@ pub fn parent_explorer_api(chain: &ChainDocument) -> Option<String> {
     } else {
         format!("{host}/testnet4/api")
     })
+}
+
+/// What to tell a person whose parent transaction a node or explorer refused
+/// with `reason`, when the reason is one the chain's parent explains: a
+/// premature spend of a mined coin, which on `txbt4` since Knots 29.4.2 means
+/// fewer than 6,705 confirmations, not Bitcoin's 100
+/// ([`sidestr_core::parents::Parent::coinbase_maturity`]; Reef `2bd3cb8`).
+/// `None` for any other reason or parent table miss.
+///
+/// ```
+/// use sidestr_agent::parent_refusal_hint;
+/// use sidestr_core::document::ChainDocument;
+///
+/// let doc = ChainDocument::from_json(r#"{"id":"sidestr:x","name":"x","parent":"txbt4",
+///   "challenge":"5120c95b519579bda3b5e29f5dca4a0b8f9f1d04d1979d2e4c3a33483a6b34b61d88",
+///   "powLimit":"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","addressPrefix":"ex",
+///   "genesisTime":1790000000,"pegs":[]}"#).unwrap();
+/// let hint = parent_refusal_hint(&doc, "sendrawtransaction RPC error: bad-txns-premature-spend-of-coinbase").unwrap();
+/// assert!(hint.contains("6,705"));
+/// assert!(parent_refusal_hint(&doc, "min relay fee not met").is_none());
+/// ```
+pub fn parent_refusal_hint(chain: &ChainDocument, reason: &str) -> Option<String> {
+    if !reason.contains("premature-spend-of-coinbase") {
+        return None;
+    }
+    let p = chain.parent().ok()?;
+    let n = p.coinbase_maturity();
+    let words = if n >= 1_000 {
+        format!("{},{:03}", n / 1_000, n % 1_000)
+    } else {
+        n.to_string()
+    };
+    Some(format!(
+        "it spends a mined coin too young: on {} a mined coin is spendable after {words} confirmations",
+        p.alias
+    ))
 }
 
 /// The signing key a level-1 document names: its `signer`, else the key of a
