@@ -17,7 +17,9 @@
 //! from commit `2de40bdac4cba01be0864156a553d8287c22e279` (the tip
 //! announcement and transaction events follow `announce.mjs` and
 //! `relay.mjs` through `fe689e9`: the `peg` tag, kind 23503 and federated
-//! announcement authors), with
+//! announcement authors; the chain document as a kind-3500 event, the tip's
+//! `e` tag and resolution by alias or hash follow `announce.mjs` through
+//! `e8deb63161c7459ed39c01d2ca9fda3d860b65b6`, SPEC 0.0.5), with
 //! the event
 //! id and signature rule from the schema kernel it loads
 //! (`bitcoin-desktop/schema`, `codec/nostr.js`), and carries the same
@@ -30,31 +32,45 @@
 //!
 //! | module | what | kinds | SPEC | ported from |
 //! |---|---|---|---|---|
+//! | [`chain`] | the chain document as an event (its id is the chain's hash), read back verified; resolving a chain by its alias or its hash, the pre-0.0.5 way included | 3500 | 3, 11, App. A (0.0.5) | `siding/lib/announce.mjs chainEvent`, `parseChainEvent`, `resolveChain` |
 //! | [`event`] | the NIP-01 event, its id (SHA-256), BIP-340 verify, the sealed [`Signer`] port, an in-memory key | — | 11 | `siding/lib/relay.mjs makeEvents`, `schema/codec/nostr.js verifyNostrEvent`, `siding/lib/schnorr.mjs` |
 //! | [`kinds`] | every kind with owner (external / estate), storage class, `d` grammar and conformance | all | App. A | `docs/PROTOCOL-registry.md`, ADR-2098 |
 //! | [`tags`] | the tag grammar, the `chain` check a relay cannot do, outpoints | — | 11 | `siding/lib/relay.mjs subscribe` |
-//! | [`tip`] | the announcement: build, parse (both header families), the peg script (0.0.4), the mirror trust rule, judging a mirror, the newest | 33333 | 11 | `siding/lib/announce.mjs` |
+//! | [`tip`] | the announcement: build, parse (both header families), the peg script (0.0.4), the chain hash (`e`, 0.0.5), the mirror trust rule, judging a mirror, the newest | 33333 | 11 | `siding/lib/announce.mjs` |
 //! | [`tx`] | a transaction as an event; a faucet request; a parent transaction to broadcast | 23500, 23501, 23503 | 11 | `siding/lib/relay.mjs txEvent`, `parentTxEvent`, `bin/siding.mjs faucet` |
 //! | [`rules`] | a rule document; the genesis document — **SPEC prose only**, no upstream code | 33500, 33501 | 8, App. A | — |
 //! | [`record`] | the peg record *or* the desk's pledge: `PegRecord \| Pledge \| Ambiguous`, never guessed | 33502 | 6.2, App. A | `siding/lib/pledge.mjs`, `bin/siding.mjs onPledge` |
 //! | [`round`] | the level-2 envelopes: proposal, partial signature, sealed block, peg-out PSBT and its co-signature | 23510–23514 | 9.1 | `siding/lib/round.mjs`, `pegoutround.mjs` (codecs only) |
 //! | [`estate`] | the account binding and the five settlement domain events | 38420–38425 | ADR-2098, DDD-022 | — |
-//! | [`relay`] | NIP-01 client and relay messages, the two subscriptions, the on-receipt checks, the [`relay::RelayClient`] port | — | 11 | `siding/lib/relay.mjs`, `announce.mjs fetchLatestTip` |
+//! | [`relay`] | NIP-01 client and relay messages, the subscriptions (a chain's tip, an event by id), the on-receipt checks, the [`relay::RelayClient`] port | — | 11 | `siding/lib/relay.mjs`, `announce.mjs fetchLatestTip`, `fetchEvent` |
 //!
-//! # The announcement and the mirror (SPEC 11)
+//! # Two names, and the announcement (SPEC 3 and 11, 0.0.5)
+//!
+//! A chain has two names with two roles. The **hash** is the id of its
+//! chain document published as a kind-3500 event ([`chain`]): the identity
+//! for anything cryptographic. The tip announcement carries it as an `e`
+//! tag, a client verifies the document against it, a peg-in tweak and a
+//! nested chain's `parent` commit to it. The **alias** `sidestr:<name>` is
+//! for people, tags and `OP_RETURN`s, and is the `d` of the announcement.
 //!
 //! In Melvin Carvalho's words, adapted from `announce.mjs` and SPEC 11: a
-//! client that knows only a chain id asks a relay for the chain's kind-33333
-//! announcement, takes a mirror from it, reads that mirror's `chain.json`,
-//! and accepts the mirror when the document's signer, or one of its level-2
-//! signers, is the announcement's author. A mirror is then held to the announcement: the header at its tip
-//! must be the announced one, and it may be behind but never ahead of the
-//! signer. **A chain id is a name, not a proof**, so with only the id the
-//! newest announcement wins and a client shows the signer it settled on; a
-//! client that already knows the signer takes no other's. That rule is
-//! [`tip::choose_mirror`], [`tip::judge_mirror`] and [`tip::newest`], and
-//! nothing from a relay is trusted before [`Event::verify`]: "the event
-//! signature is checked, then the transaction itself must validate".
+//! client that knows only the alias takes the newest kind-33333
+//! announcement, reads the chain event by its `e` tag from a relay (or from
+//! a mirror, which may serve the event's JSON), and accepts it when the
+//! event's id is the hash of its content and its signature is the
+//! announcement's author's; a client that already knows the hash takes no
+//! other document. **The alias is still a name, not a proof**: two signers
+//! can both announce `sidestr:poker`, so a client shows the hash and the
+//! signer it settled on. A chain made before 0.0.5 is resolved as before:
+//! a mirror's `chain.json` is accepted when its `signer`, or one of its
+//! level-2 signers, is the announcement's author, until its signer
+//! publishes the document as an event. A mirror is then held to the
+//! announcement: the header at its tip must be the announced one, and it
+//! may be behind but never ahead of the signer. That rule is
+//! [`chain::resolve_chain`], [`tip::choose_mirror`], [`tip::judge_mirror`]
+//! and [`tip::newest`], and nothing from a relay is trusted before
+//! [`Event::verify`]: "the event signature is checked, then the transaction
+//! itself must validate".
 //!
 //! # A producer's afternoon
 //!
@@ -135,6 +151,11 @@
 //!   (ADR-2098 D2). Upstream reads every 33502 as a pledge.
 //! - **No socket.** siding uses the platform's `WebSocket`; here the I/O is
 //!   a port ([`relay::RelayClient`]) and the rules are pure.
+//! - **A chain event's document is JSON as JavaScript writes it.** The
+//!   chain's hash covers the document's bytes, so [`chain::chain_event`]
+//!   writes a document's JSON text exactly as `JSON.parse` then
+//!   `JSON.stringify` would (key order, numbers), and the result is held to
+//!   events siding signed.
 //!
 //! [`Signer`]: event::Signer
 //! [`Event::verify`]: event::Event::verify
@@ -146,6 +167,7 @@
     rustdoc::broken_intra_doc_links
 )]
 
+pub mod chain;
 pub mod error;
 pub mod estate;
 pub mod event;

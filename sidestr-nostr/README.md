@@ -4,7 +4,9 @@
 
 The Nostr plane of [sidestr](https://github.com/sidestr/spec) sidechains, in
 Rust: an owned NIP-01 event with BIP-340 verification and a sealed signer port,
-the tip announcement (kind 33333) with the mirror trust rule, transactions and
+the chain document as an event (kind 3500, SPEC 0.0.5: its id is the chain's
+hash) and resolving a chain by its alias or its hash, the tip announcement
+(kind 33333) with the mirror trust rule, transactions and
 faucet requests over a relay (23500, 23501), parent transactions to broadcast (23503), rule and genesis documents (33500,
 33501), the dual-schema 33502 record decoded as peg record, pledge or
 ambiguous, the level-2 round envelopes (23510–23514), and agentbox's account
@@ -13,10 +15,34 @@ binding and settlement events (38420–38425).
 A sidestr chain has no peer-to-peer network: blocks are served as a file from
 any mirror, and everything else travels as signed events on public relays. The
 one rule that makes a relay's answer worth acting on is the announcement's: a
-client accepts a mirror when the mirror's `chain.json` names the announcer as
-the level-1 signer or one of its level-2 signers, and then holds the mirror to
-the announced tip: it may be behind, never ahead. A chain id is a name, not a
-proof.
+client takes the newest announcement for a chain's alias (`sidestr:<name>`),
+reads the chain event its `e` tag names, and accepts it when the event's id is
+the hash of its content and its author is the announcement's; a chain made
+before spec 0.0.5 is accepted by a mirror's `chain.json` naming the announcer
+as the level-1 signer or one of its level-2 signers. The mirror is then held
+to the announced tip: it may be behind, never ahead. The alias is a name, not
+a proof; the chain's hash is its identity.
+
+```rust
+use sidestr_nostr::chain::{parse_chain_event, resolve_chain, sign_chain_event};
+use sidestr_nostr::event::{SecretKeySigner, Signer};
+use sidestr_nostr::tip::{parse_tip, sign_tip, TipTemplate};
+
+let signer = SecretKeySigner::from_hex(&"07".repeat(32)).unwrap();
+let me = signer.pubkey_hex().unwrap();
+let doc = format!(r#"{{"id":"sidestr:example","name":"example","parent":"tbtc4","challenge":"5120{me}"}}"#);
+let chain = sign_chain_event(&signer, &doc, 1_790_100_000).unwrap();   // its id is the chain's hash
+let t = TipTemplate::new("sidestr:example", 0, vec![], vec!["https://mirror.example/x".into()])
+    .unwrap()
+    .with_chain_hash(&chain.id)
+    .unwrap();
+let tip = parse_tip(&sign_tip(&signer, &t, 1_790_100_001).unwrap()).unwrap();
+
+let found = resolve_chain(Some("sidestr:example"), None, 1,
+    |_| Some(tip.clone()), |_| Some(chain.clone()), |_| Err("404".into())).unwrap();
+assert_eq!(found.hash.as_deref(), Some(chain.id.as_str()));
+assert_eq!(parse_chain_event(&chain).unwrap().chain["signer"], me.as_str());
+```
 
 ```toml
 [dependencies]
@@ -42,7 +68,9 @@ Melvin Carvalho ([github.com/sidestr/spec](https://github.com/sidestr/spec),
 AGPL-3.0), ported from commit `2de40bdac4cba01be0864156a553d8287c22e279`
 (the tip announcement and transaction events follow `announce.mjs` and
 `relay.mjs` through `fe689e9`: the `peg` tag, kind 23503 and federated
-announcement authors)
+announcement authors; the chain document as a kind-3500 event, the tip's `e`
+tag and resolution by alias or hash follow `announce.mjs` through
+`e8deb63161c7459ed39c01d2ca9fda3d860b65b6`, SPEC 0.0.5)
 (`siding/lib/{announce,relay,pledge,round,pegoutround,spend}.mjs`,
 `bin/siding.mjs`, `test/announce-test.mjs`). The event id and signature rule
 comes from the schema kernel siding loads, by the same author and under the
@@ -84,8 +112,14 @@ not upstream's.
 - Kinds 33500 and 33501 are conformant to SPEC prose only: upstream has no
   implementing code or wire example for either.
 - No socket: siding uses the platform's `WebSocket`. Here the NIP-01 messages,
-  the two subscriptions and the on-receipt checks are pure, and I/O is a
-  `RelayClient` port the caller implements.
+  the subscriptions and the on-receipt checks are pure, and I/O is a
+  `RelayClient` port the caller implements. `resolveChain`'s three lookups
+  (the newest tip, an event by id, a mirror's JSON) are closures the caller
+  answers.
+- The chain event's content is the document's JSON text written as
+  `JSON.parse` then `JSON.stringify` would write it (key order, integer-like
+  keys first, JavaScript's number printing), so the chain's hash a Rust signer
+  gives for a `chain.json` is the one siding gives.
 
 ## Status: 0.4.0
 
@@ -98,6 +132,14 @@ against the reference:
   (`tests/oracle.rs`, `fixtures/oracle-vectors.json`; the key is
   `sidestr-core`'s `fixtures/trial/trial.key`, read from the sibling crate when
   present, verify-only otherwise);
+- kind-3500 chain events built and signed here from the same document texts
+  (the trial chain, the level-2 `fedtest` chain, and a document whose JSON
+  exercises key order and number printing) are byte-identical to siding's
+  `chainEvent` at sidestr/spec `e8deb63`, read back as its `parseChainEvent`
+  reads them, and a tip naming the chain's hash carries exactly its tags
+  (`tests/chain_event.rs`, `fixtures/chain-event-vectors.json`, regenerated
+  by `tests/oracle/chain-event-oracle.mjs` and compared when the reference
+  checkouts are named);
 - sixteen live kind-33333 announcements from nine chains, fetched read-only
   from public relays, verify and parse (`tests/live.rs`,
   `fixtures/live-33333.json`, each with the relay and time it was received).

@@ -674,7 +674,8 @@ pub fn ok_count(results: &[(String, PublishOutcome)]) -> usize {
 // --- the stand-in ------------------------------------------------------------------
 
 fn matches(f: &Filter, ev: &Event) -> bool {
-    (f.kinds.is_empty() || f.kinds.contains(&ev.kind))
+    (f.ids.is_empty() || f.ids.iter().any(|i| ev.id.eq_ignore_ascii_case(i)))
+        && (f.kinds.is_empty() || f.kinds.contains(&ev.kind))
         && (f.authors.is_empty() || f.authors.iter().any(|a| ev.pubkey.eq_ignore_ascii_case(a)))
         && (f.d.is_empty()
             || ev

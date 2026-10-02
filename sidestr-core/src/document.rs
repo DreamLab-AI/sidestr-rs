@@ -3,9 +3,32 @@
 //!
 //! The document is what `siding new` writes and what every validator reads.
 //! It is the chain's identity: `genesisHash` is derived from it (the genesis
-//! commits to the chain id, the pegs, `genesisTime` and the signer's witness),
-//! and a validator refuses to proceed past a block 0 that does not hash to it.
-//! Changing any sealed field is a new chain, never a configuration edit.
+//! commits to the chain's alias, the pegs, `genesisTime` and the signer's
+//! witness), and a validator refuses to proceed past a block 0 that does not
+//! hash to it. Changing any sealed field is a new chain, never a
+//! configuration edit.
+//!
+//! # Two names (SPEC 3 and 11, 0.0.5)
+//!
+//! Since spec 0.0.5 the document is published as a Nostr event of kind 3500,
+//! regular and immutable, and **its event id is the chain's hash**: the one
+//! value that names this chain and no other, which a tip announcement points
+//! at, a client verifies the document against, and anything that must commit
+//! to a chain uses (a peg-in tweak; a nested chain's `parent`). The event's
+//! author is the signer, so the published document carries no `signer`
+//! field; `genesisHash` stays as a cross-check, never the identity. A
+//! document cannot contain its own hash, so inside it (the genesis's `chain`
+//! field) and in everything written before the hash exists (tags, the
+//! `pegin:` and `pegout:` `OP_RETURN`s, a rule document's `d`) the chain is
+//! named by its **alias**, `id` = `sidestr:<name>`, which is a name for
+//! people and not a proof. Building, reading and resolving the event is
+//! `sidestr-nostr`'s `chain` module; this type is the document either way.
+//!
+//! A chain made before 0.0.5 (the live `sidestr:dreamlab` among them) keeps
+//! its `chain.json` with `signer` and is resolved as before until its signer
+//! publishes the event; [`ChainDocument::signer`] is therefore kept, and a
+//! document read back from an event has it filled from the event's author,
+//! so [`ChainDocument::validate`] still checks the challenge against it.
 //!
 //! Every field siding reads is parsed and checked here. Fields siding does not
 //! read (an operator's `depth`, `containment`, `containmentDigest`, a
@@ -129,11 +152,19 @@ pub struct Peg {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainDocument {
-    /// The chain id, `sidestr:<name>`.
+    /// The chain's alias, `sidestr:<name>`: what tags, `OP_RETURN`s, rule
+    /// documents and the genesis name the chain by. Not its identity, which
+    /// is the chain's hash, the id of the document's kind-3500 event (SPEC
+    /// 0.0.5).
     pub id: String,
-    /// The short name; the key file and state directory are named after it.
+    /// The short name, the alias without `sidestr:` (SPEC 3, 0.0.5: "a short
+    /// alias for people and tags; not an identity"); the key file and state
+    /// directory are named after it.
     pub name: String,
-    /// The parent: a SPEC 3.2 alias or an accepted long id.
+    /// The parent: a SPEC 3.2 alias or an accepted long id. SPEC 0.0.5 lets
+    /// a nested chain name a sidestr chain's hash here; no parents table
+    /// (here or upstream's `parents.mjs`) resolves one yet, so such a
+    /// document is refused as [`Error::UnknownParent`].
     pub parent: String,
     /// The challenge script (hex); a block is valid when its witness satisfies it.
     pub challenge: String,
@@ -164,10 +195,15 @@ pub struct ChainDocument {
     /// The peg outputs the chain starts from.
     #[serde(default)]
     pub pegs: Vec<Peg>,
-    /// The signer's x-only public key (level 1).
+    /// The signer's x-only public key (level 1). A document published as a
+    /// chain event (SPEC 0.0.5) carries none, its event's author being the
+    /// signer; read back from the event, it is filled from that author. A
+    /// `chain.json` made before 0.0.5 carries it, and that is how such a
+    /// chain is still resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer: Option<String>,
-    /// The genesis hash, set once the genesis is sealed.
+    /// The genesis hash, set once the genesis is sealed: a cross-check, not
+    /// the chain's identity (SPEC 5, 0.0.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub genesis_hash: Option<String>,
     /// Rules the chain names beyond the core (`assets`, `pool`, `markets`,

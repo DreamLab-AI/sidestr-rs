@@ -71,6 +71,10 @@ struct Args {
     /// The most a proposed peg-out payment may spend in fees before this signer refuses to co-sign.
     #[arg(long, default_value_t = 100_000)]
     max_fee: u64,
+    /// The chain document as a kind-3500 event (SPEC 3, 0.0.5), whose id is announced with every
+    /// tip; default chain-event.json beside --chain, and none announced when there is none.
+    #[arg(long)]
+    chain_event: Option<PathBuf>,
 }
 
 fn main() {
@@ -128,6 +132,7 @@ fn main() {
             .collect(),
         parent,
         journal: a.journal,
+        chain_event: a.chain_event,
     };
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()

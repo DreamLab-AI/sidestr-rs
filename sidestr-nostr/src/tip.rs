@@ -1,18 +1,24 @@
 //! The signer's tip announcement, kind 33333 (SPEC 11; `siding/lib/announce.mjs`).
 //!
 //! In Melvin Carvalho's words, adapted from `announce.mjs`: a NIP-333 event,
-//! addressable by `d` = chain id, content the last twelve headers, `u` tags
-//! naming mirrors that serve the block file. A client that knows only a chain
-//! id asks a relay for this, takes a mirror from it, reads that mirror's
-//! `chain.json`, and accepts the mirror when the document's signer is the
-//! event's author. A mirror is then held to the announcement: same tip hash,
-//! or it is behind or lying. The `t` = `sidestr` tag is what a directory
-//! filters on: relays index single-letter tags only.
+//! addressable by `d` = the chain's alias (`sidestr:<name>`), content the
+//! last twelve headers, `u` tags naming mirrors that serve the block file,
+//! `e` = the chain event (SPEC 0.0.5, [`TipTemplate::with_chain_hash`]). A
+//! client that knows only the alias asks a relay for the newest tip, reads
+//! the chain event by its `e` tag (from a relay, or a mirror's
+//! `chain-event.json`), and accepts it when the id is the hash of its
+//! content, the signature is good, and the tip's author is the document's
+//! signer ([`crate::chain::resolve_chain`]). A chain made before 0.0.5 has no
+//! `e`: its mirror's `chain.json` is accepted when its `signer` is the tip's
+//! author ([`choose_mirror`]). A mirror is then held to the announcement:
+//! same tip hash, or it is behind or lying. The `t` = `sidestr` tag is what a
+//! directory filters on: relays index single-letter tags only.
 //!
-//! And the caveat SPEC 11 adds: **a chain id is a name, not a proof.** With
-//! only the id, the newest announcement wins, so a client shows the signer it
-//! ended up with; one that already knows the signer passes it to [`newest`]
-//! and takes no other's.
+//! And the caveat SPEC 11 adds: **the alias is a name, not a proof.** With
+//! only the alias, the newest announcement wins, so a client shows the hash
+//! and the signer it ended up with; one that already knows the signer passes
+//! it to [`newest`] and takes no other's, and one that knows the chain's hash
+//! takes no other document.
 //!
 //! # Both header families
 //!
@@ -60,12 +66,13 @@
 use serde::{Deserialize, Serialize};
 use sidestr_core::parents::Family;
 
+use crate::chain::is_chain_hash;
 use crate::error::{any_hex, Error, Result};
 use crate::event::{sign, Event, Signer, UnsignedEvent};
 use crate::kinds::{expect_kind, KIND_TIP};
 use crate::tags::{
-    all, first, height_tag, required, tag, MARKER_MIRROR, TAG_ALT, TAG_D, TAG_N, TAG_PEG, TAG_T,
-    TAG_TIP, TAG_U, TOPIC_SIDESTR,
+    all, first, height_tag, required, tag, MARKER_CHAIN, MARKER_MIRROR, TAG_ALT, TAG_D, TAG_E,
+    TAG_N, TAG_PEG, TAG_T, TAG_TIP, TAG_U, TOPIC_SIDESTR,
 };
 
 /// How many headers an announcement carries: the last twelve
@@ -81,11 +88,11 @@ pub fn header_hex_len(family: Family) -> usize {
     }
 }
 
-/// What a producer announces: the chain, its height, the trailing headers
-/// and the mirrors it vouches for.
+/// What a producer announces: the chain, its height, the trailing headers,
+/// the mirrors it vouches for, and (SPEC 0.0.5) the chain's hash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TipTemplate {
-    /// The chain id, `sidestr:<name>`.
+    /// The chain's alias, `sidestr:<name>` (the `d` and `n` tags).
     pub chain_id: String,
     /// The tip height.
     pub tip: u32,
@@ -94,6 +101,11 @@ pub struct TipTemplate {
     pub headers_hex: Vec<String>,
     /// Mirror base URLs, as given; the parser drops trailing slashes.
     pub mirrors: Vec<String>,
+    /// The chain's hash, the id of its kind-3500 chain event, lower-case
+    /// (SPEC 3 and 11, 0.0.5): announced as the last tag, `["e", hash, "",
+    /// "chain"]`. `None` for a chain whose document has not been published
+    /// as an event, whose announcements are exactly the 0.0.4 ones.
+    pub chain_hash: Option<String>,
 }
 
 impl TipTemplate {
@@ -144,7 +156,33 @@ impl TipTemplate {
             tip,
             headers_hex: headers,
             mirrors,
+            chain_hash: None,
         })
+    }
+
+    /// Announce the chain's hash with this tip (`announce.mjs tipEvent` with
+    /// `chainHash`, SPEC 0.0.5): 64 hex characters, either case, kept
+    /// lower-case; anything else is refused as the reference throws
+    /// ("chainHash is the chain event's id (64 hex)").
+    ///
+    /// ```
+    /// use sidestr_nostr::tip::{tip_event, TipTemplate};
+    ///
+    /// let hash = "AB".repeat(32);
+    /// let t = TipTemplate::new("sidestr:x", 0, vec!["00".repeat(80)], vec![]).unwrap()
+    ///     .with_chain_hash(&hash).unwrap();
+    /// assert_eq!(tip_event(&t, 1).tags.last().unwrap(), &["e", &"ab".repeat(32), "", "chain"]);
+    /// assert!(TipTemplate::new("sidestr:x", 0, vec![], vec![]).unwrap().with_chain_hash("ab").is_err());
+    /// ```
+    pub fn with_chain_hash(mut self, hash: &str) -> Result<Self> {
+        if !is_chain_hash(hash) {
+            return Err(Error::Hex {
+                what: "chain hash",
+                reason: "chainHash is the chain event's id (64 hex)".into(),
+            });
+        }
+        self.chain_hash = Some(hash.to_ascii_lowercase());
+        Ok(self)
     }
 
     /// The height of the first header carried.
@@ -154,10 +192,17 @@ impl TipTemplate {
 }
 
 /// The unsigned event for a template (`announce.mjs tipEvent`): tags `d` and
-/// `n` = chain id, `t` = `sidestr`, `tip` = height, `alt` = "sidestr headers
-/// `<from>`-`<tip>` of `<chain id>`", one `u` per mirror with the `mirror`
-/// marker; content the headers joined. `pubkey` is filled by the signer.
+/// `n` = chain alias, `t` = `sidestr`, `tip` = height, `alt` = "sidestr
+/// headers `<from>`-`<tip>` of `<chain alias>`", one `u` per mirror with the
+/// `mirror` marker, then `["e", hash, "", "chain"]` when the template carries
+/// the chain's hash; content the headers joined. `pubkey` is filled by the
+/// signer. A template without a chain hash gives exactly the 0.0.4 event.
 pub fn tip_event(t: &TipTemplate, created_at: u64) -> UnsignedEvent {
+    build_tip(t, None, created_at)
+}
+
+/// The tags in upstream's order: `d n t tip alt u… peg e`.
+fn build_tip(t: &TipTemplate, peg: Option<String>, created_at: u64) -> UnsignedEvent {
     let mut tags = vec![
         tag(TAG_D, &t.chain_id),
         tag(TAG_N, &t.chain_id),
@@ -175,6 +220,17 @@ pub fn tip_event(t: &TipTemplate, created_at: u64) -> UnsignedEvent {
     ];
     for m in &t.mirrors {
         tags.push(vec![TAG_U.into(), m.clone(), MARKER_MIRROR.into()]);
+    }
+    if let Some(p) = peg {
+        tags.push(tag(TAG_PEG, p));
+    }
+    if let Some(h) = &t.chain_hash {
+        tags.push(vec![
+            TAG_E.into(),
+            h.clone(),
+            String::new(),
+            MARKER_CHAIN.into(),
+        ]);
     }
     UnsignedEvent {
         pubkey: String::new(),
@@ -203,8 +259,9 @@ pub fn peg_script_hex(s: &str) -> Option<String> {
 /// [`tip_event`] with the peg script a peg-in pays (`announce.mjs tipEvent`
 /// with `pegScript`, SPEC 0.0.4): level 2 the chain's challenge, level 1 one
 /// address of the producer's parent wallet. The `peg` tag follows the
-/// mirrors, lower-cased; `None` adds none. A script that is not 2 to 80
-/// bytes of hex is refused, as the reference throws.
+/// mirrors, lower-cased, and precedes the chain hash's `e` tag; `None` adds
+/// none. A script that is not 2 to 80 bytes of hex is refused, as the
+/// reference throws.
 ///
 /// ```
 /// use sidestr_nostr::tip::{peg_script_of, tip_event_with_peg, TipTemplate};
@@ -219,15 +276,15 @@ pub fn tip_event_with_peg(
     peg_script: Option<&str>,
     created_at: u64,
 ) -> Result<UnsignedEvent> {
-    let mut ev = tip_event(t, created_at);
-    if let Some(p) = peg_script {
-        let p = peg_script_hex(p).ok_or_else(|| Error::Hex {
-            what: "peg script",
-            reason: "a script of 2 to 80 bytes as hex".into(),
-        })?;
-        ev.tags.push(tag(TAG_PEG, p));
-    }
-    Ok(ev)
+    let peg = peg_script
+        .map(|p| {
+            peg_script_hex(p).ok_or_else(|| Error::Hex {
+                what: "peg script",
+                reason: "a script of 2 to 80 bytes as hex".into(),
+            })
+        })
+        .transpose()?;
+    Ok(build_tip(t, peg, created_at))
 }
 
 /// Sign [`tip_event_with_peg`] with the chain's signer.
@@ -252,11 +309,24 @@ pub fn peg_script_of(ev: &Event) -> Option<String> {
         .and_then(|p| peg_script_hex(p))
 }
 
+/// The chain's hash an announcement carries (`announce.mjs parseTip`
+/// `chainHash`, SPEC 0.0.5): the first `e` tag's value, lower-cased, when it
+/// is 64 hex characters; `None` otherwise, including when that first tag is
+/// malformed and a later one is not, as the reference reads only the first.
+pub fn chain_hash_of(ev: &Event) -> Option<String> {
+    ev.tags
+        .iter()
+        .find(|t| t.first().is_some_and(|n| n == TAG_E))
+        .and_then(|t| t.get(1))
+        .filter(|h| is_chain_hash(h))
+        .map(|h| h.to_ascii_lowercase())
+}
+
 /// A parsed announcement (`announce.mjs parseTip`), plus which family the
 /// headers are.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tip {
-    /// The chain id from `d`.
+    /// The chain's alias from `d`.
     pub chain_id: String,
     /// The announced height.
     pub tip: u32,
@@ -272,6 +342,10 @@ pub struct Tip {
     pub created_at: u64,
     /// The event id.
     pub id: String,
+    /// The chain's hash from the `e` tag ([`chain_hash_of`], SPEC 0.0.5);
+    /// `None` for a chain made before 0.0.5, which is resolved by its
+    /// mirror's `chain.json` ([`choose_mirror`]).
+    pub chain_hash: Option<String>,
 }
 
 impl Tip {
@@ -365,6 +439,7 @@ fn parse_with(ev: &Event, family: Option<Family>) -> Result<Tip> {
         pubkey: ev.pubkey.clone(),
         created_at: ev.created_at,
         id: ev.id.clone(),
+        chain_hash: chain_hash_of(ev),
     })
 }
 
@@ -437,9 +512,11 @@ pub fn newest_event<'a>(
     best
 }
 
-/// The part of a mirror's `chain.json` the trust rule reads: its id and its
-/// level-1 signer or level-2 federation. Everything else is
-/// `sidestr_core::document::ChainDocument`'s.
+/// The part of a mirror's `chain.json` the trust rule reads: its id (the
+/// chain's alias) and its level-1 signer or level-2 federation. Everything
+/// else is `sidestr_core::document::ChainDocument`'s. This is the pre-0.0.5
+/// rule, by the document's `signer` field; a chain published as a kind-3500
+/// event is resolved by its hash ([`crate::chain::resolve_chain`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MirrorChain {
     /// The chain id the document claims.
@@ -693,6 +770,46 @@ mod tests {
         assert_eq!(peg_script_of(&with(vec![])), None);
         // parse_tip still reads an announcement that carries one
         assert_eq!(parse_tip(&with(vec![peg(&cd)])).unwrap().tip, 9);
+    }
+
+    /// announce.mjs parseTip at e8deb63: `chainHash` is `tag('e')[0]`,
+    /// validated as 64 hex, lower-cased; the first `e` tag only.
+    #[test]
+    fn chain_hash_is_read_from_the_first_e_tag_only() {
+        let signer = crate::event::SecretKeySigner::from_bytes(&[7u8; 32]).unwrap();
+        let t = TipTemplate::new("sidestr:vec", 9, vec!["01".repeat(80)], vec![]).unwrap();
+        let with = |tags: Vec<Vec<String>>| {
+            let mut ev = tip_event(&t, 1);
+            ev.tags.extend(tags);
+            sign(&signer, ev).unwrap()
+        };
+        let hash = "Ab".repeat(32);
+        let e = |v: &str| {
+            vec![
+                "e".to_string(),
+                v.to_string(),
+                String::new(),
+                "chain".into(),
+            ]
+        };
+        assert_eq!(
+            chain_hash_of(&with(vec![e(&hash)])),
+            Some(hash.to_ascii_lowercase())
+        );
+        assert_eq!(
+            parse_tip(&with(vec![e(&hash)])).unwrap().chain_hash,
+            Some(hash.to_ascii_lowercase())
+        );
+        assert_eq!(chain_hash_of(&with(vec![e("ab"), e(&hash)])), None);
+        assert_eq!(chain_hash_of(&with(vec![vec!["e".into()], e(&hash)])), None);
+        assert_eq!(chain_hash_of(&with(vec![e(&format!(" {hash}"))])), None);
+        assert_eq!(chain_hash_of(&with(vec![])), None);
+        // a template without a hash builds exactly the 0.0.4 event
+        let mut hashed = t.clone();
+        hashed.chain_hash = None;
+        assert_eq!(tip_event(&hashed, 1), tip_event(&t, 1));
+        assert!(t.clone().with_chain_hash(&"zz".repeat(32)).is_err());
+        assert!(t.clone().with_chain_hash(&"ab".repeat(33)).is_err());
     }
 
     #[test]

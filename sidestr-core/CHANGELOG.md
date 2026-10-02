@@ -53,6 +53,15 @@ coinbase maturity (bitcoin-blake/reef `2bd3cb8`). Additive.
   against that. A fact about parent coins only: the sidechain's own maturity
   (`rules::Params::coinbase_maturity`, 100) is unchanged, and nothing in
   this crate selects parent coins.
+Documentation only: SPEC 0.0.5 (sidestr/spec `e8deb63`). The chain
+document's `id` is the chain's alias and its identity is the chain's hash,
+the id of the document published as a kind-3500 event (`sidestr-nostr`'s
+`chain` module); `name` is documented as the alias without `sidestr:`;
+`signer` stays for chains made before 0.0.5 and is filled from the event's
+author when a document is read back from its event; a `parent` naming a
+chain hash (a nested chain) is not resolved by any parents table yet and is
+refused as an unknown parent. Marker grammar, validation and serialisation
+are unchanged.
 
 ## 0.4.0 (2026-10-01)
 

@@ -30,6 +30,7 @@
 //! | [`prepare_transfer`], [`prepare_issue`] | move or issue an asset (with memo records such as `tip:nostr:<event id>`), and the event |
 //! | [`pegin_plan`] | what a parent wallet pays to peg in: the peg address (and its refund descriptor), the marker |
 //! | [`pegin_tweak_plan`] | opt-in: the peg-in tweak form, one output committing to the chain hash and script, its descriptor and reveal |
+//! | [`chain`] | the chain document as a kind-3500 event, signed by the chain's signer (its id is the chain's hash, SPEC 0.0.5); finding a chain by its alias or its hash |
 //!
 //! It is a port in the AGPL sense: it builds on `sidestr-core`,
 //! `sidestr-wallet` and `sidestr-nostr`, which port **siding**, the
@@ -81,6 +82,8 @@
     missing_debug_implementations,
     rustdoc::broken_intra_doc_links
 )]
+
+pub mod chain;
 
 use std::str::FromStr;
 

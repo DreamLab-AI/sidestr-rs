@@ -2,6 +2,19 @@
 
 All notable changes to `sidestr-round`. The crate follows semantic versioning.
 
+## Unreleased
+
+SPEC 0.0.5 (sidestr/spec `e8deb63`): the producer announces the chain's
+hash. Source-breaking for code that builds `node::Settings` by struct
+literal (a new field).
+
+- `cosign` reads `chain-event.json` beside the document (or
+  `--chain-event`), verifies it as a chain event of this chain, and
+  announces its id with every tip as the `e` tag, as `siding produce` does;
+  without one it logs that tips carry no chain hash and announces as before.
+  `node::read_chain_hash`, `Settings::chain_event`.
+- The in-process relay stand-in honours a filter's `ids`.
+
 ## 0.3.0 (2026-10-01)
 
 - `RelayPool` keeps one reconnecting websocket per relay and shares it among

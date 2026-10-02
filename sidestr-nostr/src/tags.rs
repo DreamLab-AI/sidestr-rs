@@ -14,10 +14,13 @@
 
 use crate::error::{hex_of, Error, Result};
 
-/// Addressable identifier (NIP-33). A chain id on a tip, `<chain id>:<height>`
-/// on a rule document, `<parent txid>:<vout>` on a 33502 record.
+/// Addressable identifier (NIP-33). A chain alias on a tip, `<chain
+/// alias>:<height>` on a rule document, `<parent txid>:<vout>` on a 33502
+/// record.
 pub const TAG_D: &str = "d";
-/// Event reference: a partial signature's proposal, a co-signed PSBT's request.
+/// Event reference: a partial signature's proposal, a co-signed PSBT's
+/// request, and on a tip the chain event, `["e", <chain hash>, "", "chain"]`
+/// (SPEC 11, 0.0.5).
 pub const TAG_E: &str = "e";
 /// The chain id on every ephemeral sidestr event (SPEC 11); not relay-indexed.
 pub const TAG_CHAIN: &str = "chain";
@@ -43,6 +46,9 @@ pub const TAG_GENESIS: &str = "genesis";
 pub const TOPIC_SIDESTR: &str = "sidestr";
 /// The third element of a `u` tag on a tip.
 pub const MARKER_MIRROR: &str = "mirror";
+/// The fourth element (the NIP-10 marker position) of the `e` tag a tip
+/// names its chain event with (SPEC 11, 0.0.5).
+pub const MARKER_CHAIN: &str = "chain";
 
 /// First value of the first tag with this name.
 pub fn first<'a>(tags: &'a [Vec<String>], name: &str) -> Option<&'a str> {

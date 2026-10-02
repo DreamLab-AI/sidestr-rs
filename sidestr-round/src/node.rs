@@ -73,6 +73,47 @@ pub struct Settings {
     /// peg-out round journals beside it in `<stem>-pegout.jsonl` (default
     /// `<dir>/votes-pegout.jsonl`): one file per round, one writer per file.
     pub journal: Option<PathBuf>,
+    /// The chain document as a kind-3500 event (SPEC 3, 0.0.5); default
+    /// `chain-event.json` beside [`Settings::chain`]. When it is there, its
+    /// id, the chain's hash, is announced with every tip (`e`); when it is
+    /// not, tips carry no chain hash, as before 0.0.5 ([`read_chain_hash`]).
+    pub chain_event: Option<PathBuf>,
+}
+
+/// The chain's hash a producer announces with every tip (`bin/siding.mjs
+/// produce`, SPEC 0.0.5): the chain event at `explicit`, else
+/// `chain-event.json` beside the document at `chain_file`, read back with
+/// [`sidestr_nostr::chain::parse_chain_event`] (it must verify and be signed
+/// by the chain's signer or one of its signers) and refused when it is
+/// another chain's ("`<file>` is the event of `<alias>`, not `<id>`"). `None`
+/// with the path looked at when there is no such file: the chain has not
+/// published its document as an event, and its tips carry no hash.
+pub fn read_chain_hash(
+    chain_file: &Path,
+    explicit: Option<&Path>,
+    alias: &str,
+) -> Result<(Option<String>, PathBuf)> {
+    let path = explicit.map(Path::to_path_buf).unwrap_or_else(|| {
+        chain_file
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .join(sidestr_nostr::chain::CHAIN_EVENT_FILE)
+    });
+    if !path.exists() {
+        return Ok((None, path));
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let v: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| Error::Federation(format!("{}: {e}", path.display())))?;
+    let d = sidestr_nostr::chain::parse_chain_event_value(&v)?;
+    if d.alias != alias {
+        return Err(Error::Federation(format!(
+            "{} is the event of {}, not {alias}",
+            path.display(),
+            d.alias
+        )));
+    }
+    Ok((Some(d.hash), path))
 }
 
 /// The peg-out round's journal beside the block round's: `votes.jsonl` →
@@ -311,6 +352,8 @@ struct Node<F: HeaderFamily> {
     announced: Option<u32>,
     announce_retry_at: u64,
     started: u64,
+    /// The chain's hash, announced with every tip (SPEC 0.0.5).
+    chain_hash: Option<String>,
 }
 
 impl<F: HeaderFamily> Node<F> {
@@ -878,6 +921,16 @@ pub async fn run_as<F: HeaderFamily>(doc: ChainDocument, settings: Settings) -> 
         )?),
         _ => None,
     };
+    // SPEC 3: the chain's hash, announced with every tip (`e`) when the
+    // document has been published as an event (siding chain-event)
+    let (chain_hash, chain_event) =
+        read_chain_hash(&settings.chain, settings.chain_event.as_deref(), &doc.id)?;
+    match &chain_hash {
+        Some(h) => log(format!("chain hash {h} ({})", chain_event.display())),
+        None => log(
+            "no chain-event.json beside the document: tips carry no chain hash (siding chain-event or sidestr-agent chain-event makes one)",
+        ),
+    }
     let mut pegins: PeginState = read_json(&dir.join("pegins.json"));
     if pegins.pegins.is_empty() && pegins.scanned == 0 {
         pegins.scanned = i64::from(settings.parent.as_ref().map(|p| p.from).unwrap_or(0)) - 1;
@@ -897,6 +950,7 @@ pub async fn run_as<F: HeaderFamily>(doc: ChainDocument, settings: Settings) -> 
         announced: None,
         announce_retry_at: 0,
         started: now,
+        chain_hash,
     };
     log(format!(
         "level 2: signer {} of {}, threshold {}, proposing after {} s when it is another signer's turn; journal {} ({loaded} entries)",
@@ -1082,7 +1136,7 @@ pub async fn run_as<F: HeaderFamily>(doc: ChainDocument, settings: Settings) -> 
                     let now = unix_now();
                     if node.announced != Some(tip.height) && now >= node.announce_retry_at {
                         let headers = node.headers_hex();
-                        match TipTemplate::new(node.doc.id.clone(), tip.height, headers.clone(), settings.mirrors.clone()).and_then(|t| sign_tip_with_peg(&node.key, &t, Some(&node.doc.challenge), now)) {
+                        match TipTemplate::new(node.doc.id.clone(), tip.height, headers.clone(), settings.mirrors.clone()).and_then(|t| match &node.chain_hash { Some(h) => t.with_chain_hash(h), None => Ok(t) }).and_then(|t| sign_tip_with_peg(&node.key, &t, Some(&node.doc.challenge), now)) {
                             Ok(ev) => {
                                 let r = publish_all(&relays, &ev, Duration::from_secs(8)).await;
                                 let ok = ok_count(&r);
@@ -1145,5 +1199,56 @@ mod tests {
         };
         let r = PeginRecord::from(&f);
         assert_eq!(r.found(), f);
+    }
+
+    /// `bin/siding.mjs produce` at e8deb63: the chain's hash comes from
+    /// chain-event.json beside the document, verified and of this chain.
+    #[test]
+    fn the_chain_hash_is_read_from_the_event_beside_the_document() {
+        use sidestr_nostr::chain::{parse_chain_event, sign_chain_event};
+        use sidestr_nostr::event::SecretKeySigner;
+        let fixtures = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../sidestr-core/fixtures/fedtest"
+        );
+        let text = std::fs::read_to_string(format!("{fixtures}/chain.json")).unwrap();
+        let key = std::fs::read_to_string(format!("{fixtures}/signer2.key")).unwrap();
+        let signer = SecretKeySigner::from_hex(&key).unwrap();
+        let dir =
+            std::env::temp_dir().join(format!("sidestr-round-chain-hash-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let chain = dir.join("chain.json");
+        std::fs::write(&chain, &text).unwrap();
+        // none yet: no hash, and the place it was looked for
+        let (h, at) = read_chain_hash(&chain, None, "sidestr:fedtest").unwrap();
+        assert_eq!((h, at.clone()), (None, dir.join("chain-event.json")));
+        let ev = sign_chain_event(&signer, &text, 1_790_100_000).unwrap();
+        std::fs::write(&at, serde_json::to_string_pretty(&ev).unwrap()).unwrap();
+        let (h, _) = read_chain_hash(&chain, None, "sidestr:fedtest").unwrap();
+        assert_eq!(h.as_deref(), Some(ev.id.as_str()));
+        assert_eq!(parse_chain_event(&ev).unwrap().hash, ev.id);
+        // another chain's event is refused, naming both
+        let e = read_chain_hash(&chain, None, "sidestr:other").unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("is the event of sidestr:fedtest, not sidestr:other"),
+            "{e}"
+        );
+        // an explicit path wins; a forged one does not verify
+        let mut forged = ev.clone();
+        forged.content = forged.content.replacen("fedtest", "fedtesu", 1);
+        let elsewhere = dir.join("forged.json");
+        std::fs::write(&elsewhere, serde_json::to_string(&forged).unwrap()).unwrap();
+        assert!(read_chain_hash(&chain, Some(&elsewhere), "sidestr:fedtest").is_err());
+        // a key outside the federation is not one of its signers
+        let stranger = SecretKeySigner::from_bytes(&[0x31; 32]).unwrap();
+        let theirs = sign_chain_event(&stranger, &text, 1_790_100_000).unwrap();
+        std::fs::write(&elsewhere, serde_json::to_string(&theirs).unwrap()).unwrap();
+        let e = read_chain_hash(&chain, Some(&elsewhere), "sidestr:fedtest").unwrap_err();
+        assert!(
+            e.to_string().contains("not one of the document's signers"),
+            "{e}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

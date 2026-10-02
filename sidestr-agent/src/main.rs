@@ -170,6 +170,35 @@ enum Cmd {
         #[arg(long, requires = "tweak")]
         chain_hash: Option<String>,
     },
+    /// The chain document as a kind-3500 event (SPEC 3, 0.0.5), as `siding
+    /// chain-event`: signed by the chain's signer (`--key-file`), its id the
+    /// chain's hash. Written as chain-event.json beside the document (`--chain`)
+    /// or to `--out`, and published to the relays named by `--relay` only.
+    ChainEvent {
+        /// Relays to publish the event to, comma-separated; none: written only.
+        /// (The global `--relays` default is not used: a chain's document is
+        /// published where its signer chooses.)
+        #[arg(long, value_delimiter = ',')]
+        relay: Vec<String>,
+        /// Where to write the event; chain-event.json beside the document by default.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Find a chain by its alias or its hash (SPEC 11, 0.0.5): the newest tip
+    /// announcement, the chain event it names (from the relays or a mirror's
+    /// chain-event.json), verified, its signer the tip's author; a chain made
+    /// before 0.0.5 resolves by its mirror's chain.json, with no hash.
+    Resolve {
+        /// The chain's alias, `sidestr:<name>`.
+        #[arg(long, required_unless_present = "chain_hash")]
+        alias: Option<String>,
+        /// The chain's hash: its kind-3500 chain event's id.
+        #[arg(long)]
+        chain_hash: Option<String>,
+        /// Seconds to wait for each relay.
+        #[arg(long, default_value_t = 6)]
+        timeout: u64,
+    },
     /// Send a signed *parent* transaction (a peg-in) with no node of your
     /// own: to the parent's public explorer, and if that refuses or does not
     /// answer, as a kind-23503 event for a producer with a node to broadcast
@@ -500,6 +529,22 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
             }
             Ok(plan)
         }
+        Cmd::ChainEvent { relay, out } => chain_event(cli, relay, out.as_ref()).await,
+        Cmd::Resolve {
+            alias,
+            chain_hash,
+            timeout,
+        } => {
+            let r = sidestr_agent::chain::resolve_chain_on(
+                &cli.relays,
+                alias.as_deref(),
+                chain_hash.as_deref(),
+                Duration::from_secs(*timeout),
+                fetch_json,
+            )
+            .await?;
+            Ok(sidestr_agent::chain::resolved_json(&r))
+        }
         Cmd::PublishParent {
             hex,
             no_explorer,
@@ -596,6 +641,74 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
             }))
         }
     }
+}
+
+/// `siding chain-event`: the document at `--chain` as a kind-3500 event
+/// signed by `--key-file`, written beside it (or to `--out`) and published
+/// to `--relay` when named.
+async fn chain_event(
+    cli: &Cli,
+    relays: &[String],
+    out: Option<&PathBuf>,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let chain_file = cli
+        .chain
+        .as_ref()
+        .ok_or("--chain names the document: the event is written beside it")?;
+    let key_file = cli
+        .key_file
+        .as_ref()
+        .ok_or("--key-file is the chain's signer key")?;
+    let text = std::fs::read_to_string(chain_file)?;
+    let k = key(cli)?;
+    let doc = ChainDocument::from_json_with(&text, &sidestr_agent::chain::KNOWN_RULES)?;
+    if let Err(why) = sidestr_agent::chain::check_signer(&doc, &k) {
+        return Err(format!("the key at {} is {why}", key_file.display()).into());
+    }
+    let made = sidestr_agent::chain::sign_chain_document(&k, &text, unix_now())?;
+    let written = out.cloned().unwrap_or_else(|| {
+        chain_file
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new(""))
+            .join(sidestr_nostr::chain::CHAIN_EVENT_FILE)
+    });
+    std::fs::write(&written, sidestr_agent::chain::event_file_json(&made.event))?;
+    let relays: Vec<String> = relays
+        .iter()
+        .map(|r| r.trim().to_string())
+        .filter(|r| !r.is_empty())
+        .collect();
+    let mut published = serde_json::Map::new();
+    if !relays.is_empty() {
+        for (relay, outcome) in publish_all(&relays, &made.event, Duration::from_secs(8)).await {
+            let said = match outcome {
+                sidestr_nostr::relay::PublishOutcome::Ok => "ok".to_string(),
+                sidestr_nostr::relay::PublishOutcome::Rejected(m) => m,
+                sidestr_nostr::relay::PublishOutcome::Timeout => "timeout".into(),
+                sidestr_nostr::relay::PublishOutcome::Closed => "closed before OK".into(),
+            };
+            published.insert(relay, json!(said));
+        }
+    }
+    Ok(json!({
+        "hash": made.event.id,
+        "alias": made.parsed.alias,
+        "signer": made.parsed.pubkey,
+        "written": written.display().to_string(),
+        "published": published,
+        "note": "the hash is the chain's identity: the tip announces it (e), a tweak commits to it; the alias stays for people and tags",
+    }))
+}
+
+/// A mirror's JSON (`chain.json`, `chain-event.json`), for resolution.
+fn fetch_json(url: &str) -> Result<serde_json::Value, String> {
+    let text = ureq::get(url)
+        .call()
+        .map_err(|e| e.to_string())?
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| e.to_string())?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
 }
 
 async fn pay(

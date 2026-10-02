@@ -69,6 +69,17 @@ sidestr-agent --chain chain.json pegin-plan --amount 50000 --refund npub1… --t
 # a signed parent transaction (a peg-in) with no node of your own: the parent's
 # public explorer, else a kind-23503 event a producer with a node broadcasts
 sidestr-agent --chain chain.json publish-parent <hex>
+
+# the chain document as a kind-3500 event (SPEC 0.0.5), signed by the chain's
+# signer: its id is the chain's hash. Written as chain-event.json beside the
+# document (a mirror serves it beside chain.json), published only to --relay
+sidestr-agent --chain chain.json --key-file signer.key chain-event --relay wss://a,wss://b
+
+# find a chain by its alias or its hash: the newest tip, the chain event it
+# names, verified, its signer the tip's author; a chain made before 0.0.5
+# (sidestr:dreamlab today) resolves by its mirror's chain.json, with no hash
+sidestr-agent resolve --alias sidestr:dreamlab
+sidestr-agent resolve --chain-hash <64 hex>
 ```
 
 | flag | meaning | default |

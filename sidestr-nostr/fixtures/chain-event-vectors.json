@@ -1,0 +1,181 @@
+{
+ "reference": "sidestr/spec e8deb63161c7459ed39c01d2ca9fda3d860b65b6 siding/lib/announce.mjs chainEvent, parseChainEvent, tipEvent, parseTip",
+ "created_at": 1790100000,
+ "documents": {
+  "trial": "{\n \"id\": \"sidestr:trial\",\n \"name\": \"trial\",\n \"parent\": \"tbtc4\",\n \"comment\": \"A sidestr chain beside Bitcoin testnet4, made 2026-09-22. Level 1: one signer. Coins with no value.\",\n \"challenge\": \"512098b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b\",\n \"powLimit\": \"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\n \"addressPrefix\": \"trl\",\n \"magic\": \"a8f6706f\",\n \"pegConfirmations\": 6,\n \"refundBlocks\": 10000,\n \"pegoutBlocks\": 144,\n \"pegoutMin\": 10000,\n \"minFeeRate\": 1,\n \"genesisTime\": 1790076612,\n \"pegs\": [],\n \"signer\": \"98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b\",\n \"genesisHash\": \"0bdfdb3194f067d15b7a1cfa865de391b7ac00e1970863946d143e7329784402\"\n}\n",
+  "fed": "{\n \"id\": \"sidestr:fedtest\",\n \"name\": \"fedtest\",\n \"parent\": \"tbtc4\",\n \"comment\": \"A throwaway 2-of-3 federated chain (level 2) for the sidestr-core federation oracle; keys disposable.\",\n \"challenge\": \"512082a23c18f7e12d180ed51eb895cdd49e0f6a1432cd08b791a32ed0664607fdcc\",\n \"powLimit\": \"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\n \"addressPrefix\": \"fed\",\n \"magic\": \"a8f6706f\",\n \"pegConfirmations\": 6,\n \"refundBlocks\": 10000,\n \"pegoutBlocks\": 144,\n \"pegoutMin\": 10000,\n \"minFeeRate\": 1,\n \"genesisTime\": 1790000000,\n \"pegs\": [\n  {\n   \"txid\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n   \"vout\": 0,\n   \"amount\": 5000000000,\n   \"script\": \"5120823a0785da0bb0beef8438e3e2c2712130d5a6013fb5e2ba678b8bd47da46942\"\n  }\n ],\n \"signers\": [\n  \"823a0785da0bb0beef8438e3e2c2712130d5a6013fb5e2ba678b8bd47da46942\",\n  \"5be065559f0ad67dcdb3dec4269b16182b6a6c21a052a56ddfc94a4023b19098\",\n  \"129f5ebe6a365acceef416fcf77d2b487bcaef6e36c737d6f5dd5fbf68af1681\"\n ],\n \"threshold\": 2\n}",
+  "awkward": "{\"id\":\"sidestr:awkward\",\"name\":\"awkward\",\"10\":\"ten\",\"parent\":\"tbtc4\",\"2\":\"two\",\"signer\":\"98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b\",\"f\":1.0,\"g\":1e21,\"h\":0.000001,\"i\":1e-7,\"j\":123.456,\"k\":-0.0,\"l\":1.5e300,\"m\":-2.5e-9,\"big\":9007199254740993,\"neg\":-12,\"s\":\"\\u00e9 \\u2028 \\\"q\\\" \\u0001 \\/ \\t\",\"nested\":{\"b\":1,\"0\":[1.10,{\"z\":null,\"a\":true}]},\"name\":\"awkward-again\"}"
+ },
+ "events": {
+  "trial": {
+   "id": "dd34b27da88d74a125c2814c9d844f5eec173494da4f106478eb93cbb22ba490",
+   "pubkey": "98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b",
+   "created_at": 1790100000,
+   "kind": 3500,
+   "tags": [
+    [
+     "n",
+     "sidestr:trial"
+    ],
+    [
+     "t",
+     "sidestr"
+    ],
+    [
+     "alt",
+     "sidestr chain document sidestr:trial"
+    ]
+   ],
+   "content": "{\"id\":\"sidestr:trial\",\"name\":\"trial\",\"parent\":\"tbtc4\",\"comment\":\"A sidestr chain beside Bitcoin testnet4, made 2026-09-22. Level 1: one signer. Coins with no value.\",\"challenge\":\"512098b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b\",\"powLimit\":\"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"addressPrefix\":\"trl\",\"magic\":\"a8f6706f\",\"pegConfirmations\":6,\"refundBlocks\":10000,\"pegoutBlocks\":144,\"pegoutMin\":10000,\"minFeeRate\":1,\"genesisTime\":1790076612,\"pegs\":[],\"genesisHash\":\"0bdfdb3194f067d15b7a1cfa865de391b7ac00e1970863946d143e7329784402\"}",
+   "sig": "0ef9ca976b2ccb205c3d61985c73aea70010db2cc0a470da908d10a09773afe162b739d4275e0bf8301df5985b40ec406348e8c361f3855108aec264b730651e"
+  },
+  "fed": {
+   "id": "d1d92124e2886d9cc67215561cd783d999ea17f5a731a5248f5af4daf27ef76d",
+   "pubkey": "5be065559f0ad67dcdb3dec4269b16182b6a6c21a052a56ddfc94a4023b19098",
+   "created_at": 1790100000,
+   "kind": 3500,
+   "tags": [
+    [
+     "n",
+     "sidestr:fedtest"
+    ],
+    [
+     "t",
+     "sidestr"
+    ],
+    [
+     "alt",
+     "sidestr chain document sidestr:fedtest"
+    ]
+   ],
+   "content": "{\"id\":\"sidestr:fedtest\",\"name\":\"fedtest\",\"parent\":\"tbtc4\",\"comment\":\"A throwaway 2-of-3 federated chain (level 2) for the sidestr-core federation oracle; keys disposable.\",\"challenge\":\"512082a23c18f7e12d180ed51eb895cdd49e0f6a1432cd08b791a32ed0664607fdcc\",\"powLimit\":\"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"addressPrefix\":\"fed\",\"magic\":\"a8f6706f\",\"pegConfirmations\":6,\"refundBlocks\":10000,\"pegoutBlocks\":144,\"pegoutMin\":10000,\"minFeeRate\":1,\"genesisTime\":1790000000,\"pegs\":[{\"txid\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"vout\":0,\"amount\":5000000000,\"script\":\"5120823a0785da0bb0beef8438e3e2c2712130d5a6013fb5e2ba678b8bd47da46942\"}],\"signers\":[\"823a0785da0bb0beef8438e3e2c2712130d5a6013fb5e2ba678b8bd47da46942\",\"5be065559f0ad67dcdb3dec4269b16182b6a6c21a052a56ddfc94a4023b19098\",\"129f5ebe6a365acceef416fcf77d2b487bcaef6e36c737d6f5dd5fbf68af1681\"],\"threshold\":2}",
+   "sig": "c3be23036297977e2b05f83cd1312aa43fe2c985a9fba167e34c97fa3e5d069706aed85b620d1ab9bfb51418caa9135ec3d9b8672abdcd497c2121f12abd8ee6"
+  },
+  "awkward": {
+   "id": "0aeb473dd57bd6f505f768d769b7b9553a6566bba525f1110ccf6c7625b3608a",
+   "pubkey": "98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b",
+   "created_at": 1790100000,
+   "kind": 3500,
+   "tags": [
+    [
+     "n",
+     "sidestr:awkward"
+    ],
+    [
+     "t",
+     "sidestr"
+    ],
+    [
+     "alt",
+     "sidestr chain document sidestr:awkward"
+    ]
+   ],
+   "content": "{\"2\":\"two\",\"10\":\"ten\",\"id\":\"sidestr:awkward\",\"name\":\"awkward-again\",\"parent\":\"tbtc4\",\"f\":1,\"g\":1e+21,\"h\":0.000001,\"i\":1e-7,\"j\":123.456,\"k\":0,\"l\":1.5e+300,\"m\":-2.5e-9,\"big\":9007199254740992,\"neg\":-12,\"s\":\"é   \\\"q\\\" \\u0001 / \\t\",\"nested\":{\"0\":[1.1,{\"z\":null,\"a\":true}],\"b\":1}}",
+   "sig": "742e3af3d2cda8d9e1effea352472e0d25829bad5847f6f7beda0f3ad617980951a7fe0ac1065320e732dec9968f5e13f3be8ae226b28abc2336e17de054f7ad"
+  },
+  "tipChainHash": {
+   "id": "b9b39abe0616cd858e0ac98dee88949457d37a25c94aac350565ea074c40deee",
+   "pubkey": "98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b",
+   "created_at": 1790100000,
+   "kind": 33333,
+   "tags": [
+    [
+     "d",
+     "sidestr:trial"
+    ],
+    [
+     "n",
+     "sidestr:trial"
+    ],
+    [
+     "t",
+     "sidestr"
+    ],
+    [
+     "tip",
+     "12"
+    ],
+    [
+     "alt",
+     "sidestr headers 10-12 of sidestr:trial"
+    ],
+    [
+     "u",
+     "https://a.example/siding/",
+     "mirror"
+    ],
+    [
+     "peg",
+     "5120abababababababababababababababababababababababababababababababab"
+    ],
+    [
+     "e",
+     "dd34b27da88d74a125c2814c9d844f5eec173494da4f106478eb93cbb22ba490",
+     "",
+     "chain"
+    ]
+   ],
+   "content": "010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010102020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303",
+   "sig": "a4cc1a5a8cc74c66d3f1d06ccc01f6da063b5976b5f85dd5bfae8751f739e71b9cc70252302060896fd408d253427bcd0beaea02ada869fdf8a2ae63a6fe99bb"
+  },
+  "tipChainHashOnly": {
+   "id": "5edb47fb3a4eafa11f6cab74381b7b653a3cfac4f8916d8106b6f95d8ac02018",
+   "pubkey": "98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b",
+   "created_at": 1790100000,
+   "kind": 33333,
+   "tags": [
+    [
+     "d",
+     "sidestr:trial"
+    ],
+    [
+     "n",
+     "sidestr:trial"
+    ],
+    [
+     "t",
+     "sidestr"
+    ],
+    [
+     "tip",
+     "0"
+    ],
+    [
+     "alt",
+     "sidestr headers 0-0 of sidestr:trial"
+    ],
+    [
+     "e",
+     "dd34b27da88d74a125c2814c9d844f5eec173494da4f106478eb93cbb22ba490",
+     "",
+     "chain"
+    ]
+   ],
+   "content": "0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101",
+   "sig": "0dd1faba937452d14e6784582a4a3331e62582137d64a6341ed84fe75cd01dd4329ef7b5e6c7f196e0386ceaf5e49d6da42ba93fb0f2dc264fe530018f0b0ace"
+  }
+ },
+ "upstream": {
+  "parseChainEvent_trial": {
+   "hash": "dd34b27da88d74a125c2814c9d844f5eec173494da4f106478eb93cbb22ba490",
+   "alias": "sidestr:trial",
+   "pubkey": "98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b",
+   "chain": "{\"id\":\"sidestr:trial\",\"name\":\"trial\",\"parent\":\"tbtc4\",\"comment\":\"A sidestr chain beside Bitcoin testnet4, made 2026-09-22. Level 1: one signer. Coins with no value.\",\"challenge\":\"512098b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b\",\"powLimit\":\"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"addressPrefix\":\"trl\",\"magic\":\"a8f6706f\",\"pegConfirmations\":6,\"refundBlocks\":10000,\"pegoutBlocks\":144,\"pegoutMin\":10000,\"minFeeRate\":1,\"genesisTime\":1790076612,\"pegs\":[],\"genesisHash\":\"0bdfdb3194f067d15b7a1cfa865de391b7ac00e1970863946d143e7329784402\",\"signer\":\"98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b\"}"
+  },
+  "parseChainEvent_fed": {
+   "hash": "d1d92124e2886d9cc67215561cd783d999ea17f5a731a5248f5af4daf27ef76d",
+   "alias": "sidestr:fedtest",
+   "pubkey": "5be065559f0ad67dcdb3dec4269b16182b6a6c21a052a56ddfc94a4023b19098",
+   "chain": "{\"id\":\"sidestr:fedtest\",\"name\":\"fedtest\",\"parent\":\"tbtc4\",\"comment\":\"A throwaway 2-of-3 federated chain (level 2) for the sidestr-core federation oracle; keys disposable.\",\"challenge\":\"512082a23c18f7e12d180ed51eb895cdd49e0f6a1432cd08b791a32ed0664607fdcc\",\"powLimit\":\"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"addressPrefix\":\"fed\",\"magic\":\"a8f6706f\",\"pegConfirmations\":6,\"refundBlocks\":10000,\"pegoutBlocks\":144,\"pegoutMin\":10000,\"minFeeRate\":1,\"genesisTime\":1790000000,\"pegs\":[{\"txid\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"vout\":0,\"amount\":5000000000,\"script\":\"5120823a0785da0bb0beef8438e3e2c2712130d5a6013fb5e2ba678b8bd47da46942\"}],\"signers\":[\"823a0785da0bb0beef8438e3e2c2712130d5a6013fb5e2ba678b8bd47da46942\",\"5be065559f0ad67dcdb3dec4269b16182b6a6c21a052a56ddfc94a4023b19098\",\"129f5ebe6a365acceef416fcf77d2b487bcaef6e36c737d6f5dd5fbf68af1681\"],\"threshold\":2}"
+  },
+  "parseChainEvent_awkward": {
+   "hash": "0aeb473dd57bd6f505f768d769b7b9553a6566bba525f1110ccf6c7625b3608a",
+   "alias": "sidestr:awkward",
+   "pubkey": "98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b",
+   "chain": "{\"2\":\"two\",\"10\":\"ten\",\"id\":\"sidestr:awkward\",\"name\":\"awkward-again\",\"parent\":\"tbtc4\",\"f\":1,\"g\":1e+21,\"h\":0.000001,\"i\":1e-7,\"j\":123.456,\"k\":0,\"l\":1.5e+300,\"m\":-2.5e-9,\"big\":9007199254740992,\"neg\":-12,\"s\":\"é   \\\"q\\\" \\u0001 / \\t\",\"nested\":{\"0\":[1.1,{\"z\":null,\"a\":true}],\"b\":1},\"signer\":\"98b4e74305dac5ce76d5bee8e57a71549a27618a0e51b3bada3074fcba02325b\"}"
+  },
+  "parseTip_chainHash": "dd34b27da88d74a125c2814c9d844f5eec173494da4f106478eb93cbb22ba490",
+  "tipEvent_badChainHash": "chainHash is the chain event's id (64 hex)"
+ },
+ "note": "Built by siding chainEvent/tipEvent with the schema kernel hash and secp256k1 at sidestr/spec e8deb63 for the disposable keys in sidestr-core/fixtures/trial (trial.key) and fixtures/fedtest (signer2.key); BIP-340 aux randomness zero. documents.* are the source texts as given to JSON.parse; upstream.* records what parseChainEvent and parseTip returned."
+}
