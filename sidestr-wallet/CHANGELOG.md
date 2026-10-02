@@ -2,6 +2,25 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
+## Unreleased
+
+### Tests
+
+- `key::tests::spend_key_v1_known_answers`: `derive_spend_key` for fixed
+  (seed, genesis hash, epoch) triples, the dreamlab genesis among them,
+  against answers computed with Node.js `crypto` and nostr-tools, and the
+  `sidestr/v1/spend/` tag's exact bytes. A change to any byte of the v1 tag
+  fails it.
+
+### Documentation
+
+- `spend_tag`: the v1 tag is frozen (a new derivation is a `v2`
+  namespace beside it), and the derivation is recorded as a departure
+  (ADR-0001 D4): siding's `keys.mjs` derives by additive tagged tweaks,
+  which ADR-2101 D3 prohibits for a role key, and agentbox's payment rail
+  mints agent spend keys from independent seeds (ADR-2097 D3 as amended
+  2026-10-02); both are bound by the 38420 binding. No v2 is added.
+
 ## 0.5.2 (2026-10-02)
 
 ### Added
