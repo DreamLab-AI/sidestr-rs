@@ -19,7 +19,10 @@ include = ["src/**", "tests/**", "fixtures/**", "README.md", "CHANGELOG.md", "LI
 sidestr-core = { path = "../sidestr-core", version = "0.4" }
 bitcoin = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+# float_roundtrip: a chain event's id is the hash of its document as
+# JavaScript writes it, so a number must parse to the double JSON.parse
+# gives (correctly rounded), not one ULP off.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 sha2 = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }

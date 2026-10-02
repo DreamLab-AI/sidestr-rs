@@ -18,9 +18,11 @@
 //! This crate is a port of **siding**, the reference implementation by
 //! Melvin Carvalho (<https://github.com/sidestr/spec>, AGPL-3.0), ported from
 //! commit `2de40bdac4cba01be0864156a553d8287c22e279` and brought through
-//! `fe689e9c723f9bf43393d2dd5b6f924a701c8a18` (the peg output is the one the peg
-//! holders own, or pays the script the signer announces; signatures follow
-//! the parent's family), together with the parts of
+//! `e8deb63161c7459ed39c01d2ca9fda3d860b65b6` (SPEC 0.0.5: the peg output is
+//! the one the peg holders own, or pays the script the signer announces;
+//! signatures follow the parent's family; the chain's alias names it in
+//! tags and markers and its hash, the id of the document's kind-3500 event,
+//! is its identity), together with the parts of
 //! the engine it loads: `bitcoin-desktop/schema` (the block, header and
 //! spending checks) and `bitcoin-blake/blaketestnode` (the block file). It
 //! carries the same licence, AGPL-3.0-only. `SPEC.md` in that repository is
@@ -33,7 +35,7 @@
 //! | module | what | SPEC | ported from |
 //! |---|---|---|---|
 //! | [`parents`] | the parents a chain can sit beside: alias, long id, header family, genesis and fork block | 3.2 | `siding/lib/parents.mjs` |
-//! | [`document`] | the chain document: id, parent, challenge, prefix, peg and fee parameters, pegs, `genesisHash`, a level-2 `signers`/`threshold`; the magic `siding new` derives | 3, 5 | `siding/bin/siding.mjs new`, `lib/engine.mjs`, `lib/overlay.mjs checkFederation` |
+//! | [`document`] | the chain document: alias (`id`) and `name`, parent, challenge, prefix, peg and fee parameters, pegs, `genesisHash`, a level-2 `signers`/`threshold`; the magic `siding new` derives. Its hash, as a kind-3500 event (0.0.5), is `sidestr-nostr`'s | 3, 5 | `siding/bin/siding.mjs new`, `lib/engine.mjs`, `lib/overlay.mjs checkFederation` |
 //! | [`block`] | the header family boundary ([`HeaderFamily`], [`Stock`], [`FamilyBlock`]); building a block; the signed block data (BIP 325 over this chain's header); the solution push in the coinbase; the BIP 34 height; sign, seal, verify | 3.2, 4 | `siding/lib/block.mjs` |
 //! | [`sighash`] | the signature hashes a spend is judged by: BIP 341, and Knots' unified opt-in sighash beside a BLAKE2b parent; the taproot key-path verifier | 3 | `schema/codec/interpreter.js` |
 //! | [`parent`] | the parent chain behind [`parent::ParentRpc`] / [`parent::PegWallet`]: peg-ins found in decoded blocks, peg status, what to claim and lock, the burn payment and checkpoint as `send` outputs, reconciliation; Bitcoin Core's JSON-RPC behind feature `rpc` | 6, 7, 11 | `siding/lib/parent.mjs`, `checkpoint.mjs`, `bin/siding.mjs produce` |
@@ -57,7 +59,7 @@
 //!   server, nothing more. [`chain::Chain`] reads and writes that file;
 //!   [`state::State`] is the same chain fed blocks by whoever fetched them.
 //! - **Peg-ins** (§6): an output on the parent to the chain's peg wallet with
-//!   `OP_RETURN pegin:<chain id>:<sidechain script bytes>`; the producer
+//!   `OP_RETURN pegin:<chain alias>:<sidechain script bytes>`; the producer
 //!   claims it at `pegConfirmations` with a coinbase payout followed by
 //!   `claim:<txid>:<vout>` ([`state::ClaimRequest`], [`marker::parse_claims`]).
 //! - **Peg-outs** (§7): a sidechain output `OP_RETURN pegout:<parent script
@@ -73,8 +75,10 @@
 //!   the shared carry ledger; pools and markets consume that trace in a fixed
 //!   order. [`overlays::OverlayRules`] gives a producer the same ordering used
 //!   during block validation.
-//! - **Tips and relays** are not in this crate: the tip announcement (kind
-//!   33333) and transactions as events (kind 23500) are `sidestr-nostr`'s.
+//! - **Tips and relays** are not in this crate: the chain document as an
+//!   event (kind 3500, whose id is the chain's hash), the tip announcement
+//!   (kind 33333, naming that hash) and transactions as events (kind 23500)
+//!   are `sidestr-nostr`'s.
 //!
 //! # A chain, end to end
 //!
@@ -122,10 +126,12 @@
 //!   file's text; nothing here prints a key. A block is a pure function of its
 //!   inputs and the key (zero BIP 340 auxiliary randomness), so two producers
 //!   with the same key and mempool make the same block.
-//! - **A chain id is a name, not a proof.** The document's `genesisHash` is
-//!   what a validator holds a block file to ([`state::State::from_genesis`],
-//!   [`chain::Chain::open`]) once block 0 has passed the rules; a mirror is
-//!   held to the announced tip.
+//! - **A chain's alias is a name, not a proof** (SPEC 0.0.5: two signers can
+//!   both announce `sidestr:poker`). The chain's hash, the id of its
+//!   document's kind-3500 event, is the identity a client binds to; the
+//!   document's `genesisHash` is what a validator holds a block file to
+//!   ([`state::State::from_genesis`], [`chain::Chain::open`]) once block 0
+//!   has passed the rules; a mirror is held to the announced tip.
 //! - **The header format and proof-of-work hash follow the parent** (§3).
 //!   Nothing in the document names them; [`parents::resolve_parent`] decides,
 //!   and [`block::HeaderFamily`] is the seam: the rules, [`StateOf`] and

@@ -15,8 +15,10 @@
 //!
 //! # The two subscriptions
 //!
-//! - [`tip_filter`]: `{kinds: [33333], "#d": [chain id], limit: 5}` — a
+//! - [`tip_filter`]: `{kinds: [33333], "#d": [chain alias], limit: 5}` — a
 //!   relay indexes `d`, so this is cheap.
+//! - [`event_filter`]: `{ids: [id], limit: 1}` — one event by id, the chain
+//!   event a tip names (`announce.mjs fetchEvent`, SPEC 0.0.5).
 //! - [`follow_filter`]: `{kinds: [kind], since}` — **by kind only**. Relays
 //!   "index single-letter tags for filtering and refuse `#chain`
 //!   ('unindexed tag filter'), so the chain tag is checked here on each
@@ -56,6 +58,9 @@ use crate::tags::is_for_chain;
 /// A NIP-01 filter, the fields sidestr uses.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Filter {
+    /// Event ids (SPEC 0.0.5: the chain event by its id, [`event_filter`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ids: Vec<String>,
     /// Kinds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kinds: Vec<u32>,
@@ -83,6 +88,22 @@ pub fn tip_filter(chain_id: &str) -> Filter {
         kinds: vec![KIND_TIP],
         d: vec![chain_id.to_string()],
         limit: Some(5),
+        ..Default::default()
+    }
+}
+
+/// One event by its id (`announce.mjs fetchEvent`): `{ids: [id], limit:
+/// 1}`. A tip's `e` tag names the chain event this way (SPEC 0.0.5).
+///
+/// ```
+/// use sidestr_nostr::relay::event_filter;
+/// let id = "ab".repeat(32);
+/// assert_eq!(serde_json::to_string(&event_filter(&id)).unwrap(), format!(r#"{{"ids":["{id}"],"limit":1}}"#));
+/// ```
+pub fn event_filter(id: &str) -> Filter {
+    Filter {
+        ids: vec![id.to_string()],
+        limit: Some(1),
         ..Default::default()
     }
 }
@@ -348,6 +369,49 @@ pub fn fetch_latest_tip(
     crate::tip::newest(&all, chain_id, signer)
 }
 
+/// One event by id from any of the relays (`announce.mjs fetchEvent`):
+/// [`event_filter`] to each in turn, and the first event whose id is the one
+/// asked for ends the search; `None` when no relay has it. The event is not
+/// verified here ([`crate::chain::parse_chain_event`] verifies it).
+///
+/// Upstream asks every relay at once and closes every socket on the first
+/// answer, or gives up after 6 s; how many relays are asked at once, and
+/// when, is the I/O layer's business ([`RelayClient`]), so here the relays
+/// are asked in order and the first answer wins.
+pub fn fetch_event(client: &mut dyn RelayClient, relays: &[String], id: &str) -> Option<Event> {
+    let filters = [event_filter(id)];
+    relays.iter().find_map(|r| {
+        client
+            .query(r, &filters)
+            .ok()?
+            .into_iter()
+            .find(|e| e.id == id)
+    })
+}
+
+/// [`crate::chain::resolve_chain`] over the port (`announce.mjs
+/// resolveChain` with its default lookups): the newest tip by
+/// [`fetch_latest_tip`] (any author: the rule checks the author against the
+/// chain event's), the event by [`fetch_event`], and a mirror's JSON by
+/// `fetch_json`.
+pub fn resolve_chain(
+    client: &mut dyn RelayClient,
+    relays: &[String],
+    alias: Option<&str>,
+    hash: Option<&str>,
+    fetch_json: impl FnMut(&str) -> core::result::Result<serde_json::Value, String>,
+) -> Result<crate::chain::Resolved> {
+    let client = core::cell::RefCell::new(client);
+    crate::chain::resolve_chain(
+        alias,
+        hash,
+        relays.len(),
+        |a| fetch_latest_tip(&mut **client.borrow_mut(), relays, a, None),
+        |id| fetch_event(&mut **client.borrow_mut(), relays, id),
+        fetch_json,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,6 +438,12 @@ mod tests {
             r##"{"kinds":[33333],"#t":["sidestr"]}"##
         );
         assert_eq!(follow_filter(1, 10, 5).since, Some(0));
+        assert_eq!(
+            serde_json::to_string(&event_filter(&"ab".repeat(32))).unwrap(),
+            format!(r#"{{"ids":["{}"],"limit":1}}"#, "ab".repeat(32))
+        );
+        let back: Filter = serde_json::from_str(r#"{"ids":["x"]}"#).unwrap();
+        assert_eq!(back.ids, ["x"]);
         let back: Filter =
             serde_json::from_str(r##"{"kinds":[33333],"#d":["x"],"authors":["a"]}"##).unwrap();
         assert_eq!(
@@ -518,5 +588,94 @@ mod tests {
         let r = publish_all(&mut c, &relays, &t(1));
         assert_eq!(r[0].1, PublishOutcome::Ok);
         assert_eq!(r[1].1, PublishOutcome::Timeout);
+    }
+
+    /// A relay set that answers `REQ`s by filter, as a relay would.
+    struct Store(Vec<Event>, Vec<String>);
+    impl RelayClient for Store {
+        fn publish(&mut self, _: &str, _: &Event) -> PublishOutcome {
+            PublishOutcome::Ok
+        }
+        fn query(
+            &mut self,
+            relay: &str,
+            filters: &[Filter],
+        ) -> core::result::Result<Vec<Event>, String> {
+            self.1.push(relay.to_string());
+            if relay.contains("bad") {
+                return Err("down".into());
+            }
+            let f = &filters[0];
+            Ok(self
+                .0
+                .iter()
+                .filter(|e| f.ids.is_empty() || f.ids.contains(&e.id))
+                .filter(|e| f.kinds.is_empty() || f.kinds.contains(&e.kind))
+                .filter(|e| {
+                    f.d.is_empty()
+                        || e.tags
+                            .iter()
+                            .any(|t| t.len() > 1 && t[0] == "d" && f.d.contains(&t[1]))
+                })
+                .cloned()
+                .collect())
+        }
+    }
+
+    #[test]
+    fn fetch_event_and_resolve_chain_over_the_port() {
+        let s = signer();
+        let me = crate::event::Signer::pubkey_hex(&s).unwrap();
+        let doc = format!(
+            r#"{{"id":"sidestr:t","name":"t","parent":"tbtc4","challenge":"5120{me}","signer":"{me}"}}"#
+        );
+        let chain_ev = crate::chain::sign_chain_event(&s, &doc, 5).unwrap();
+        let tip = sign_tip(
+            &s,
+            &TipTemplate::new("sidestr:t", 3, vec![], vec!["https://m.example".into()])
+                .unwrap()
+                .with_chain_hash(&chain_ev.id)
+                .unwrap(),
+            6,
+        )
+        .unwrap();
+        let relays = vec![
+            "wss://bad".to_string(),
+            "wss://a".to_string(),
+            "wss://b".to_string(),
+        ];
+        let mut store = Store(vec![tip.clone(), chain_ev.clone()], vec![]);
+        // the first relay that has it ends the search: b is never asked
+        assert_eq!(
+            fetch_event(&mut store, &relays, &chain_ev.id),
+            Some(chain_ev.clone())
+        );
+        assert_eq!(store.1, ["wss://bad", "wss://a"]);
+        assert_eq!(fetch_event(&mut store, &relays, &"cd".repeat(32)), None);
+        // by alias, then by hash, over the same port
+        let r = resolve_chain(&mut store, &relays, Some("sidestr:t"), None, |_| {
+            Err("404".into())
+        })
+        .unwrap();
+        assert_eq!(r.hash.as_deref(), Some(chain_ev.id.as_str()));
+        assert_eq!(r.mirror.as_deref(), Some("https://m.example"));
+        let r = resolve_chain(&mut store, &relays, None, Some(&chain_ev.id), |_| {
+            Err("404".into())
+        })
+        .unwrap();
+        assert_eq!((r.alias.as_str(), r.legacy), ("sidestr:t", false));
+        let e = resolve_chain(
+            &mut Store(vec![], vec![]),
+            &relays,
+            Some("sidestr:t"),
+            None,
+            |_| Err("404".into()),
+        )
+        .unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("no announcement for sidestr:t on 3 relay(s)"),
+            "{e}"
+        );
     }
 }

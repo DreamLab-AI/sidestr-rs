@@ -31,7 +31,7 @@ Dependency flow runs from `sidestr-header` to this crate, never back.
 This crate is a port of **siding**, the reference implementation of sidestr by
 Melvin Carvalho ([github.com/sidestr/spec](https://github.com/sidestr/spec),
 AGPL-3.0), ported from commit `2de40bdac4cba01be0864156a553d8287c22e279` and
-brought through `fe689e9c723f9bf43393d2dd5b6f924a701c8a18`
+brought through `e8deb63161c7459ed39c01d2ca9fda3d860b65b6` (SPEC 0.0.5)
 (`siding/lib/{parents,block,chain,overlay,marker,records,address,checkpoint}.mjs`,
 `bin/siding.mjs`, and the tests in `siding/test/`). Two parts come from the
 engine siding loads, by the same author and under the same licence:

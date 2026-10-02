@@ -13,7 +13,10 @@
 //! **Addressable** (3xxxx) events are replaced per `(kind, pubkey, d)`, so a
 //! tip announcement overwrites the last one and a rule document is one row
 //! per activation height. **Regular** events accrete, which is what an
-//! evidence trail needs, so the five settlement events are regular.
+//! evidence trail needs, so the five settlement events are regular; and a
+//! regular event is never replaced, which is why the chain document (3500,
+//! SPEC 0.0.5) is one: a chain must not change under its users, so its
+//! document is immutable and its event id is the chain's hash.
 //!
 //! ```
 //! use sidestr_nostr::kinds::{lookup, Owner, Class, KIND_TIP, KIND_ACCOUNT_BINDING};
@@ -25,7 +28,11 @@
 //! assert!(lookup(1).is_none());
 //! ```
 
-/// Transaction: content the transaction hex, `chain` = chain id, any key (SPEC 11).
+/// The chain document (SPEC 3, Appendix A, 0.0.5): content the document,
+/// regular and immutable; its event id is the chain's hash. Tags `n` = the
+/// chain's alias and `t` = `sidestr` ([`crate::chain`]).
+pub const KIND_CHAIN_DOCUMENT: u32 = 3500;
+/// Transaction: content the transaction hex, `chain` = chain alias, any key (SPEC 11).
 pub const KIND_TRANSACTION: u32 = 23500;
 /// Faucet request: content an address, tagged like a transaction (SPEC 11).
 pub const KIND_FAUCET_REQUEST: u32 = 23501;
@@ -43,11 +50,14 @@ pub const KIND_PEGOUT_PSBT: u32 = 23512;
 pub const KIND_PEGOUT_SIGNED: u32 = 23513;
 /// Level-2 sealed block, content the block hex (SPEC 9.1).
 pub const KIND_SEALED_BLOCK: u32 = 23514;
-/// The tip announcement in the NIP-333 shape, `d` = chain id (SPEC 11).
+/// The tip announcement in the NIP-333 shape, `d` = chain alias, `e` = the
+/// chain event (SPEC 11; `e` since 0.0.5).
 pub const KIND_TIP: u32 = 33333;
-/// A rule document, `d` = chain id `:` activation height (SPEC 8).
+/// A rule document, `d` = chain alias `:` activation height (SPEC 8).
 pub const KIND_RULE_DOCUMENT: u32 = 33500;
-/// The genesis document, `d` = chain id (SPEC Appendix A).
+/// The genesis document, `d` = chain alias (SPEC Appendix A). Since 0.0.5
+/// the genesis travels inside the chain event (3500); this kind is still
+/// read for chains made before 0.0.5.
 pub const KIND_GENESIS_DOCUMENT: u32 = 33501;
 /// The peg record *or* the desk's pledge, `d` = parent txid `:` vout
 /// (SPEC Appendix A; `proposals/desk.md`). Two schemas on one number.
@@ -118,8 +128,20 @@ pub struct KindInfo {
     pub source: &'static str,
 }
 
-/// The registry, in kind order.
-pub const REGISTRY: [KindInfo; 18] = [
+/// The registry, in kind order. The `d_tag` texts say "chain id" where SPEC
+/// 0.0.5 says "chain alias": the same value, `sidestr:<name>`; the rows are
+/// kept as they were published.
+pub const REGISTRY: [KindInfo; 19] = [
+    KindInfo {
+        kind: KIND_CHAIN_DOCUMENT,
+        name: "chain document",
+        owner: Owner::External,
+        class: Class::Regular,
+        d_tag: None,
+        conformance: Conformance::Ported,
+        spec: "SPEC 3, Appendix A (0.0.5)",
+        source: "siding/lib/announce.mjs chainEvent",
+    },
     KindInfo {
         kind: KIND_TRANSACTION,
         name: "transaction",

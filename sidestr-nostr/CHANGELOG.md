@@ -2,6 +2,53 @@
 
 All notable changes to `sidestr-nostr`. The crate follows semantic versioning.
 
+## Unreleased
+
+SPEC 0.0.5 (sidestr/spec `e8deb63`): the chain document as an event, its id
+the chain's hash. Source-breaking: `Tip`, `TipTemplate` and `relay::Filter`
+gain public fields and `kinds::REGISTRY` grows to 19 rows.
+
+### Added
+
+- `chain`: the chain document as a kind-3500 event (`announce.mjs
+  chainEvent`): `chain_event` / `sign_chain_event` from the document's JSON
+  text, written exactly as `JSON.parse` then `JSON.stringify` write it
+  (`js_stringify`: key order with integer-like keys first, JavaScript's
+  number printing), `signer` deleted, so the chain's hash is the one siding
+  gives for the same file; `chain_event_of` from a parsed `ChainDocument`.
+  `parse_chain_event` / `parse_chain_event_value` (`parseChainEvent`):
+  verified, the content a document with an alias, a `signer` field or
+  `signers` list that includes the author, `signer` filled from the author
+  for a level-1 document so `ChainDocument::validate` still checks the
+  challenge. `resolve_chain` (`resolveChain`) by alias or hash over injected
+  lookups: the tip's `e`, the event from a relay or a mirror's
+  `chain-event.json`, the tip's author the chain's signer (or one of its
+  signers), a chain made before 0.0.5 resolved by its mirror's `chain.json`
+  with `hash: None`, `legacy: true`. `is_alias`, `is_chain_hash`,
+  `chain_event_url`, `CHAIN_EVENT_FILE`.
+- `tip`: `TipTemplate::chain_hash` and `with_chain_hash` (`tipEvent`
+  `chainHash`): `["e", hash, "", "chain"]` after the `peg` tag; a template
+  without one builds exactly the 0.0.4 event. `Tip::chain_hash` and
+  `chain_hash_of` (`parseTip` `chainHash`: the first `e` tag, 64 hex,
+  lower-cased).
+- `relay`: `Filter::ids`, `event_filter` (`{ids:[id],limit:1}`),
+  `fetch_event` (`fetchEvent`: the first relay with the event ends the
+  search) and `resolve_chain` over the `RelayClient` port.
+- `kinds`: `KIND_CHAIN_DOCUMENT` (3500, regular, ported) in `REGISTRY`; the
+  33333/33500/33501 docs say chain alias, and 33501 is read for chains made
+  before 0.0.5. `tags::MARKER_CHAIN`.
+- `fixtures/chain-event-vectors.json` and `tests/chain_event.rs`: kind-3500
+  events and a tip with a chain hash from siding at `e8deb63`, byte-identical
+  here; `tests/oracle/chain-event-oracle.mjs` regenerates them and the test
+  requires no drift when the reference checkouts are named. `tests/live.rs`
+  resolves the live `sidestr:dreamlab` announcement (no `e` tag) the
+  pre-0.0.5 way and refuses another key's tip for it.
+
+### Changed
+
+- `serde_json`'s `float_roundtrip` is on, so a number in a chain document
+  parses to the double `JSON.parse` gives.
+
 ## 0.4.0 (2026-10-01)
 
 - `MirrorChain` reads level-2 `signers`; `announced_by` and `choose_mirror`

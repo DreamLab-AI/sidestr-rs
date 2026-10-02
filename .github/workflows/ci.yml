@@ -11,10 +11,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # The reference engine the oracle suites drive (sidestr/spec SPEC 0.0.4,
-  # @sidestr/spec 0.0.6, and the two checkouts siding loads). Bump together,
-  # and say so in the changelogs.
-  SIDESTR_SPEC_REF: fe689e9c723f9bf43393d2dd5b6f924a701c8a18
+  # The reference engine the oracle suites drive (sidestr/spec SPEC 0.0.5,
+  # and the two checkouts siding loads). Bump together, and say so in the
+  # changelogs.
+  SIDESTR_SPEC_REF: e8deb63161c7459ed39c01d2ca9fda3d860b65b6
   SCHEMA_REF: b8cbf6337c7450fe14ddc5bce00c7280059aab5d
   BLAKETESTNODE_REF: f1da4a6b64a6a9a6f791d2e5dea8a1c1be81ea09
   # Hitch's channel transaction oracle is independent of siding's release
@@ -91,7 +91,7 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown -p sidestr-core -p sidestr-wallet -p sidestr-nostr -p sidestr-hitch -p sidestr-agent --no-default-features
 
   oracle:
-    name: against the reference (siding at fe689e9)
+    name: against the reference (siding at e8deb63)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -158,6 +158,8 @@ jobs:
           node reference/spec/siding/test/markets-test.mjs
           node reference/spec/siding/test/evict-test.mjs
           node reference/spec/siding/test/pegin-scan-test.mjs
+          node reference/spec/siding/test/keys-test.mjs
+          node reference/spec/siding/test/pegtweak-test.mjs
         env:
           SCHEMA: ${{ github.workspace }}/reference/schema
           BLAKETESTNODE: ${{ github.workspace }}/reference/blaketestnode

@@ -144,3 +144,89 @@ fn newest_picks_one_announcement_per_chain_and_a_follower_would_not_take_them() 
     let mut f = Follower::new(KIND_TIP, "sidestr:dreamlab");
     assert!(events.iter().all(|e| f.accept(e).is_none()));
 }
+
+/// SPEC 0.0.5 keeps a chain made before it resolving as it did: the live
+/// `sidestr:dreamlab` announcement names no chain event (no `e` tag), so
+/// `resolve_chain` by its alias reads the mirror's `chain.json` (the
+/// estate's document, `sidestr-core/fixtures/dreamlab/chain.json`, whose
+/// `signer` is the announcement's author) and settles on it with no hash.
+#[test]
+fn the_live_dreamlab_chain_resolves_the_pre_0_0_5_way() {
+    use sidestr_nostr::chain::resolve_chain;
+    use sidestr_nostr::event::SecretKeySigner;
+    use sidestr_nostr::tip::{sign_tip, TipTemplate};
+
+    let all = live();
+    let events: Vec<&Event> = all.iter().map(|l| &l.event).collect();
+    let tip = newest(events.iter().copied(), "sidestr:dreamlab", None).unwrap();
+    assert_eq!(tip.chain_hash, None, "the live announcement predates 0.0.5");
+    assert!(events
+        .iter()
+        .filter(|e| chain_of(e) == Some("sidestr:dreamlab"))
+        .all(|e| !e.tags.iter().any(|t| t[0] == "e")));
+    // the estate's document, from the sibling crate when the workspace is around us
+    let Ok(text) = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../sidestr-core/fixtures/dreamlab/chain.json"
+    )) else {
+        return;
+    };
+    let document: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(document["signer"], tip.pubkey.as_str());
+    let mirrors = tip.mirrors.clone();
+    let serve = |url: &str| -> Result<serde_json::Value, String> {
+        if mirrors.iter().any(|m| format!("{m}/chain.json") == url) {
+            Ok(document.clone())
+        } else {
+            Err("404".into())
+        }
+    };
+    let r = resolve_chain(
+        Some("sidestr:dreamlab"),
+        None,
+        2,
+        |_| Some(tip.clone()),
+        |_| None,
+        serve,
+    )
+    .unwrap();
+    assert!(r.legacy);
+    assert_eq!(r.hash, None);
+    assert_eq!(r.mirror.as_deref(), Some(tip.mirrors[0].as_str()));
+    assert_eq!(r.pubkey, tip.pubkey);
+    let doc = r.document().unwrap();
+    doc.validate().unwrap();
+    assert_eq!(
+        doc.signer.as_deref(),
+        Some("7092810a05359b29acfa1f884d0e1a8e0290309e1133198b0f059447a4c76d62")
+    );
+
+    // a tip for it by another key is refused: no mirror's document names that key
+    let impostor = SecretKeySigner::from_bytes(&[0x42; 32]).unwrap();
+    let forged = sign_tip(
+        &impostor,
+        &TipTemplate::new(
+            "sidestr:dreamlab",
+            tip.tip,
+            tip.headers_hex.clone(),
+            tip.mirrors.clone(),
+        )
+        .unwrap(),
+        tip.created_at + 1,
+    )
+    .unwrap();
+    let forged = parse_tip(&forged).unwrap();
+    let e = resolve_chain(
+        Some("sidestr:dreamlab"),
+        None,
+        2,
+        |_| Some(forged.clone()),
+        |_| None,
+        serve,
+    )
+    .unwrap_err();
+    assert!(
+        e.to_string().contains("no mirror it names checks out"),
+        "{e}"
+    );
+}

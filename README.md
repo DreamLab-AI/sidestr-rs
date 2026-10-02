@@ -62,7 +62,8 @@ depends on `sidestr-header`, nor on the EVM: revm and alloy stay in
 ## Status
 
 Reference commit
-[`fe689e9`](https://github.com/sidestr/spec/commit/fe689e9c723f9bf43393d2dd5b6f924a701c8a18).
+[`e8deb63`](https://github.com/sidestr/spec/commit/e8deb63161c7459ed39c01d2ca9fda3d860b65b6)
+(SPEC 0.0.5).
 The 2026-10-01 parity release is repository commit `2bdee2d`: seven crates
 are published, the workspace documentation builds with warnings denied, and
 CI regenerates the reference-oracle fixtures before accepting the release.
@@ -84,7 +85,11 @@ Ported since 0.0.2:
   candidate per marker transaction;
 - federated tip authors, one relay socket per URL, and `ETag` caching for
   `blocks.json`;
-- EVM snapshots restored at any retained height.
+- EVM snapshots restored at any retained height;
+- the chain document as a kind-3500 event whose id is the chain's hash, the
+  tip's `e` tag naming it, and resolution by alias or hash with chains made
+  before 0.0.5 resolving as before (0.0.5; `sidestr-agent chain-event` and
+  `resolve`).
 
 - **Level 1 (one signer): complete.** Both header families work end to end:
   genesis from the document, production, validation, the mempool policy,
@@ -163,7 +168,7 @@ To run the oracle suites, check out the four reference repositories at the
 pinned commits and name them:
 
 ```sh
-git clone https://github.com/sidestr/spec && git -C spec checkout fe689e9c723f9bf43393d2dd5b6f924a701c8a18
+git clone https://github.com/sidestr/spec && git -C spec checkout e8deb63161c7459ed39c01d2ca9fda3d860b65b6
 git clone https://github.com/bitcoin-desktop/schema && git -C schema checkout b8cbf6337c7450fe14ddc5bce00c7280059aab5d
 git clone https://github.com/bitcoin-blake/blaketestnode && git -C blaketestnode checkout f1da4a6b64a6a9a6f791d2e5dea8a1c1be81ea09
 git clone https://github.com/bitcoin-blake/hitch && git -C hitch checkout 62f8e390b8acbbf1e534ee48cf2d519e0b859586

@@ -2,6 +2,27 @@
 
 All notable changes to `sidestr-agent`. The crate follows semantic versioning.
 
+## Unreleased
+
+SPEC 0.0.5 (sidestr/spec `e8deb63`). Additive; follows `sidestr-nostr`'s
+unreleased chain module.
+
+### Added
+
+- `chain-event` (as `siding chain-event`): the document at `--chain` as a
+  kind-3500 event signed by `--key-file`, which must be the chain's signer
+  (level 1: the challenge is `5120‖key`; level 2: one of `signers`), else
+  "the key at <path> is not the chain's signer". Written as
+  `chain-event.json` beside the document (or `--out`) as siding writes it,
+  published only to the relays `--relay` names; prints `hash`, `alias`,
+  `signer`, `written`, `published`, `note`.
+- `resolve --alias sidestr:<name>` / `resolve --chain-hash <hex>`: the chain
+  found as `resolveChain` finds it, over `--relays` and the mirrors' JSON; a
+  chain made before 0.0.5, such as `sidestr:dreamlab`, resolves by its
+  mirror's `chain.json` with `hash: null` and `legacy: true`.
+- `chain` module: `sign_chain_document`, `check_signer`, `event_file_json`,
+  `resolved_json`, `KNOWN_RULES`, and `resolve_chain_on` (feature `cli`).
+
 ## 0.4.0 (2026-10-01)
 
 EVM deposits (the `evm` rule, proposals/evm.md). Depends on
