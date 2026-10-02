@@ -41,7 +41,7 @@ alloy-rlp = { version = "0.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 # The wallet's EVM deposit, built and mined through this rule (`tests/wallet_deposit.rs`).
-sidestr-wallet = { path = "../sidestr-wallet", version = "0.5.0" }
+sidestr-wallet = { path = "../sidestr-wallet", version = "0.5.2" }
 # Signing the Ethereum transactions the tests carry.
 alloy-signer = "2.5"
 alloy-signer-local = "2.5"

@@ -18,8 +18,8 @@ include = ["src/**", "tests/**", "README.md", "CHANGELOG.md", "LICENSE", "Cargo.
 [dependencies]
 # Unified sighash, the taproot key-path verifier, segwit addresses and the
 # secp256k1 context; the Nostr event and its BIP-340 verification.
-sidestr-core = { path = "../sidestr-core", version = "0.4" }
-sidestr-nostr = { path = "../sidestr-nostr", version = "0.4" }
+sidestr-core = { path = "../sidestr-core", version = "0.4.1" }
+sidestr-nostr = { path = "../sidestr-nostr", version = "0.5.0" }
 bitcoin = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

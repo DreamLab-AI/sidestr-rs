@@ -2,7 +2,7 @@
 
 All notable changes to `webledgers-teller`. The crate follows semantic versioning.
 
-## Unreleased
+## 0.1.0 (2026-10-02)
 
 The first release: a port of solidpayorg/teller `lib/teller.mjs` at
 `7c00cea` (Melvin Carvalho, AGPL-3.0-or-later), including that commit's two

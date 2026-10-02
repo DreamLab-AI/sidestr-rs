@@ -2,7 +2,7 @@
 
 All notable changes to `sidestr-nostr`. The crate follows semantic versioning.
 
-## Unreleased
+## 0.5.0 (2026-10-02)
 
 ### Tests
 

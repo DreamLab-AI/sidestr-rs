@@ -17,7 +17,7 @@ directions.
 
 ```toml
 [dependencies]
-sidestr-round = "0.3"
+sidestr-round = "0.4"
 ```
 
 ```rust

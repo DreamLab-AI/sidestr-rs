@@ -46,7 +46,7 @@ assert_eq!(parse_chain_event(&chain).unwrap().chain["signer"], me.as_str());
 
 ```toml
 [dependencies]
-sidestr-nostr = "0.4"
+sidestr-nostr = "0.5"
 ```
 
 ```rust

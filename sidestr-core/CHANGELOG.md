@@ -2,7 +2,7 @@
 
 All notable changes to `sidestr-core`. The crate follows semantic versioning.
 
-## Unreleased
+## 0.4.1 (2026-10-02)
 
 Parity with sidestr/spec `keys.mjs` (`bd1d692`) and `pegtweak.mjs`
 (`4c4915f`), Knots' unified sighash for every script type against Fid's

@@ -2,7 +2,7 @@
 
 All notable changes to `sidestr-round`. The crate follows semantic versioning.
 
-## Unreleased
+## 0.4.0 (2026-10-02)
 
 SPEC 0.0.5 (sidestr/spec `e8deb63`): the producer announces the chain's
 hash. Source-breaking for code that builds `node::Settings` by struct
