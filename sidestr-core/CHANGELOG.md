@@ -2,6 +2,37 @@
 
 All notable changes to `sidestr-core`. The crate follows semantic versioning.
 
+## Unreleased
+
+### Added: a sidestr chain as a parent (SPEC 3.1), a recorded departure
+
+SPEC 0.0.5 lets a nested chain's `parent` be a sidestr chain's hash (its
+chain event's id). `siding/lib/parents.mjs` at `e8deb63` does not carry
+that and refuses the hash as an unknown parent; `resolve_parent`,
+`ChainDocument::parent`, `family` and `validate` keep refusing it exactly
+as siding does. Additive:
+
+- `parents::resolve_parent_with(id, lookup)`: a table alias as before
+  (the lookup is never called); a 64-hex hash is handed to `lookup` for
+  that chain's document (read from its verified chain event), whose own
+  `parent` is followed down to a table row, at most `MAX_NESTING` (16)
+  chains deep, refusing a cycle. Returns `ParentRef`: `Table(&Parent)` or
+  `Chain(NestedParent)` (hash, alias, path, root), with `family`, `pow`,
+  `mainnet`, `depth`, `chain_hash` and `coinbase_maturity` (a sidestr
+  parent's coinbases mature at 100) all inherited from the root.
+  `is_chain_hash_parent` names the hash form.
+- `ChainDocument::parent_with`, `family_with`, `validate_nested`: the
+  same through a document.
+- Departure recorded under ADR-0001 D4: `tests/nested_parent.rs` runs
+  `parents.mjs` on the same inputs when `SIDESTR_SIDING` is set and holds
+  it to its refusal, with `resolve_parent`'s message identical to
+  upstream's; the day upstream learns hashes, it fails and the departure
+  is re-judged.
+
+A document read back from a chain event already has its `signer` filled
+from the event's author (`sidestr-nostr` 0.5.0 `ParsedChain::document`); no
+change here.
+
 ## 0.4.1 (2026-10-02)
 
 Parity with sidestr/spec `keys.mjs` (`bd1d692`) and `pegtweak.mjs`
