@@ -121,8 +121,14 @@ checks context-free rules only, so it admits a lock-immature transaction.
 nothing evicts the transaction: eviction arrives with `c3b9e7a` (issue 13),
 which `fa86dac` does not contain. A height-based CSV lock never matures
 without new blocks, so one early sweep halts the chain until the producer
-restarts. The chain test records this probe. The remedy is the producer's
-pin, or a host that never broadcasts a sweep before its depth.
+restarts. The chain test records this probe. `fa86dac` is an ancestor of
+`c3b9e7a` (seven commits later on `gh-pages`). With siding at `c3b9e7a` or at
+`e8deb63`, the same probe evicts the sweep and makes the next block (110 to
+111, mempool 0), and the dual-engine chain test still passes. All three
+commits replay the live producer's block file to the same tip (947
+`66c47b1b…d00c`, 67 coins). The remedy is to fast-forward the producer pin to
+`c3b9e7a` or later; until then, a host must never broadcast a sweep before its
+depth.
 
 **Activation.** The `activation_status` above is unchanged. Recognising
 Hitch spends in the validators is what makes activation safe; it does not
