@@ -1,6 +1,6 @@
 [package]
 name = "sidestr-agent"
-version = "0.5.0"
+version = "0.6.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
@@ -29,19 +29,19 @@ default = ["cli"]
 # async runtime, relay delivery and HTTP to a producer or mirror. The library
 # without it is pure (no network, no runtime) and builds for wasm32, so a
 # browser wallet links the same builders an agent does:
-# `sidestr-agent = { version = "0.4", default-features = false }`.
+# `sidestr-agent = { version = "0.6.0", default-features = false }`.
 cli = ["dep:clap", "dep:tokio", "dep:ureq", "dep:sidestr-round", "dep:getrandom", "dep:rustix", "sidestr-wallet/client"]
 
 [dependencies]
-sidestr-core = { path = "../sidestr-core", version = "0.4.1" }
-sidestr-wallet = { path = "../sidestr-wallet", version = "0.5.2" }
-sidestr-nostr = { path = "../sidestr-nostr", version = "0.5.0" }
+sidestr-core = { path = "../sidestr-core", version = "0.4.2" }
+sidestr-wallet = { path = "../sidestr-wallet", version = "0.5.3" }
+sidestr-nostr = { path = "../sidestr-nostr", version = "0.6.0" }
 # The BLAKE2b v2 header family, so the Hitch chain watch follows chains beside
 # txbt4 (sidestr:dreamlab-txbt4) as well as stock ones.
 sidestr-header = { path = "../sidestr-header", version = "0.3.1" }
 # The payment-channel kernel the `hitch` host drives (N-10).
-sidestr-hitch = { path = "../sidestr-hitch", version = "0.2.0" }
-sidestr-round = { path = "../sidestr-round", version = "0.4.0", features = ["relay"], optional = true }
+sidestr-hitch = { path = "../sidestr-hitch", version = "0.2.1" }
+sidestr-round = { path = "../sidestr-round", version = "0.5.0", features = ["relay"], optional = true }
 bitcoin = { workspace = true }
 bech32 = { workspace = true }
 # The peg-in plan's descriptor, address and checksum: rust-bitcoin's own

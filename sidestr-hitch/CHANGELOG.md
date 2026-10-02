@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 - 2026-10-03
 
 - `tests/chain_consensus.rs`: five channels opened by one funding
   transaction on a sidestr chain beside `tbtc4`, then a cooperative close, a

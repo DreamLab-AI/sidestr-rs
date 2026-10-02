@@ -8,7 +8,7 @@ testnet4 (`txbt4`).
 
 ```toml
 [dependencies]
-sidestr-hitch = "0.2.0"
+sidestr-hitch = "0.2.1"
 ```
 
 This crate builds the same Taproot constructions as Hitch:

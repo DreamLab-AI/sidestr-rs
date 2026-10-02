@@ -2,7 +2,7 @@
 
 All notable changes to `sidestr-nostr`. The crate follows semantic versioning.
 
-## Unreleased
+## 0.6.0 (2026-10-03)
 
 ### Changed (breaking): the 38420 account binding as ADR-2098 amended
 

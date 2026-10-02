@@ -2,6 +2,10 @@
 
 All notable changes to `webledgers-teller`. The crate follows semantic versioning.
 
+## 0.2.0 (2026-10-03)
+
+- Moves to sidestr-nostr 0.6 and sidestr-core 0.4.2. The re-exported `Event` and `UnsignedEvent` now come from sidestr-nostr 0.6, so this is a breaking bump; the teller logic is unchanged.
+
 ## 0.1.0 (2026-10-02)
 
 The first release: a port of solidpayorg/teller `lib/teller.mjs` at

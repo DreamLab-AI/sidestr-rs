@@ -2,6 +2,10 @@
 
 All notable changes to `sidestr-round`. The crate follows semantic versioning.
 
+## 0.5.0 (2026-10-03)
+
+- Moves to sidestr-nostr 0.6 and sidestr-core 0.4.2 (sidestr-nostr's `AccountBinding` changed shape, so this is a breaking bump for anything matching on re-exported nostr types).
+
 ## 0.4.0 (2026-10-02)
 
 SPEC 0.0.5 (sidestr/spec `e8deb63`): the producer announces the chain's

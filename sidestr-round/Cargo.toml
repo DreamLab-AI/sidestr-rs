@@ -1,6 +1,6 @@
 [package]
 name = "sidestr-round"
-version = "0.4.0"
+version = "0.5.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
@@ -41,9 +41,9 @@ name = "cosign"
 required-features = ["bin"]
 
 [dependencies]
-sidestr-core = { path = "../sidestr-core", version = "0.4.1" }
+sidestr-core = { path = "../sidestr-core", version = "0.4.2" }
 sidestr-header = { path = "../sidestr-header", version = "0.3" }
-sidestr-nostr = { path = "../sidestr-nostr", version = "0.5.0" }
+sidestr-nostr = { path = "../sidestr-nostr", version = "0.6.0" }
 bitcoin = { workspace = true, features = ["base64"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

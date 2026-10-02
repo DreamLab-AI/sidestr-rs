@@ -2,7 +2,7 @@
 
 All notable changes to `sidestr-agent`. The crate follows semantic versioning.
 
-## Unreleased
+## 0.6.0 (2026-10-03)
 
 ### Added: the Hitch host (stream S2, TODO N-10)
 

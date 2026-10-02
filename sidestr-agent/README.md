@@ -162,7 +162,7 @@ replays the block file with it. Both header families are followed: stock, and BL
 ## As a library
 
 ```toml
-sidestr-agent = { version = "0.5", default-features = false }
+sidestr-agent = { version = "0.6", default-features = false }
 ```
 
 Without the `cli` feature the crate is pure: no runtime, no network, and it

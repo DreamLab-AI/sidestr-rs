@@ -2,7 +2,7 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
-## Unreleased
+## 0.5.3 (2026-10-03)
 
 ### Tests
 

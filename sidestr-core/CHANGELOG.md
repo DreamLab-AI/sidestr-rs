@@ -2,7 +2,7 @@
 
 All notable changes to `sidestr-core`. The crate follows semantic versioning.
 
-## Unreleased
+## 0.4.2 (2026-10-03)
 
 ### Added: a sidestr chain as a parent (SPEC 3.1), a recorded departure
 

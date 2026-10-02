@@ -1,6 +1,6 @@
 [package]
 name = "sidestr-nostr"
-version = "0.5.0"
+version = "0.6.0"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
@@ -16,7 +16,7 @@ publish = true
 include = ["src/**", "tests/**", "fixtures/**", "README.md", "CHANGELOG.md", "LICENSE", "Cargo.toml"]
 
 [dependencies]
-sidestr-core = { path = "../sidestr-core", version = "0.4" }
+sidestr-core = { path = "../sidestr-core", version = "0.4.2" }
 bitcoin = { workspace = true }
 serde = { workspace = true }
 # float_roundtrip: a chain event's id is the hash of its document as

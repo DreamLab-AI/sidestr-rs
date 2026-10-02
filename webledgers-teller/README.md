@@ -11,7 +11,7 @@ The proposal is
 
 ```toml
 [dependencies]
-webledgers-teller = "0.1"
+webledgers-teller = "0.2"
 ```
 
 - **The ledger** is a Web Ledger JSON document with a genesis (operator,
