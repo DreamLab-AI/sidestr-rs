@@ -23,6 +23,9 @@ env:
   # Reef's BIP 21 parser is the oracle for sidestr-wallet's payment requests
   # (2bd3cb8: the parent coinbase maturity on txbt4, 6,705; parser unchanged).
   REEF_REF: 2bd3cb8d41e88c12b22a9d6ba2470b5b21f7c9d5
+  # The teller (solidpayorg/teller) is the oracle for webledgers-teller; its
+  # suite loads siding's keys.mjs, so it needs SIDESTR_SPEC_REF at bd1d692 or later.
+  TELLER_REF: 7c00ceac4dc37e0526eccd5ae62e1680ac88ec2a
 
 jobs:
   gate:
@@ -132,6 +135,13 @@ jobs:
           ref: ${{ env.REEF_REF }}
           path: reference/reef
 
+      - name: Check out solidpayorg/teller
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: solidpayorg/teller
+          ref: ${{ env.TELLER_REF }}
+          path: reference/teller
+
       # siding wants Node 22 or later (WebSocket built in); so does the
       # sidestr-evm fixture generator's ethereumjs.
       - name: Set up Node
@@ -200,3 +210,4 @@ jobs:
           BLAKETESTNODE: ${{ github.workspace }}/reference/blaketestnode
           HITCH: ${{ github.workspace }}/reference/hitch
           REEF: ${{ github.workspace }}/reference/reef
+          TELLER: ${{ github.workspace }}/reference/teller
