@@ -9,8 +9,9 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use sidestr_agent::{
     announced_peg_address, destination, fetch_announced_peg_script, identity, parent_explorer_api,
-    parse_pubkey, pegin_plan, prepare, prepare_evm_deposit, prepare_issue, prepare_transfer,
-    read_assets, refuse_secret, AgentKey, ChainView, Payment, PegTarget, Prepared,
+    parent_refusal_hint, parse_pubkey, pegin_plan, pegin_tweak_plan, prepare, prepare_evm_deposit,
+    prepare_issue, prepare_transfer, read_assets, refuse_secret, AgentKey, ChainView, Payment,
+    PegTarget, Prepared,
 };
 use sidestr_core::document::ChainDocument;
 use sidestr_round::relay::{ok_count, publish_all, unix_now};
@@ -156,8 +157,18 @@ enum Cmd {
         peg_address: Option<String>,
         /// Instead: build `tr(<key>, and_v(v:pk(<refund>), older(n)))` and print
         /// the descriptor, which the peg holders must import before paying it.
+        /// With `--tweak`, the peg holders' key (the level-1 signer's by default).
         #[arg(long, conflicts_with = "peg_address")]
         peg_key: Option<String>,
+        /// Opt in to the peg-in tweak form (sidestr/spec #23): one output whose
+        /// taproot tree commits to `--chain-hash` and the sidechain script, no
+        /// marker; prints the reveal. Never the default.
+        #[arg(long, requires = "chain_hash", conflicts_with = "peg_address")]
+        tweak: bool,
+        /// With `--tweak`: the chain's hash, the id of its kind-3500 chain event
+        /// (64 hex, SPEC 0.0.5), not its alias.
+        #[arg(long, requires = "tweak")]
+        chain_hash: Option<String>,
     },
     /// Send a signed *parent* transaction (a peg-in) with no node of your
     /// own: to the parent's public explorer, and if that refuses or does not
@@ -212,7 +223,7 @@ fn chain(cli: &Cli) -> Result<ChainDocument, Box<dyn std::error::Error>> {
 /// `send` and `burn`. Only these are checked, because `--refund`,
 /// `--peg-key` and `address` legitimately take a 64-hex public key.
 fn destination_args(args: &[String]) -> Vec<&str> {
-    const WITH_VALUE: [&str; 7] = [
+    const WITH_VALUE: [&str; 8] = [
         "--url",
         "--relays",
         "--key-file",
@@ -220,6 +231,7 @@ fn destination_args(args: &[String]) -> Vec<&str> {
         "--fee",
         "--refund",
         "--peg-key",
+        "--chain-hash",
     ];
     let mut out = Vec::new();
     let mut i = 0;
@@ -426,6 +438,8 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
             to,
             peg_key,
             peg_address,
+            tweak,
+            chain_hash,
         } => {
             let doc = chain(cli)?;
             let own = cli.key_file.as_ref().map(|_| key(cli)).transpose()?;
@@ -439,6 +453,14 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
                 (None, Some(k)) => k.script().to_hex_string(),
                 (None, None) => return Err("--to or --key-file names the sidechain script".into()),
             };
+            if *tweak {
+                // the opt-in tweak form: no announced peg script, no marker
+                let hash = chain_hash.as_deref().ok_or("--tweak needs --chain-hash")?;
+                let key = peg_key.as_deref().map(parse_pubkey).transpose()?;
+                return Ok(serde_json::to_value(pegin_tweak_plan(
+                    &doc, *amount, &refund, &side, hash, key,
+                )?)?);
+            }
             let mut announced = None;
             let target = match (peg_key, peg_address) {
                 (Some(k), _) => Some(PegTarget::Key(parse_pubkey(k)?)),
@@ -499,8 +521,15 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
                     .map(|a| a.trim_end_matches('/').to_string())
             };
             if let (Some(api), false) = (&api, *dry_run) {
-                match ureq::post(&format!("{api}/tx")).send(&hex) {
-                    Ok(mut r) => {
+                // a refusal's body is read too, so a reason the parent explains
+                // (a mined coin spent too young) can be said
+                match ureq::post(&format!("{api}/tx"))
+                    .config()
+                    .http_status_as_error(false)
+                    .build()
+                    .send(&hex)
+                {
+                    Ok(mut r) if r.status().is_success() => {
                         let body = r.body_mut().read_to_string().unwrap_or_default();
                         let id = body.trim();
                         return Ok(json!({
@@ -511,8 +540,14 @@ async fn run(cli: &Cli) -> Result<serde_json::Value, Box<dyn std::error::Error>>
                             "explorer": api,
                         }));
                     }
-                    Err(ureq::Error::StatusCode(code)) => {
-                        note = Some(format!("the parent explorer refused it (HTTP {code})"));
+                    Ok(mut r) => {
+                        let code = r.status().as_u16();
+                        let body = r.body_mut().read_to_string().unwrap_or_default();
+                        let mut n = format!("the parent explorer refused it (HTTP {code})");
+                        if let Some(hint) = parent_refusal_hint(&doc, &body) {
+                            n.push_str(&format!(": {hint}"));
+                        }
+                        note = Some(n);
                     }
                     Err(e) => note = Some(format!("the parent explorer did not answer: {e}")),
                 }

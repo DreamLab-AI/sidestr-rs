@@ -50,3 +50,6 @@ ureq = { version = "3", optional = true, default-features = false }
 [dev-dependencies]
 serde_json = { workspace = true }
 proptest = "1.11"
+# A second BIP 340 engine for the official vectors whose messages are not 32
+# bytes, which secp256k1 0.29 cannot take (tests/keys.rs). Tests only.
+k256 = { version = "0.13", features = ["schnorr"] }

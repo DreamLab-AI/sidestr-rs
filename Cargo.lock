@@ -3010,6 +3010,7 @@ dependencies = [
  "once_cell",
  "serdect",
  "sha2 0.10.9",
+ "signature",
 ]
 
 [[package]]
@@ -4850,6 +4851,7 @@ dependencies = [
  "bitcoin",
  "bitcoinconsensus",
  "hex",
+ "k256",
  "proptest",
  "serde",
  "serde_json",
@@ -4957,6 +4959,7 @@ dependencies = [
 name = "sidestr-wallet"
 version = "0.5.1"
 dependencies = [
+ "base64 0.22.1",
  "bitcoin",
  "hex",
  "hmac",

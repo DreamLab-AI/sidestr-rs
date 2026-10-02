@@ -2,6 +2,36 @@
 
 All notable changes to `sidestr-wallet`. The crate follows semantic versioning.
 
+## Unreleased
+
+### Added
+
+- `pegin::build_pegin_tweak` and `PegInTweak` (re-exported at the root):
+  the peg-in tweak form (sidestr/spec issue #23, `pegtweak.mjs`) as an
+  option beside `build_pegin`: one output to the address
+  `sidestr_core::pegtweak::peg_output` derives from the chain's hash, the
+  holders' key, the refund key with the document's `refundBlocks` and the
+  sidechain script; no marker; the reveal, descriptor and a one-item
+  `core_send_outputs`. `build_pegin` and `PegIn` are unchanged, and the
+  marker form stays the default everywhere.
+- `parent_sign::sign_parent_inputs`: sign a parent transaction's key-path
+  inputs that pay the signer and carry no witness, as Fid signs a PSBT:
+  `0x21` unified beside BLAKE2b, BIP 341 `SIGHASH_DEFAULT` (64 bytes) beside
+  stock Bitcoin; every signature verified. Reproduces Fid's `vectors.json`
+  (bitcoin-blake/fidsigner `2c4057c`) final transactions and finalised
+  PSBTs on btc, tbtc, xbt and txbt byte for byte (`tests/fidsigner.rs`).
+  The sidechain builders still write an explicit `0x01` beside stock
+  Bitcoin.
+- `Error::PegTweak`.
+
+### Unchanged
+
+- Coin maturity stays the sidechain's 100 (`coins::coinbase_maturity`):
+  Reef's 6,705 (`2bd3cb8`) is a parent rule, recorded in
+  `sidestr_core::parents::Parent::coinbase_maturity`. The BIP 21 oracle
+  passes at Reef `2bd3cb8`, whose parser is unchanged; CI's `REEF_REF`
+  moves there.
+
 ## 0.5.1 (2026-10-01)
 
 BIP 21 payment requests, read as Reef reads them (bitcoin-blake/reef

@@ -44,6 +44,12 @@ engine siding loads, by the same author and under the same licence:
   [bitcoin-blake/blaketestnode](https://github.com/bitcoin-blake/blaketestnode)
   (`lib/blockfile.mjs`, `lib/node.mjs`).
 
+Keys as group elements (`keys`, from `siding/lib/keys.mjs`) and the peg-in
+tweak form (`pegtweak`, from `siding/lib/pegtweak.mjs`) are ported from
+sidestr/spec `bd1d692` and `4c4915f`; Knots' unified sighash for legacy and
+segwit v0 inputs is held to the 166 known answers bitcoin-blake/fidsigner
+vendors (`2c4057c`).
+
 `SPEC.md` in the sidestr repository is the design; the crate documentation
 cites its sections, and every ported function names its original.
 

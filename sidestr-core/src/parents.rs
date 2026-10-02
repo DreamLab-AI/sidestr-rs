@@ -79,6 +79,66 @@ pub struct Parent {
     pub reserved: bool,
 }
 
+/// Bitcoin's coinbase maturity: a mined coin is spendable at 100
+/// confirmations. Every parent but `txbt4` asks this, and so does every
+/// sidestr chain for its own coinbases ([`crate::rules::Params`]).
+pub const COINBASE_MATURITY: u32 = 100;
+
+/// The coinbase maturity a `txbt4` (BLAKE2b testnet4) node asks since Knots
+/// 29.4.2: 6,705 confirmations (bitcoin-blake/reef `2bd3cb8`,
+/// `lib/wallet.mjs COINBASE_MATURITY`).
+pub const TXBT4_COINBASE_MATURITY: u32 = 6_705;
+
+impl Parent {
+    /// How deep a coin mined on this **parent** must be before a payment
+    /// spending it leaves: [`TXBT4_COINBASE_MATURITY`] beside `txbt4`,
+    /// [`COINBASE_MATURITY`] elsewhere.
+    ///
+    /// Why `txbt4` differs (Reef `2bd3cb8`): by consensus a reward mined at
+    /// 151,406 or later needs 6,705 confirmations in blocks 151,550 to
+    /// 158,110 (100 before and after, and for older rewards), but the mempool
+    /// of every node upgraded to Knots 29.4.2 asks 6,705 of **every** reward,
+    /// whatever its height, so a payment spending a younger one is refused
+    /// (`bad-txns-premature-spend-of-coinbase`) by the node that relays it
+    /// and never leaves. A wallet counts what lets a payment leave. Reef
+    /// speaks only of testnet4; `xbt` keeps Bitcoin's 100 until a Knots
+    /// release says otherwise for mainnet.
+    ///
+    /// This is a fact about parent coins, for whatever reports or selects
+    /// them. It is not the sidechain's own maturity, which stays 100
+    /// ([`crate::rules::Params::coinbase_maturity`]).
+    ///
+    /// ```
+    /// use sidestr_core::parents::resolve_parent;
+    /// assert_eq!(resolve_parent("txbt4").unwrap().coinbase_maturity(), 6_705);
+    /// assert_eq!(resolve_parent("tbtc4").unwrap().coinbase_maturity(), 100);
+    /// ```
+    pub const fn coinbase_maturity(&self) -> u32 {
+        if matches!(self.family, Family::Blake2b) && !self.mainnet {
+            TXBT4_COINBASE_MATURITY
+        } else {
+            COINBASE_MATURITY
+        }
+    }
+
+    /// Whether a coin on this parent, mined (or confirmed) at `coin_height`,
+    /// is spendable with the parent's tip at `tip`: not a coinbase, or at
+    /// least [`Self::coinbase_maturity`] confirmations deep, counting its own
+    /// block (`tip − coin_height + 1`; Reef `isMature`).
+    ///
+    /// ```
+    /// use sidestr_core::parents::resolve_parent;
+    /// let txbt4 = resolve_parent("txbt4").unwrap();
+    /// // the reward of block 152,079: refused at 152,201 (123 deep), spendable at 158,783
+    /// assert!(!txbt4.is_mature(152_079, true, 152_201));
+    /// assert!(txbt4.is_mature(152_079, true, 158_783));
+    /// assert!(txbt4.is_mature(152_079, false, 152_079));
+    /// ```
+    pub const fn is_mature(&self, coin_height: u32, coinbase: bool, tip: u32) -> bool {
+        !coinbase || (tip >= coin_height && tip - coin_height + 1 >= self.coinbase_maturity())
+    }
+}
+
 /// The table itself (SPEC 3.2), in the order the spec lists it.
 pub const PARENTS: [Parent; 6] = [
     Parent {
@@ -227,5 +287,29 @@ mod tests {
         for name in ["__proto__", "constructor", "toString", ""] {
             assert_eq!(parent_alias(name), None);
         }
+    }
+
+    // bitcoin-blake/reef test/wallet-test.mjs at 2bd3cb8, counted against the parent's fact
+    #[test]
+    fn parent_coinbase_maturity() {
+        let txbt4 = resolve_parent("txbt4").unwrap();
+        assert_eq!(txbt4.coinbase_maturity(), 6_705);
+        // mature at exactly 6,705 confirmations, not 6,704
+        assert!(txbt4.is_mature(100, true, 6_804));
+        assert!(!txbt4.is_mature(100, true, 6_803));
+        // the reward of block 152,079 is not spendable at 152,201 and is at 158,783
+        assert!(!txbt4.is_mature(152_079, true, 152_201));
+        assert!(txbt4.is_mature(152_079, true, 158_783));
+        assert!(!txbt4.is_mature(152_079, true, 158_782));
+        // a coin that is not a reward is spendable when confirmed; a tip below the coin is not
+        assert!(txbt4.is_mature(152_079, false, 152_079));
+        assert!(!txbt4.is_mature(152_079, true, 152_000));
+        for alias in ["btc", "tbtc4", "xbt"] {
+            let p = resolve_parent(alias).unwrap();
+            assert_eq!(p.coinbase_maturity(), 100, "{alias}");
+            assert!(p.is_mature(100, true, 199) && !p.is_mature(100, true, 198));
+        }
+        // the sidechain's own rule is untouched
+        assert_eq!(crate::rules::Params::default().coinbase_maturity, 100);
     }
 }

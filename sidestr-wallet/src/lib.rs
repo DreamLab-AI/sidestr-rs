@@ -40,7 +40,8 @@
 //! | [`compose`] | named outputs, records and change in the fixed order that lets records name outputs | 12.1 | `spend.mjs`, `records.mjs` |
 //! | [`asset`] | issue and transfer assets while preserving carried amounts and leaving unrelated carriers unspent | 12 | `spend.mjs`, `overlays/assets.mjs` |
 //! | [`external`] | build with witness placeholders, then accept a browser signer's answer only when it is the same transaction and every input verifies | proposals/browser-signer.md | none |
-//! | [`pegin`] | the parent side: peg output + `pegin:<chain id>:<script>` marker; the peg-out payment and checkpoint shapes; scanning | 6, 7, 11 | `parent.mjs`, `checkpoint.mjs` |
+//! | [`pegin`] | the parent side: peg output + `pegin:<chain id>:<script>` marker; the tweak form (one output committing to the chain hash and script, and its reveal) as an option; the peg-out payment and checkpoint shapes; scanning | 6, 7, 11 | `parent.mjs`, `checkpoint.mjs`, `pegtweak.mjs` |
+//! | [`parent_sign`] | sign a parent transaction's key-path inputs that pay the signer, as Fid signs a PSBT: `0x21` unified beside BLAKE2b, BIP 341 `SIGHASH_DEFAULT` beside stock | 3 | bitcoin-blake/fidsigner `fid.js signPsbt` |
 //! | [`deliver`] | `POST /tx`, `/coins`, `/tip`, `/chain.json` as data; kind 23500 / 23501 templates; HTTP behind feature `client` | 11 | `spend.mjs deliver`, `bin/siding.mjs` routes |
 //! | [`key`] | the [`SpendSigner`] port, a plain key, pubkey → `5120` script → bech32m, ADR-2101 spend-key derivation | 3 | `sign.mjs`, `address.mjs` |
 //! | [`bip21`] | `bitcoin:` payment requests read and written as Reef reads them; the address judged as any destination | BIP 21 | Reef `lib/wallet.mjs parsePaymentUri` |
@@ -160,6 +161,7 @@ pub mod deposit;
 pub mod error;
 pub mod external;
 pub mod key;
+pub mod parent_sign;
 pub mod pegin;
 pub mod policy;
 pub mod select;
@@ -171,6 +173,6 @@ pub use coins::Coin;
 pub use deposit::{build_evm_deposit, DepositRequest};
 pub use error::{Error, Result};
 pub use key::{PlainKey, SpendSigner};
-pub use pegin::{build_pegin, PegIn};
+pub use pegin::{build_pegin, build_pegin_tweak, PegIn, PegInTweak};
 pub use policy::{Permissive, SpendPolicy};
 pub use spend::{build_spend, Spend, SpendRequest};

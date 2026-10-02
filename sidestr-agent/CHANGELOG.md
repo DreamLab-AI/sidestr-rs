@@ -2,6 +2,29 @@
 
 All notable changes to `sidestr-agent`. The crate follows semantic versioning.
 
+## Unreleased
+
+### Added
+
+- `pegin-plan --tweak --chain-hash <64 hex>`: an opt-in plan in the peg-in
+  tweak form (sidestr/spec issue #23): `pegAddress`, the descriptor with
+  checksum (checked with miniscript to derive that address), `reveal`,
+  `commitKey`, `outputKey`, the refund leaf and its control block, and
+  `coreSend` with one output and no data item. The internal key is
+  `--peg-key`, else the level-1 signer's; a level-2 document needs
+  `--peg-key`. `--chain-hash` is the chain event's id, not its alias, and
+  is given explicitly. Library: `pegin_tweak_plan`, `PeginTweakPlan`.
+- `parent_refusal_hint`, and `publish-parent` reads an explorer's refusal:
+  a `bad-txns-premature-spend-of-coinbase` refusal now says the parent's
+  coinbase maturity (6,705 confirmations on txbt4 since Knots 29.4.2, Reef
+  `2bd3cb8`) after the unchanged "the parent explorer refused it (HTTP …)".
+
+### Unchanged
+
+- `pegin-plan` without `--tweak` is byte for byte what it was (pinned in
+  `tests/fixtures/pegin-plan-dreamlab-peg-key.json`) and carries no reveal;
+  `PegTarget`, `PeginPlan` and the level-1 refusal are untouched.
+
 ## 0.4.0 (2026-10-01)
 
 EVM deposits (the `evm` rule, proposals/evm.md). Depends on

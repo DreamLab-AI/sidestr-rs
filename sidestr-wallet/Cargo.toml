@@ -42,3 +42,5 @@ ureq = { version = "3", optional = true, default-features = false }
 serde_json = { workspace = true }
 # The BLAKE2b family, so the txsign tests run the mempool check beside txbt4 as well as tbtc4.
 sidestr-header = { path = "../sidestr-header", version = "0.3" }
+# Fid's vectors carry their PSBT as base64 (tests/fidsigner.rs).
+base64 = "0.22"

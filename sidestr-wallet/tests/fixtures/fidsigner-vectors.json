@@ -1,0 +1,75 @@
+{
+  "note": "Fid reference vectors. Deterministic BIP340 signatures with aux_rand = 32 zero bytes. Every build must reproduce these bytes.",
+  "key": {
+    "priv": "64fe41ac3a97e9b16dc44301c66895240d10cc88b7fc55f3a5b52483952aee0e",
+    "nsec": "nsec1vnlyrtp6jl5mzmwygvquv6y4ysx3pnygkl79tua9k5jg89f2ac8qq52686",
+    "wif": "cQy24rYJAam8TYZspopzwH67vRynw78LMAbt4r97xCzA5nqsR49V",
+    "xonly": "0d2c102afad9692abbbc8c0bcfd2e0132cc440984e5b398c62212dfb21bceab9",
+    "npub": "npub1p5kpq2h6m95j4wau3s9ul5hqzvkvgsycfednnrrzyyklkgdua2ushua2tm",
+    "addresses": {
+      "btc": "bc1pp5kpq2h6m95j4wau3s9ul5hqzvkvgsycfednnrrzyyklkgdua2us5uppre",
+      "tbtc": "tb1pp5kpq2h6m95j4wau3s9ul5hqzvkvgsycfednnrrzyyklkgdua2usr5hwek",
+      "xbt": "bc1pp5kpq2h6m95j4wau3s9ul5hqzvkvgsycfednnrrzyyklkgdua2us5uppre",
+      "txbt": "tb1pp5kpq2h6m95j4wau3s9ul5hqzvkvgsycfednnrrzyyklkgdua2usr5hwek"
+    }
+  },
+  "psbt": {
+    "unsigned": "cHNidP8BALICAAAAAqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAQAAAAD9////u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7sAAAAAAP3///8CYOoAAAAAAAAiUSBUZZrEelqRqkaWsTSXMIyTxiIQ/oYUQ6ejC+ymgF4BcCxMAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkAAAAAAAEBK1DDAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkAAQErMHUAAAAAAAAiUSANLBAq+tlpKru8jAvP0uATLMRAmE5bOYxiIS37IbzquQAAAA==",
+    "txid": "5f2fde04bb80372f9d00ebabb1780f21d6f96ad0f73790900ad923558086ae22",
+    "spent": [
+      {
+        "value": 50000,
+        "script": "51200d2c102afad9692abbbc8c0bcfd2e0132cc440984e5b398c62212dfb21bceab9"
+      },
+      {
+        "value": 30000,
+        "script": "51200d2c102afad9692abbbc8c0bcfd2e0132cc440984e5b398c62212dfb21bceab9"
+      }
+    ],
+    "chains": {
+      "btc": {
+        "signedPsbt": "cHNidP8BALICAAAAAqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAQAAAAD9////u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7sAAAAAAP3///8CYOoAAAAAAAAiUSBUZZrEelqRqkaWsTSXMIyTxiIQ/oYUQ6ejC+ymgF4BcCxMAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkAAAAAAAEBK1DDAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkBCEIBQMBKphLRUzXHMQhUV0qGAarbTD+wwr6kMpxPNZayo5neZHXcQhZ2hQogyHdBQgGd35Fe3hshN5AOfJQ0VP29SZsAAQErMHUAAAAAAAAiUSANLBAq+tlpKru8jAvP0uATLMRAmE5bOYxiIS37IbzquQEIQgFAN4E/FRMKuu48Anxpw0OEjn5hxVT2EfCpNGF2Wz6XndITOISO61KtRwKvVqCvbzz/fO3qyvDCewLqEYzMueinKgAAAA==",
+        "finalTx": "02000000000102aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0100000000fdffffffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000fdffffff0260ea00000000000022512054659ac47a5a91aa4696b13497308c93c62210fe861443a7a30beca6805e01702c4c0000000000002251200d2c102afad9692abbbc8c0bcfd2e0132cc440984e5b398c62212dfb21bceab90140c04aa612d15335c7310854574a8601aadb4c3fb0c2bea4329c4f3596b2a399de6475dc421676850a20c8774142019ddf915ede1b2137900e7c943454fdbd499b014037813f15130abaee3c027c69c343848e7e61c554f611f0a93461765b3e979dd21338848eeb52ad4702af56a0af6f3cff7cedeacaf0c27b02ea118cccb9e8a72a00000000"
+      },
+      "tbtc": {
+        "signedPsbt": "cHNidP8BALICAAAAAqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAQAAAAD9////u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7sAAAAAAP3///8CYOoAAAAAAAAiUSBUZZrEelqRqkaWsTSXMIyTxiIQ/oYUQ6ejC+ymgF4BcCxMAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkAAAAAAAEBK1DDAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkBCEIBQMBKphLRUzXHMQhUV0qGAarbTD+wwr6kMpxPNZayo5neZHXcQhZ2hQogyHdBQgGd35Fe3hshN5AOfJQ0VP29SZsAAQErMHUAAAAAAAAiUSANLBAq+tlpKru8jAvP0uATLMRAmE5bOYxiIS37IbzquQEIQgFAN4E/FRMKuu48Anxpw0OEjn5hxVT2EfCpNGF2Wz6XndITOISO61KtRwKvVqCvbzz/fO3qyvDCewLqEYzMueinKgAAAA==",
+        "finalTx": "02000000000102aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0100000000fdffffffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000fdffffff0260ea00000000000022512054659ac47a5a91aa4696b13497308c93c62210fe861443a7a30beca6805e01702c4c0000000000002251200d2c102afad9692abbbc8c0bcfd2e0132cc440984e5b398c62212dfb21bceab90140c04aa612d15335c7310854574a8601aadb4c3fb0c2bea4329c4f3596b2a399de6475dc421676850a20c8774142019ddf915ede1b2137900e7c943454fdbd499b014037813f15130abaee3c027c69c343848e7e61c554f611f0a93461765b3e979dd21338848eeb52ad4702af56a0af6f3cff7cedeacaf0c27b02ea118cccb9e8a72a00000000"
+      },
+      "xbt": {
+        "signedPsbt": "cHNidP8BALICAAAAAqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAQAAAAD9////u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7sAAAAAAP3///8CYOoAAAAAAAAiUSBUZZrEelqRqkaWsTSXMIyTxiIQ/oYUQ6ejC+ymgF4BcCxMAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkAAAAAAAEBK1DDAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkBCEMBQXwpR0nO5dckI0lacLud7Aa8Wcl0EHYBZrd/0ZrxIT6aTRlAITqB/9BiRIjE8e2XM94Qz09UiQYKVRRiCpCyIgYhAAEBKzB1AAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkBCEMBQcUoimTiIeZ58XOH7TLVucQiumOzqkV/acNg798pC1ppfejmr3aYTU3OzCNzdVKOWNDhF3GqUCrQQpg0+Q8zkSkhAAAA",
+        "finalTx": "02000000000102aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0100000000fdffffffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000fdffffff0260ea00000000000022512054659ac47a5a91aa4696b13497308c93c62210fe861443a7a30beca6805e01702c4c0000000000002251200d2c102afad9692abbbc8c0bcfd2e0132cc440984e5b398c62212dfb21bceab901417c294749cee5d72423495a70bb9dec06bc59c97410760166b77fd19af1213e9a4d1940213a81ffd0624488c4f1ed9733de10cf4f5489060a5514620a90b22206210141c5288a64e221e679f17387ed32d5b9c422ba63b3aa457f69c360efdf290b5a697de8e6af76984d4dcecc237375528e58d0e11771aa502ad0429834f90f3391292100000000"
+      },
+      "txbt": {
+        "signedPsbt": "cHNidP8BALICAAAAAqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAQAAAAD9////u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7sAAAAAAP3///8CYOoAAAAAAAAiUSBUZZrEelqRqkaWsTSXMIyTxiIQ/oYUQ6ejC+ymgF4BcCxMAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkAAAAAAAEBK1DDAAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkBCEMBQXwpR0nO5dckI0lacLud7Aa8Wcl0EHYBZrd/0ZrxIT6aTRlAITqB/9BiRIjE8e2XM94Qz09UiQYKVRRiCpCyIgYhAAEBKzB1AAAAAAAAIlEgDSwQKvrZaSq7vIwLz9LgEyzEQJhOWzmMYiEt+yG86rkBCEMBQcUoimTiIeZ58XOH7TLVucQiumOzqkV/acNg798pC1ppfejmr3aYTU3OzCNzdVKOWNDhF3GqUCrQQpg0+Q8zkSkhAAAA",
+        "finalTx": "02000000000102aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0100000000fdffffffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000fdffffff0260ea00000000000022512054659ac47a5a91aa4696b13497308c93c62210fe861443a7a30beca6805e01702c4c0000000000002251200d2c102afad9692abbbc8c0bcfd2e0132cc440984e5b398c62212dfb21bceab901417c294749cee5d72423495a70bb9dec06bc59c97410760166b77fd19af1213e9a4d1940213a81ffd0624488c4f1ed9733de10cf4f5489060a5514620a90b22206210141c5288a64e221e679f17387ed32d5b9c422ba63b3aa457f69c360efdf290b5a697de8e6af76984d4dcecc237375528e58d0e11771aa502ad0429834f90f3391292100000000"
+      }
+    }
+  },
+  "nostr": {
+    "unsigned": {
+      "created_at": 1700000000,
+      "kind": 1,
+      "tags": [
+        [
+          "t",
+          "fid"
+        ]
+      ],
+      "content": "signed by fid"
+    },
+    "signed": {
+      "id": "d8e68a55a2e9f5c91ec868ed972537c3fb7dd81b9b817135e845d31829e0f450",
+      "pubkey": "0d2c102afad9692abbbc8c0bcfd2e0132cc440984e5b398c62212dfb21bceab9",
+      "created_at": 1700000000,
+      "kind": 1,
+      "tags": [
+        [
+          "t",
+          "fid"
+        ]
+      ],
+      "content": "signed by fid",
+      "sig": "31db2252fb2efc698d1e8b5ad07176c0eef3478c8f92b539b31160df427b7623ba9509c14cece70166a74e196fc71271af0973b9ab6849a8a7a47acd798f29a2"
+    }
+  }
+}

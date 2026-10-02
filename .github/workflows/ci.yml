@@ -20,8 +20,9 @@ env:
   # Hitch's channel transaction oracle is independent of siding's release
   # pin. Its script and wire format first landed as one reviewed unit here.
   HITCH_REF: 62f8e390b8acbbf1e534ee48cf2d519e0b859586
-  # Reef's BIP 21 parser is the oracle for sidestr-wallet's payment requests.
-  REEF_REF: 648487ac8bd98d854ec705e9d2e47f54435a4cc6
+  # Reef's BIP 21 parser is the oracle for sidestr-wallet's payment requests
+  # (2bd3cb8: the parent coinbase maturity on txbt4, 6,705; parser unchanged).
+  REEF_REF: 2bd3cb8d41e88c12b22a9d6ba2470b5b21f7c9d5
 
 jobs:
   gate:
