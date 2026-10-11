@@ -8,7 +8,7 @@ activation_status: inactive
 supersedes: []
 superseded_by: []
 verified_commit: bcbe30b209f8b5703c614bfa832683ad9094ab33
-owner: DreamLab AI
+owner: dreamlab AI
 review_trigger: sidestr-core gains an EVM, channel, relay, wallet or reserve dependency; an estate chain activates pools, markets, EVM or Hitch
 ---
 
@@ -37,7 +37,7 @@ activated estate capability.
    Network clients and producer policy remain outside both.
 5. Publication and activation are recorded separately. The seven public crates
    can be released while EVM, Hitch, pools and markets remain inactive in the
-   DreamLab chain instance.
+   dreamlab chain instance.
 
 ## Consequences
 
@@ -132,7 +132,7 @@ depth.
 
 **Activation.** The `activation_status` above is unchanged. Recognising
 Hitch spends in the validators is what makes activation safe; it does not
-activate Hitch on the DreamLab instance.
+activate Hitch on the dreamlab instance.
 
 ## Amendment, 2026-10-02: the Hitch host
 

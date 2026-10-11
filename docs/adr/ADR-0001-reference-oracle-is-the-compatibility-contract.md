@@ -8,7 +8,7 @@ activation_status: live
 supersedes: []
 superseded_by: []
 verified_commit: bcbe30b209f8b5703c614bfa832683ad9094ab33
-owner: DreamLab AI
+owner: dreamlab AI
 review_trigger: the pinned sidestr, schema, blaketestnode or Hitch revision changes; an intentional wire or consensus departure is proposed
 ---
 

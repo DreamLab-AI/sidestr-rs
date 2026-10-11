@@ -8,7 +8,7 @@ activation_status: inactive
 supersedes: []
 superseded_by: []
 verified_commit: bcbe30b209f8b5703c614bfa832683ad9094ab33
-owner: DreamLab AI
+owner: dreamlab AI
 review_trigger: a second reserve origin is implemented; the bridge rule consumes the attestation; any proposal to publish the format or fund the Liquid reserve
 ---
 

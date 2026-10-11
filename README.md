@@ -210,9 +210,9 @@ Bitcoin Knots 29.4.2 and rbitcoin 0.7.99, with rbitcoin pinned only to the
 Knots peer and public seed discovery disabled. It is parent-node staging,
 not a deployed sidestr chain. No mainnet daemon or wallet was changed.
 
-## In the DreamLab estate
+## In the dreamlab estate
 
-sidestr-rs is the economic layer of DreamLab's agent estate:
+sidestr-rs is the economic layer of dreamlab's agent estate:
 
 - [**VisionFlow**](https://visionflow.info): the ecosystem these components
   make up.
@@ -232,7 +232,7 @@ sidestr-rs is the economic layer of DreamLab's agent estate:
 - [**knowledgeGraph**](https://github.com/DreamLab-AI/knowledgeGraph): the
   public ontology frontend.
 - [**dreamlab-ai-website**](https://github.com/DreamLab-AI/dreamlab-ai-website):
-  the DreamLab website.
+  the dreamlab website.
 
 ## Architecture decisions
 
