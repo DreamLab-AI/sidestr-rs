@@ -1,6 +1,8 @@
 # sidestr-rs
 
-Rust port of Melvin Carvalho's sidestr sidechains, AGPL-3.0-only: the economic engine for did:nostr agents. A did:nostr key is a sidechain wallet.
+**Rust protocol, wallet and channel libraries for sidestr sidechains, ported from Melvin Carvalho’s reference implementation.**
+
+[Start](#quick-start) · [Architecture](#how-the-pieces-fit) · [Crates](#crates) · [Status](#working-status) · [Oracle checks](#what-is-proven-against-the-reference) · [Contributing](CONTRIBUTING.md)
 
 [sidestr](https://github.com/sidestr/spec) is a protocol for **user-activated
 sidechains beside a Bitcoin-family parent**. A chain is a JSON document. Its
@@ -19,13 +21,46 @@ secp256k1 key, and so is a Nostr identity. So an agent that holds a
 its identity already has, and sign the event that carries each payment.
 [`sidestr-agent`](sidestr-agent) is that wallet.
 
-> **Testnet only.** Everything here runs beside Bitcoin **testnet4** and on
-> experimental sidechains such as `sidestr:dreamlab`. Their coins have no
-> value. No real funds exist anywhere in this work.
->
-> One exception is being wired, not live: [`sidestr-bridge-liquid`](sidestr-bridge-liquid)
-> watches a **Liquid mainnet** reserve for the owner's private USD unit
-> (ADR-2117). It is unfunded; it is funded only on the owner's explicit go.
+> **Experimental chain software.** The documented estate example is `sidestr:dreamlab` beside Bitcoin testnet4. This README does not establish a production financial service. The unpublished Liquid adapter targets a different network; its presence is not evidence of a funded reserve or an active bridge.
+
+## Quick start
+
+For a library consumer, begin with [`sidestr-core`](sidestr-core) for validation, [`sidestr-wallet`](sidestr-wallet) for transaction construction or [`sidestr-agent`](sidestr-agent) for an agent-facing wallet.
+
+```sh
+cargo install sidestr-agent --version 0.6.0
+sidestr-agent --help
+
+# Offline: display the address of this public x-only key, with a chosen prefix.
+# This is the public generator point, not a private key or a funded account.
+sidestr-agent address --prefix drm \
+  79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
+```
+
+Balance, send and chain-resolution commands need the appropriate producer, mirror or relay configuration. A key's address is not evidence of a balance. The [agent guide](sidestr-agent/README.md) covers key files, peg-in planning, dry-run delivery and chain selection.
+
+## How the pieces fit
+
+```mermaid
+flowchart TB
+    HEAD["sidestr-header: Bitcoin-family headers"]
+    CORE["sidestr-core: deterministic chain validation"]
+    WALLET["sidestr-wallet: transaction construction"] --> CORE
+    ROUND["sidestr-round: co-signing state machine"] --> CORE
+    HITCH["sidestr-hitch: channel kernel"] --> CORE
+    EVM["sidestr-evm: optional execution rule"] --> CORE
+    NOSTR["sidestr-nostr: events and signing port"]
+    AGENT["sidestr-agent: wallet application"] --> WALLET
+    AGENT --> NOSTR
+    HEAD -.->|"Header family selected by the host"| HOST["Host: producer, relays, parent node, persistence"]
+    CORE -.-> HOST
+    ROUND -.-> HOST
+    HITCH -.-> HOST
+    NOSTR -.-> HOST
+    LIQUID["Unpublished Liquid adapter"] --> RESERVE["Unpublished reserve attestation"]
+```
+
+Dependency arrows point from a consumer to a library; dotted lines identify services a host must compose. `sidestr-core` does not depend on `sidestr-header`, Hitch or revm. Script compatibility and tested wire messages do not supply a running channel service or Lightning-network interoperability.
 
 ## Crates
 
@@ -60,15 +95,19 @@ the channel crate does not enter the consensus core. `sidestr-core` never
 depends on `sidestr-header`, nor on the EVM: revm and alloy stay in
 `sidestr-evm`.
 
-## Status
+## Working status
+
+**Reviewed 21 October 2026 against `f77856dd`.** Individual crate versions are in their manifests; there is no single workspace release version.
+
 
 Reference commit
 [`e8deb63`](https://github.com/sidestr/spec/commit/e8deb63161c7459ed39c01d2ca9fda3d860b65b6)
 (SPEC 0.0.5).
-The 2026-10-01 parity release is repository commit `2bdee2d`: seven crates
-are published, the workspace documentation builds with warnings denied, and
-CI regenerates the reference-oracle fixtures before accepting the release.
-Ported since 0.0.2:
+The manifests mark eight crates publishable and three unpublished (`publish = false`): EVM, reserve and Liquid bridge. The October 2 release commit `a7aadd68` updates the protocol/wallet/channel crates and Web Ledgers teller; publication history and configured registry badges are separate from live deployment. CI regenerates pinned reference-oracle fixtures. This README refresh did not rerun the full oracle suite.
+
+<details>
+<summary><strong>Protocol evolution from SPEC 0.0.2 to 0.0.5</strong></summary>
+
 
 - the peg output is the taproot output the peg holders own, at any position (0.0.3);
 - signatures follow the parent's family (0.0.3);
@@ -92,7 +131,9 @@ Ported since 0.0.2:
   before 0.0.5 resolving as before (0.0.5; `sidestr-agent chain-event` and
   `resolve`).
 
-- **Level 1 (one signer): complete.** Both header families work end to end:
+</details>
+
+- **Level 1 (one signer): complete in the implemented reference scope.** Both header families work end to end:
   genesis from the document, production, validation, the mempool policy,
   claims, burns, the block file, the wallet.
 - **Level 2 (a k-of-n federation): usable.** Blocks are co-signed through the
@@ -125,7 +166,11 @@ Ported since 0.0.2:
 
 ## What is proven against the reference
 
-Reference conformance uses the engine as the oracle. What is tested:
+Reference conformance uses pinned upstream implementations as oracles. The following describes the test suite's scope, not a fresh run during this documentation review. Passing it establishes agreement on the covered fixtures and behaviours, not consensus safety under arbitrary faults.
+
+<details>
+<summary><strong>Oracle coverage and how to run it</strong></summary>
+
 
 - **Genesis:** a throwaway chain's genesis is byte-identical to the one siding
   seals. The sealed `sidestr:dreamlab` genesis replays to its documented hash.
@@ -182,9 +227,11 @@ Without these four variables the oracle halves say they are skipped, and
 the Rust halves still run. You need Node.js 20 or later, and no `npm
 install`. CI runs both ways ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
-## Live chain
+</details>
 
-**`sidestr:dreamlab`** runs beside Bitcoin testnet4 (`tbtc4`):
+## Estate chain and activation
+
+The recorded **`sidestr:dreamlab`** instance uses Bitcoin testnet4 (`tbtc4`):
 
 - address prefix `drm`;
 - genesis `4db37517728bd509c0cb96ee5a2e3e2a77f9e965a092e9f67948b413d453dbc0`,
@@ -193,8 +240,7 @@ install`. CI runs both ways ([`.github/workflows/ci.yml`](.github/workflows/ci.y
 - mirror: <https://dreamlab-ai.github.io/sidestr-dreamlab>, holding
   `chain.json`, `blocks.dat` and `blocks.json`.
 
-Agentbox currently runs the upstream JavaScript `siding` producer and owns
-the chain instance. The Rust workspace is the validated library component;
+The repository’s deployment record assigns the instance to Agentbox with the upstream JavaScript `siding` producer. No live service probe was made for this README refresh. The Rust workspace is the validated library component;
 deploying a Rust producer for this chain remains separate work.
 
 On 2026-09-23 it ran its first full economic loop:
@@ -206,14 +252,11 @@ On 2026-09-23 it ran its first full economic loop:
 
 That loop found the two issues SPEC 0.0.3 fixes.
 
-An isolated BLAKE2b testnet4 parent pair also runs on a Dell staging host:
-Bitcoin Knots 29.4.2 and rbitcoin 0.7.99, with rbitcoin pinned only to the
-Knots peer and public seed discovery disabled. It is parent-node staging,
-not a deployed sidestr chain. No mainnet daemon or wallet was changed.
+Earlier evidence also records an isolated BLAKE2b parent-node pair. That is staging history, not proof of an active sidestr deployment. See the [local decision ledger](docs/adr/README.md) for the implementation/activation split.
 
-## In the dreamlab estate
+## Where it sits in VisionFlow
 
-sidestr-rs is the economic layer of dreamlab's agent estate:
+sidestr-rs supplies optional economic protocol libraries. Identity, runtime policy, storage and knowledge grounding belong to their respective products:
 
 - [**VisionFlow**](https://visionflow.info): the ecosystem these components
   make up.
@@ -244,7 +287,7 @@ linked from the local records.
 
 ## Licence
 
-**AGPL-3.0-only** ([LICENSE](LICENSE)). The reference implementation these
+The sidestr crates are **AGPL-3.0-only** ([LICENSE](LICENSE)); [`webledgers-teller`](webledgers-teller/Cargo.toml) declares **AGPL-3.0-or-later**, following its own upstream. Inspect the individual crate manifest and notices when consuming it. The reference implementation these
 crates port is AGPL-3.0, and they are derivative works of it: attributed
 ports of its logic, tested against it. So they carry the same licence. They
 are not dual-licensed, and a permissively licensed crate must not depend on
