@@ -1,0 +1,33 @@
+{
+  "repo": "DreamLab-AI/sidestr-rs",
+  "cron": "0 2 * * *",
+  "slots": [
+    { "deep": "consensus-core", "scan": ["chain-document", "blockfile", "overlay-rules", "peg-tweak"] },
+    { "deep": "headers-and-pow", "scan": ["stock-80-byte", "knots-v2-blake2b", "bip325-block-data", "no-std"] },
+    { "deep": "wallet-and-signing", "scan": ["coin-selection", "key-path-spends", "peg-out-burns", "signer-port"] },
+    { "deep": "nostr-plane", "scan": ["event-codecs", "sealed-signer", "rule-and-genesis-documents", "dual-schema-records"] },
+    { "deep": "rounds-and-channels", "scan": ["cosign-state-machine", "vote-journal", "hitch-htlcs", "recovery-protocol"] },
+    { "deep": "agent-evm-reserve", "scan": ["did-nostr-agent-wallet", "evm-rule-state-root", "reserve-attestations", "webledgers-teller"] }
+  ],
+  "bonusModuli": { "7": "security-adversarial", "30": "api-surface-review" },
+  "controlPlaneProbes": ["cargo check --workspace --all-features 2>&1 | tail -5 || true"],
+  "buildStep": { "cmd": "cargo build --workspace --all-features --locked 2>&1 | tail -20", "degradeOnWasmFailure": true },
+  "evaluatorEntrypoints": {
+    "tests": "cargo test --workspace --all-features --locked 2>&1 | tail -40",
+    "fmt": "cargo fmt --all --check && echo fmt: all files formatted",
+    "clippy": { "cmd": "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings 2>&1 | tail -20", "required": true },
+    "doc": { "cmd": "RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps --all-features --locked 2>&1 | tail -10", "required": false }
+  },
+  "protected": ["**/fixtures/**", "**/tests/oracle/**", "**/tests/vectors/**", "**/*vectors*.json"],
+  "adrConvention": "4-digit",
+  "extraDisciplines": [
+    "evaluation-is-not-promotion",
+    "witness-every-quantitative-claim",
+    "oracle-is-the-contract: per ADR-0001 the pinned sidestr/spec, bitcoin-desktop/schema, bitcoin-blake/blaketestnode and Hitch revisions are the compatibility oracle; fixtures and vectors are never edited to make a test pass, and any intentional wire or consensus departure is a HANDOFF needing an ADR",
+    "upstream-handoff: behaviour owned by the reference repositories is fixed upstream, not here"
+  ],
+  "ledgerPath": "docs/dream-cycle/LEDGER.md",
+  "branchPrefix": "dream/",
+  "labels": ["dream-cycle", "research"],
+  "autoMerge": false
+}
