@@ -496,4 +496,24 @@ mod tests {
         assert_eq!(x_only_of(&format!("04{x}")), Err(PegError::KeyForm));
         assert_eq!(x_only_of("abcd"), Err(PegError::KeyForm));
     }
+
+    #[test]
+    fn peg_matches_takes_the_script_hex_in_either_case() {
+        let internal = keys::public_key(&"11".repeat(32)).unwrap();
+        let refund = keys::x_only(&keys::public_key(&"22".repeat(32)).unwrap()).unwrap();
+        let reveal = PegReveal {
+            internal,
+            refund_key: refund,
+            refund_blocks: 144,
+            chain_hash: "AA".repeat(32),
+            script: "51".into(),
+            extra_leaves: vec![],
+        };
+        let out = peg_output(&reveal, "tb").unwrap();
+        // the reveal the output carries is the normalised one
+        assert_eq!(out.reveal.chain_hash, "aa".repeat(32));
+        // a verifier may quote the output script in either hex case
+        assert!(peg_matches(&out.reveal, &out.script_pubkey).unwrap());
+        assert!(peg_matches(&out.reveal, &out.script_pubkey.to_uppercase()).unwrap());
+    }
 }
