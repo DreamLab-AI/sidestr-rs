@@ -147,6 +147,17 @@ pub fn pledge_event(
             p.0
         )));
     }
+    // The `d` tag and the content are one fact: the pledge's single input
+    // spends exactly the reward `d` names; a disagreement is refused, never
+    // picked (tags.rs: content is authoritative, tags are an index).
+    let spent = &tx.input[0].previous_output;
+    if spent.vout != reward.vout || !spent.txid.to_string().eq_ignore_ascii_case(&reward.txid) {
+        return Err(Error::Disagree {
+            tag: TAG_D,
+            tag_value: reward.to_string(),
+            content_value: spent.to_string(),
+        });
+    }
     Ok(UnsignedEvent {
         pubkey: String::new(),
         created_at,
@@ -370,6 +381,21 @@ mod tests {
             Err(Error::Chain(_))
         ));
         assert!(pledge_event("sidestr:t", &reward(), "0200", 1).is_err());
+    }
+
+    #[test]
+    fn the_d_tag_names_the_reward_the_transaction_spends() {
+        // the address and the content are one fact: a transaction spending
+        // an outpoint other than the one `d` names is refused before signing
+        let mut other = reward();
+        other.vout = 1;
+        assert!(matches!(
+            pledge_event("sidestr:t", &other, &pledge_tx("sidestr:t", 2), 1),
+            Err(Error::Disagree { tag: "d", .. })
+        ));
+        let mut junk = reward();
+        junk.txid = "zz".repeat(32);
+        assert!(pledge_event("sidestr:t", &junk, &pledge_tx("sidestr:t", 2), 1).is_err());
     }
 
     #[test]
