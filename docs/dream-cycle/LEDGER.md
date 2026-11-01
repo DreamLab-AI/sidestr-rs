@@ -10,3 +10,4 @@ One row per night the dream engine runs on this repository (nominated 2026-10-24
 | 2026-10-29 | headers-and-pow | check_pow enforces the compact-truncated powLimit (7fffff00..00), inclusive | NONE | https://github.com/DreamLab-AI/sidestr-rs/pull/4 | yes | ACCEPT |  | 530d7b63408d |  |  |  |
 | 2026-10-30 | wallet-and-signing | VETOED: change at 330 keeps an output; 329 joins the fee, which still clears… | NONE | VETOED | yes | REJECT |  | e84ef14ef9b1 |  |  |  |
 | 2026-10-31 | nostr-plane | VETOED: parse_record refuses a pledge d tag naming an outpoint its tx never… | NONE | VETOED | yes | REJECT |  | adf6997d34e4 |  |  |  |
+| 2026-11-01 | headers-and-pow | VETOED: check_pow edge pinned: hash == truncated limit passes; +1 is… | NONE | VETOED | yes | REJECT |  | ca63b7d1f007 |  |  |  |
