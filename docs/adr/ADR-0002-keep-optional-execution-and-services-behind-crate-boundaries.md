@@ -14,6 +14,12 @@ review_trigger: sidestr-core gains an EVM, channel, relay, wallet or reserve dep
 
 # ADR-0002: Keep optional execution and services behind explicit crate boundaries
 
+## External review reconciliation — 2026-11-02
+
+At `814b9e54`, crate boundaries remain an architectural property, not a consensus-integrity certificate. The external duplicate-withdrawal finding remains: `sidestr-evm/src/state.rs:511-514` tests every obligation with `.any()` over outputs, so equal obligations can reuse one output. Acceptance requires one-for-one consumption or aggregate amounts per script, with unequal/duplicate controls and reference-policy reconciliation.
+
+The producer fallback in `sidestr-core/src/state.rs:874-891` and `sidestr-evm/src/rule.rs:364-373` still evicts a transaction when the candidate block verdict fails without isolating header/time failures. Acceptance must preserve valid transactions across a future-header error. Snapshot code remains a separate open integrity gap: restore compares only the world root with its block record (`sidestr-evm/src/state.rs:305-336`); world account roots carry code hashes, while execution loads stored bytes by that hash (`sidestr-evm/src/world.rs:112-124,184-201`). Restore must validate the bytes/hash relation rather than relying on the trie root. Existing audit reproductions were not rerun here. Optional-library defects must not be described as exposure on an estate chain without activation evidence.
+
 ## Context
 
 This parity release adds assets, constant-product pools, binary markets, an EVM
