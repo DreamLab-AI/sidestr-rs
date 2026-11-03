@@ -61,6 +61,39 @@ fn exact_replay_is_refused_but_a_resigned_transaction_is_judged_again() {
 #[derive(Debug)]
 struct RejectOpTrueOutput;
 
+#[test]
+fn a_future_header_does_not_evict_valid_mempool_bytes() {
+    let key = signer("future header");
+    let me = challenge(&key);
+    let mut state = State::with_key(
+        doc(
+            "future-header",
+            &key,
+            vec![("aa".repeat(32), 0, 5_000_000_000, me.clone())],
+        ),
+        &key,
+    )
+    .unwrap();
+    while state.height() < 100 {
+        state.produce(&key, &NextBlock::default(), None).unwrap();
+    }
+    let coin = mature_coin(&state, &key);
+    let tx = spend(&key, &coin, vec![pay(coin.value - 1000, &me)]);
+    let id = tx.compute_txid();
+    state.submit(tx).unwrap();
+    let now = state.tip().time;
+    let next = NextBlock {
+        time: now + 20_000,
+        ..NextBlock::default()
+    };
+    assert!(state.produce(&key, &next, Some(now)).is_err());
+    assert_eq!(state.mempool().count(), 1);
+    assert!(!state.rejected().contains_key(&id));
+    state
+        .produce(&key, &NextBlock::default(), Some(now + 1))
+        .unwrap();
+}
+
 impl BlockRule<Stock> for RejectOpTrueOutput {
     fn id(&self) -> &str {
         "sidestr:rule-test-unblockable"

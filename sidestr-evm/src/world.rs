@@ -73,6 +73,24 @@ pub struct World {
 }
 
 impl World {
+    /// Check the bytecode commitments which the account trie refers to.
+    pub(crate) fn validate_code(&self) -> Result<(), String> {
+        for (hash, bytes) in &self.code {
+            if alloy_primitives::keccak256(bytes) != *hash {
+                return Err(format!("snapshot bytecode does not match hash {hash}"));
+            }
+        }
+        for account in self.accounts.values() {
+            if account.code_hash != KECCAK_EMPTY && !self.code.contains_key(&account.code_hash) {
+                return Err(format!(
+                    "snapshot omits bytecode for hash {}",
+                    account.code_hash
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// No accounts: the state before the first block.
     pub fn new() -> Self {
         Self::default()

@@ -333,6 +333,9 @@ impl Rules {
             }
             Err(error) => error,
         };
+        if first_error.is_header_rejection() {
+            return Err(first_error.into());
+        }
         if state.mempool().next().is_none() {
             return Err(first_error.into());
         }

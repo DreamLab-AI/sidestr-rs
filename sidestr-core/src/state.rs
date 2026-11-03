@@ -867,6 +867,9 @@ impl<F: HeaderFamily> StateOf<F> {
             }
             Err(error) => error,
         };
+        if first_error.is_header_rejection() {
+            return Err(first_error);
+        }
         if self.mempool.is_empty() {
             return Err(first_error);
         }

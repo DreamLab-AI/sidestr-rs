@@ -14,6 +14,10 @@ review_trigger: sidestr-core gains an EVM, channel, relay, wallet or reserve dep
 
 # ADR-0002: Keep optional execution and services behind explicit crate boundaries
 
+## External findings repair — 2026-11-03
+
+Withdrawal validation now consumes each exact script/amount output at most once. Snapshot restore validates all retained worlds' code bytes against their Keccak hashes and requires code for non-empty account commitments before mutating state. Producer header-rule failures return without mempool eviction, in both core and EVM composition. Regression coverage includes duplicate-payment controls, tampered snapshot bytes, future-header preservation and genuine transaction-rule eviction. These corrections intentionally reject previously accepted malformed snapshots/underpaid blocks; downstream consensus consumers must adopt together before activation.
+
 ## External review reconciliation — 2026-11-02
 
 At `814b9e54`, crate boundaries remain an architectural property, not a consensus-integrity certificate. The external duplicate-withdrawal finding remains: `sidestr-evm/src/state.rs:511-514` tests every obligation with `.any()` over outputs, so equal obligations can reuse one output. Acceptance requires one-for-one consumption or aggregate amounts per script, with unequal/duplicate controls and reference-policy reconciliation.

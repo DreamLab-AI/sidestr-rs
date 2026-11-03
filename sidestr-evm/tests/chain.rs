@@ -553,3 +553,143 @@ fn the_genesis_is_judged_with_the_rules() {
         c.follower.genesis_hash()
     );
 }
+
+fn funded_chain() -> (Chain, PrivateKeySigner) {
+    let mut c = Chain::new();
+    for _ in 0..101 {
+        c.produce();
+    }
+    let key = signer(0x42);
+    c.submit(c.spend(vec![
+        out(1_000_000, c.me.clone()),
+        out(0, deposit_script(key.address())),
+    ]))
+    .unwrap();
+    c.produce();
+    (c, key)
+}
+
+fn out(sats: u64, script_pubkey: ScriptBuf) -> TxOut {
+    TxOut {
+        value: Amount::from_sat(sats),
+        script_pubkey,
+    }
+}
+
+#[test]
+fn duplicate_withdrawals_require_distinct_payments() {
+    let (c, key) = funded_chain();
+    let target = challenge_for(&pubkey_of(&SecretKey::from_slice(&[9; 32]).unwrap()));
+    let tx = c.spend(
+        (0..2)
+            .map(|nonce| {
+                carrier(&legacy(
+                    &key,
+                    nonce,
+                    TxKind::Call(WITHDRAW),
+                    gwei(10_000),
+                    30_000,
+                    target.as_bytes(),
+                ))
+            })
+            .collect(),
+    );
+    let seq = c.evm().sequence(
+        std::slice::from_ref(&tx),
+        c.state.height() + 1,
+        c.state.tip().time + 1,
+    );
+    assert_eq!(seq.withdrawals.len(), 2);
+    let honest = c.hand_built(
+        vec![tx.clone()],
+        vec![
+            out(5_000, c.me.clone()),
+            out(10_000, target.clone()),
+            out(10_000, target.clone()),
+            out(0, root_script(seq.root)),
+        ],
+    );
+    assert!(c
+        .follower
+        .judge(c.follower.height() + 1, &honest, None)
+        .0
+        .ok());
+    let underpaid = c.hand_built(
+        vec![tx],
+        vec![
+            out(15_000, c.me.clone()),
+            out(10_000, target),
+            out(0, root_script(seq.root)),
+        ],
+    );
+    assert!(
+        !c.follower
+            .judge(c.follower.height() + 1, &underpaid, None)
+            .0
+            .ok(),
+        "one output cannot satisfy two obligations"
+    );
+}
+
+#[test]
+fn an_evm_producer_preserves_mempool_on_future_header_failure() {
+    let (mut c, key) = funded_chain();
+    let tx = c.spend(vec![carrier(&legacy(
+        &key,
+        0,
+        TxKind::Call(key.address()),
+        U256::ZERO,
+        30_000,
+        &[],
+    ))]);
+    let id = tx.compute_txid();
+    c.submit(tx).unwrap();
+    let now = c.state.tip().time;
+    let next = NextBlock {
+        time: now + 20_000,
+        ..NextBlock::default()
+    };
+    assert!(c
+        .rules
+        .produce(&mut c.state, &c.key, &next, Some(now))
+        .is_err());
+    assert_eq!(c.state.mempool().count(), 1);
+    assert!(!c.state.rejected().contains_key(&id));
+}
+
+#[test]
+fn restore_refuses_code_bytes_that_do_not_match_the_hash() {
+    let (mut c, key) = funded_chain();
+    let init = hex::decode("69602a60005260206000f3600052600a6016f3").unwrap();
+    let deployment = legacy(&key, 0, TxKind::Create, U256::ZERO, 100_000, &init);
+    c.submit(c.spend(vec![carrier(&deployment)])).unwrap();
+    c.produce();
+    let state = c.evm();
+    let snapshot = state.snapshot();
+    assert!(sidestr_evm::EvmState::from_snapshot(
+        state.config().clone(),
+        &snapshot,
+        state.height()
+    )
+    .is_ok());
+    let contract = state
+        .receipt(&alloy_primitives::keccak256(&deployment))
+        .unwrap()
+        .contract_address
+        .unwrap();
+    let code_hash = state
+        .world()
+        .account(&contract)
+        .unwrap()
+        .code_hash
+        .to_string();
+    let mut json = serde_json::to_value(&snapshot).unwrap();
+    json["worlds"][state.height().to_string()]["code"][&code_hash] =
+        serde_json::json!("0x602b60005260206000f3");
+    let changed = serde_json::from_value(json).unwrap();
+    assert!(
+        sidestr_evm::EvmState::from_snapshot(state.config().clone(), &changed, state.height())
+            .is_err(),
+        "snapshot bytecode tampering must fail before state mutation"
+    );
+}

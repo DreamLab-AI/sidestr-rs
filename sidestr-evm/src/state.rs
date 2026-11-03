@@ -312,6 +312,11 @@ impl EvmState {
         if snapshot.config != self.config {
             return Err("evm snapshot parameters do not match this chain".into());
         }
+        // Every retained world can become current after a rewind. Validate all
+        // code maps before installing any part of the supplied snapshot.
+        for world in snapshot.worlds.values() {
+            world.validate_code()?;
+        }
         let world = snapshot
             .worlds
             .get(&height)
@@ -508,10 +513,16 @@ impl EvmState {
         }
         if error.is_none() {
             let outputs = cb.map(|cb| cb.output.as_slice()).unwrap_or_default();
+            let mut consumed = vec![false; outputs.len()];
             if let Some(w) = withdrawals.iter().find(|w| {
-                !outputs
-                    .iter()
-                    .any(|o| o.script_pubkey == w.script && o.value.to_sat() == w.sats)
+                if let Some((index, _)) = outputs.iter().enumerate().find(|(i, o)| {
+                    !consumed[*i] && o.script_pubkey == w.script && o.value.to_sat() == w.sats
+                }) {
+                    consumed[index] = true;
+                    false
+                } else {
+                    true
+                }
             }) {
                 error = Some(format!(
                     "withdrawal of {} sats to {} is not paid by the coinbase",

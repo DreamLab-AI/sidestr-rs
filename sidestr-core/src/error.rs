@@ -95,3 +95,14 @@ pub enum Error {
 
 /// `Result` with this crate's [`Error`].
 pub type Result<T> = core::result::Result<T, Error>;
+
+impl Error {
+    /// Whether a candidate failed a header rule independently of its transactions.
+    ///
+    /// Producers must preserve their mempool on these failures; evicting a
+    /// transaction cannot repair a bad clock, header family or proof of work.
+    pub fn is_header_rejection(&self) -> bool {
+        matches!(self, Self::Rejected { rules, .. } if rules.iter().any(|rule|
+            rule.starts_with("btc:rule-header-") || rule.starts_with("knots:rule-header-")))
+    }
+}
