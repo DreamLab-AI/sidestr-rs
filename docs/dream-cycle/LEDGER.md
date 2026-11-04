@@ -13,3 +13,4 @@ One row per night the dream engine runs on this repository (nominated 2026-10-24
 | 2026-11-01 | headers-and-pow | VETOED: check_pow edge pinned: hash == truncated limit passes; +1 is… | NONE | VETOED | yes | REJECT |  | ca63b7d1f007 |  |  |  |
 | 2026-11-02 | wallet-and-signing | VETOED: build_outputs reselects for the sized fee: records outrun the 200-vB… | NONE | VETOED | yes | REJECT |  | f6f3955a900e |  |  |  |
 | 2026-11-03 | nostr-plane | sign_pledge refuses a marker one byte off the 34-byte payee boundary (pinned) | NONE | https://github.com/DreamLab-AI/sidestr-rs/pull/5 | yes | ACCEPT |  | c1e3198fd77f |  |  |  |
+| 2026-11-04 | rounds-and-channels | round.rs:1-369 & tests/round.rs not supplied: cannot build a Round to pin | NONE | NONE | yes | INCONCLUSIVE |  | 4bf95c2223fa |  |  |  |
