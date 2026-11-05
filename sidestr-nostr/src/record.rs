@@ -51,6 +51,30 @@
 //!     Record::Pledge(p) => { assert_eq!(p.lock_time, 151_460); assert_eq!(p.chain_id, "sidestr:example"); }
 //!     other => panic!("{other:?}"),
 //! }
+//!
+//! // The payee boundary is exact, and one byte tells a pledge from a
+//! // near-miss: the same transaction with `x` where the `:` before the
+//! // payee should be, an empty chain id, a payee that is 34 bytes but
+//! // not a key path, or a `chain` tag the marker does not name, are
+//! // each refused when the event is built, never re-read as some
+//! // other chain's pledge.
+//! let pledge = |marker: &[u8], chain: &str| {
+//!     let mut t = hex::decode("02000000").unwrap();
+//!     t.push(1); t.extend([0xaa; 32]); t.extend(0u32.to_le_bytes()); t.push(0); t.extend(0xfffffffeu32.to_le_bytes());
+//!     t.push(2);
+//!     t.extend(4_999_000_000u64.to_le_bytes()); t.push(34); t.push(0x51); t.push(0x20); t.extend([9u8; 32]);
+//!     t.extend(0u64.to_le_bytes()); t.push(marker.len() as u8 + 2); t.push(0x6a); t.push(marker.len() as u8); t.extend(marker);
+//!     t.extend(151_460u32.to_le_bytes());
+//!     sign_pledge(&miner, chain, &outpoint, &hex::encode(&t), 1_790_100_000)
+//! };
+//! let payee = |sep: char| { let mut m = b"pegin:sidestr:example".to_vec(); m.push(sep as u8); m.push(0x51); m.push(0x20); m.extend([7u8; 32]); m };
+//! pledge(&payee(':'), "sidestr:example").unwrap(); // the well-formed marker still signs
+//! assert!(pledge(&payee('x'), "sidestr:example").is_err()); // no `:` before the payee
+//! assert!(pledge(&payee(':'), "sidestr:other").is_err()); // the `chain` tag and marker disagree
+//! let mut empty = b"pegin::".to_vec(); empty.push(0x51); empty.push(0x20); empty.extend([7u8; 32]);
+//! assert!(pledge(&empty, "sidestr:example").is_err()); // a chain id cannot be empty
+//! let mut notkey = b"pegin:sidestr:example:".to_vec(); notkey.push(0x51); notkey.push(0x21); notkey.extend([7u8; 32]);
+//! assert!(pledge(&notkey, "sidestr:example").is_err()); // 34 bytes, but not a key-path payee
 //! ```
 
 use bitcoin::consensus::encode::deserialize;
