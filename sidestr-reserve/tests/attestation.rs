@@ -10,7 +10,7 @@ use sidestr_reserve::secp256k1::{schnorr, Keypair, Message, Secp256k1, SecretKey
 use sidestr_reserve::{
     attest, tagged_hash, verify_digest, AttestationDigest, AttestationSigner, Credit, Error,
     KeypairSigner, Origin, ReserveAttestation, SignedAttestation, Tip, ATTESTATION_TYPE,
-    DIGEST_TAG, MAX_SAFE_INTEGER,
+    DIGEST_TAG, MAX_DECIMALS, MAX_SAFE_INTEGER,
 };
 
 const TIME: u64 = 1_790_000_000;
@@ -245,6 +245,25 @@ fn identifiers_outside_the_canonical_alphabet_are_refused() {
     assert!(Origin::new("tron", "x", 19).is_err());
     assert!(Credit::new("", 1).is_err());
     assert!(Credit::new("AA:0", 1).is_err());
+}
+
+#[test]
+fn bounds_accept_at_the_edge_and_refuse_one_past() {
+    // The accepting side of the bounds the refusals around this never
+    // visit: identifiers of the full 128 bytes, a source of the full 256,
+    // 18 decimals and a time of 2^53 - 1 are inside the format, and a
+    // network or credit id one byte past 128 is refused. A check tightened
+    // by one would strand attestations the format allows.
+    assert!(Origin::new(&"n".repeat(128), "a", MAX_DECIMALS).is_ok());
+    assert!(Origin::new(&"n".repeat(129), "a", MAX_DECIMALS).is_err());
+    assert!(Origin::new("tron", &"a".repeat(128), MAX_DECIMALS).is_ok());
+    assert!(Credit::new(&"c".repeat(128), 1).is_ok());
+    assert!(Credit::new(&"c".repeat(129), 1).is_err());
+    let full_source = attest(tron(), tip(), &[], &"s".repeat(256), TIME).unwrap();
+    assert!(full_source.canonical_json().is_ok());
+    let at_the_edge = attest(tron(), tip(), &[], "x", MAX_SAFE_INTEGER).unwrap();
+    assert!(at_the_edge.canonical_json().is_ok());
+    assert!(at_the_edge.digest().is_ok());
 }
 
 #[test]
