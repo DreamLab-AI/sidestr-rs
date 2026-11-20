@@ -331,10 +331,12 @@ impl ChannelMachine {
     }
 
     /// Hitch's `unSpend`: the spend was undone by a reorganisation. The
-    /// channel goes back to where it was and the claims are forgotten; a close
-    /// this peer published stays published (it can confirm later), so the
-    /// channel never goes back to `open` and the close is returned to send
-    /// again.
+    /// channel goes back to the status it had before the spend and the claims
+    /// are forgotten. A close this peer published stays published (it can
+    /// confirm later), so while that close is held the channel goes back to a
+    /// closing status, never `open`, and the close is returned to send again.
+    /// With no such close (for example the spend was the counterparty's), the
+    /// status restored is the previous one, which can be `open`.
     pub fn un_spend(&mut self) -> Option<Broadcast> {
         let spend = self.spend.take()?;
         let back = spend.previous_status;
