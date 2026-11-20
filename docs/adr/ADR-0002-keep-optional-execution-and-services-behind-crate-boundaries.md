@@ -14,6 +14,8 @@ review_trigger: sidestr-core gains an EVM, channel, relay, wallet or reserve dep
 
 # ADR-0002: Keep optional execution and services behind explicit crate boundaries
 
+> Note 2026-11-20: at `60259e84` the 2026-11-02 reconciliation below is partly superseded by the section after this note: the duplicate-withdrawal finding (`sidestr-evm/src/state.rs`, `consumed` vector in the withdrawal check) and the snapshot code-hash finding (`sidestr-evm/src/world.rs`, `World::validate_code`, called from restore) are closed by `7f046444`, and header-rule failures no longer evict the mempool (`sidestr-core/src/error.rs`, `is_header_rejection`). Statements here and in Decision 5 and the dependency-graph paragraph that count "seven public crates" are historical: eight manifests now omit `publish = false` (`sidestr-core`, `-header`, `-nostr`, `-wallet`, `-hitch`, `-agent`, `-round`, `webledgers-teller`). The Hitch follower now pins genesis to the document's `genesisHash` when present (`sidestr-agent/src/hitch/follow.rs`).
+
 ## External findings repair — 2026-11-03
 
 Withdrawal validation now consumes each exact script/amount output at most once. Snapshot restore validates all retained worlds' code bytes against their Keccak hashes and requires code for non-empty account commitments before mutating state. Producer header-rule failures return without mempool eviction, in both core and EVM composition. Regression coverage includes duplicate-payment controls, tampered snapshot bytes, future-header preservation and genuine transaction-rule eviction. These corrections intentionally reject previously accepted malformed snapshots/underpaid blocks; downstream consensus consumers must adopt together before activation.

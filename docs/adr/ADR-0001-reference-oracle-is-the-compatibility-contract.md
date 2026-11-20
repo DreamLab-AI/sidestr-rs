@@ -22,6 +22,8 @@ alone cannot establish compatibility across consensus serialisation, sighashes,
 Nostr events, state roots or payment-channel scripts. Some deliberate Rust
 departures are safer than the reference, so source similarity is not the goal.
 
+> Note 2026-11-20: CI now pins six reference repositories, not four: siding (`SIDESTR_SPEC_REF`), schema, blaketestnode, Hitch, Reef and teller (`.github/workflows/ci.yml:17-30`). Decision 1 below is the original four.
+
 ## Decision
 
 1. CI pins all four reference repositories by commit and runs their executable
