@@ -82,7 +82,7 @@ jobs:
       # Cargo unifies features and their default dependency on sidestr-core
       # turns std back on, which is how a std-only error variant in the
       # mirror reader went unnoticed until 0.3.2.
-      - name: sidestr-core alone, no std (native and wasm32)
+      - name: sidestr-core alone, without the std feature (native and wasm32)
         run: |
           cargo check -p sidestr-core --no-default-features
           cargo check -p sidestr-core --no-default-features --target wasm32-unknown-unknown

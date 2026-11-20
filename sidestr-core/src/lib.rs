@@ -162,8 +162,9 @@
 //!   [`records`], [`assets`], [`pool`], [`markets`], [`overlays`], [`rules`],
 //!   [`state`], [`address`], [`keys`] and [`pegtweak`] take bytes and return verdicts; the
 //!   filesystem and the clock are behind feature `std` in [`blockfile`] and
-//!   [`chain`]. The crate is not `no_std`; `std` names what touches the
-//!   operating system.
+//!   [`chain`]. The crate does not declare `#![no_std]`; `std` names what
+//!   touches the operating system, and the crate builds without that feature
+//!   (CI: `cargo check -p sidestr-core --no-default-features`, native and wasm32).
 //! - **Amounts are sats**, `u64`. Txids in markers are display-order hex
 //!   strings, as the markers carry them; structural txids are [`bitcoin::Txid`].
 //!
