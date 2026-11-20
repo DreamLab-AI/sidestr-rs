@@ -1,4 +1,10 @@
-//! The durable form of a channel, checked in full on restore.
+//! The durable form of a channel, checked on restore.
+//!
+//! Restore re-derives the channel id, the channel key, every commitment and
+//! its funding signature, the revocation keys and preimages, the pending and
+//! awaiting records, and that each stored close and claim transaction hashes
+//! to its recorded txid. It does not check the witnesses of the close and
+//! claim transactions, nor reclassify a close against secrets revealed later.
 
 use std::collections::BTreeMap;
 
