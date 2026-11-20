@@ -12,6 +12,9 @@
 //! - it decodes as a block of the chain's family;
 //! - its hash is the one the index gives;
 //! - it links to the block below it;
+//! - at height 0, its hash is the document's `genesisHash` when the document
+//!   carries one, so a source that re-sealed the chain under the same name is
+//!   refused;
 //! - its solution satisfies the chain's challenge. On a level-1 chain this
 //!   is the signer's key-path signature, so a mirror cannot forge a block.
 //!
@@ -121,6 +124,7 @@ struct Held {
 pub struct ChainFollower {
     family: Family,
     challenge: ScriptBuf,
+    genesis: Option<BlockHash>,
     blocks: Vec<Held>,
     txs: HashMap<Txid, (u32, usize)>,
     spends: HashMap<OutPoint, (Txid, u32)>,
@@ -134,6 +138,14 @@ impl ChainFollower {
         Ok(Self {
             family: doc.family()?,
             challenge: doc.challenge_script()?,
+            genesis: doc
+                .genesis_hash
+                .as_deref()
+                .map(|h| {
+                    h.parse::<BlockHash>()
+                        .map_err(|e| Error::Chain(format!("genesisHash {h}: {e}")))
+                })
+                .transpose()?,
             blocks: Vec::new(),
             txs: HashMap::new(),
             spends: HashMap::new(),
@@ -187,6 +199,14 @@ impl ChainFollower {
 
     /// Compare a source's index with the blocks held.
     pub fn plan(&self, index: &Index) -> Result<Plan> {
+        if let (Some(pinned), Some(first)) = (self.genesis, index.blocks.first()) {
+            if first.hash != pinned.to_string() {
+                return Err(Error::Chain(format!(
+                    "the index starts at {}, the chain document pins genesis {pinned}",
+                    first.hash
+                )));
+            }
+        }
         for (i, e) in index.blocks.iter().enumerate() {
             if e.height as usize != i {
                 return Err(Error::Chain(format!(
@@ -278,6 +298,13 @@ impl ChainFollower {
                     "block {height} hashes to {hash}, the index says {}",
                     entry.hash
                 )));
+            }
+            if height == 0 {
+                if let Some(pinned) = self.genesis.filter(|p| *p != hash) {
+                    return Err(Error::Chain(format!(
+                        "block 0 hashes to {hash}, the chain document pins genesis {pinned}"
+                    )));
+                }
             }
             if height > 0 {
                 let below = if i == 0 {
@@ -568,6 +595,29 @@ mod tests {
         };
         assert!(f.apply(&s.index, from, &s.dat[offset as usize..]).is_err());
         assert_eq!(f.height(), Some(2));
+    }
+
+    #[test]
+    fn a_genesis_the_document_pins_is_the_only_one_followed() {
+        let (mut doc, a, _, _, _) = branches();
+        // right pin: followed as before
+        doc.genesis_hash = Some(a[0].block_hash().to_string());
+        let mut f = ChainFollower::new(&doc).unwrap();
+        sync(&mut f, &serve(&doc, &a[..3]));
+        assert_eq!(f.height(), Some(2));
+        // wrong pin: a source whose block 0 is another genesis is refused,
+        // both when planned and when applied, and nothing is held
+        doc.genesis_hash = Some("ab".repeat(32));
+        let mut g = ChainFollower::new(&doc).unwrap();
+        let s = serve(&doc, &a[..3]);
+        assert!(g.plan(&s.index).is_err());
+        assert!(g.apply(&s.index, 0, &s.dat).is_err());
+        assert_eq!(g.height(), None);
+        // no pin (a chain sealed before 0.0.5): unchanged behaviour
+        doc.genesis_hash = None;
+        let mut h = ChainFollower::new(&doc).unwrap();
+        sync(&mut h, &serve(&doc, &a[..3]));
+        assert_eq!(h.height(), Some(2));
     }
 
     #[test]
