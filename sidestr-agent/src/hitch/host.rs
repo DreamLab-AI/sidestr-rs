@@ -2239,7 +2239,17 @@ impl Host {
                     continue;
                 }
             };
-            let advance = match self.follower.plan(&index)? {
+            // An index this follower refuses (a genesis other than the pinned
+            // one, or misnumbered heights) is a fault of that source, not of
+            // the chain: go on to the next source, as a refused tail does.
+            let plan = match self.follower.plan(&index) {
+                Ok(p) => p,
+                Err(e) => {
+                    last = e.to_string();
+                    continue;
+                }
+            };
+            let advance = match plan {
                 Plan::UpToDate => Advance::Unchanged,
                 Plan::Truncate { len } => self.follower.truncate(len),
                 Plan::Fetch { from, offset } => {
