@@ -39,7 +39,9 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
-          toolchain: stable
+          # Pinned so that `cargo fmt --check` and clippy do not change under us
+          # when a new stable is released; bump deliberately, with a reformat.
+          toolchain: "1.99.1"
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
 
@@ -154,7 +156,9 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
-          toolchain: stable
+          # Pinned so that `cargo fmt --check` and clippy do not change under us
+          # when a new stable is released; bump deliberately, with a reformat.
+          toolchain: "1.99.1"
 
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
